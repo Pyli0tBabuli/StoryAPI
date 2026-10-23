@@ -1,0 +1,10 @@
+* text=auto
+*.cs text
+*.rpy text
+*.md text
+*.json text
+*.csproj text
+*.py text
+*.png binary
+*.jpg binary
+*.ogg binary

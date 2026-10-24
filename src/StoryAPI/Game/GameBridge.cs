@@ -24,7 +24,7 @@ namespace StoryAPI.Game
     /// (which is internal). Everything here is a thin, cached wrapper so the rest of
     /// the mod can stay ordinary C#.
     /// </summary>
-public static class GameBridge
+    public static class GameBridge
     {
         /// <summary>
         /// Diagnostics go through BepInEx rather than UnityEngine.Debug, because this runs
@@ -303,9 +303,9 @@ public static class GameBridge
         /// background and sound becomes unresolvable -- while character sprites keep
         /// working, because those happen to be in the permanently resident set.
         ///
-        /// The table is filled in from the bundles themselves rather than guessed: each
-        /// resident bundle is asked what it contains, and the object's own name is
-        /// registered as the key, which is exactly how the game names its assets.
+        /// The table is filled from each bundle's asset-path index. The path's leaf name is
+        /// used as the key so no prefab, audio clip or scene object has to be materialized
+        /// just to discover its name.
         /// </summary>
         private static void InstallSharedAssetMap()
         {
@@ -335,39 +335,81 @@ public static class GameBridge
                 int mapped = 0;
                 var mappedNames = new List<string>();
 
+                // GetAllAssetNames reads the bundle's index. LoadAllAssets<T>() would
+                // instantiate every matching object (including large audio/scene assets)
+                // merely to learn its name, and Unity then keeps those objects resident.
                 foreach (var bundleName in SharedAssetBundles)
                 {
-                    if (!loaded.TryGetValue(bundleName, out var bundle) || bundle == null) continue;
+                    AssetBundle bundle;
+                    if (!loaded.TryGetValue(bundleName, out bundle) || bundle == null) continue;
 
-                    // GameObjects carry the scene art.
-                    foreach (var asset in bundle.LoadAllAssets<GameObject>())
+                    string[] paths;
+                    try { paths = bundle.GetAllAssetNames(); }
+                    catch (Exception e)
                     {
-                        if (string.IsNullOrEmpty(asset.name)) continue;
-                        table.AddAsset(asset.name, bundleName, string.Empty);
-                        mapped++;
-                        mappedNames.Add(asset.name);
+                        Log.LogWarning("Could not list assets in bundle '" + bundleName + "': " + e.Message);
+                        continue;
                     }
+                    if (paths == null) continue;
 
-                    // AudioClips carry sound effects.
-                    foreach (var clip in bundle.LoadAllAssets<AudioClip>())
+                    var seenInBundle = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var path in paths)
                     {
-                        if (string.IsNullOrEmpty(clip.name)) continue;
-                        table.AddAsset(clip.name, bundleName, string.Empty);
-                        mapped++;
-                        mappedNames.Add(clip.name);
+                        // Preserve the old map's scope: scene/prefab assets plus sound files,
+                        // not every texture or unrelated resource path in the bundle.
+                        string extension = System.IO.Path.GetExtension(path) ?? string.Empty;
+                        bool objectAsset = extension.Equals(".prefab", StringComparison.OrdinalIgnoreCase) ||
+                                           extension.Equals(".asset", StringComparison.OrdinalIgnoreCase) ||
+                                           extension.Equals(".unity", StringComparison.OrdinalIgnoreCase);
+                        if (!objectAsset && !IsAudioAssetPath(path)) continue;
+                        string assetName = AssetNameFromPath(path);
+                        if (string.IsNullOrEmpty(assetName) || !seenInBundle.Add(assetName)) continue;
+
+                        try
+                        {
+                            table.AddAsset(assetName, bundleName, string.Empty);
+                            mapped++;
+                            mappedNames.Add(assetName);
+                        }
+                        catch (Exception e)
+                        {
+                            // A duplicate/unsupported name must not abort the whole map.
+                            Log.LogDebug("Could not map asset '" + assetName + "' from '" + bundleName + "': " + e.Message);
+                        }
                     }
                 }
 
                 foreach (var bundleName in SharedAudioBundles)
                 {
-                    if (!loaded.TryGetValue(bundleName, out var bundle) || bundle == null) continue;
+                    AssetBundle bundle;
+                    if (!loaded.TryGetValue(bundleName, out bundle) || bundle == null) continue;
 
-                    foreach (var clip in bundle.LoadAllAssets<AudioClip>())
+                    string[] paths;
+                    try { paths = bundle.GetAllAssetNames(); }
+                    catch (Exception e)
                     {
-                        if (string.IsNullOrEmpty(clip.name)) continue;
-                        table.AddAsset(clip.name, bundleName, string.Empty);
-                        mapped++;
-                        mappedNames.Add(clip.name);
+                        Log.LogWarning("Could not list audio in bundle '" + bundleName + "': " + e.Message);
+                        continue;
+                    }
+                    if (paths == null) continue;
+
+                    var seenInBundle = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var path in paths)
+                    {
+                        if (!IsAudioAssetPath(path)) continue;
+                        string assetName = AssetNameFromPath(path);
+                        if (string.IsNullOrEmpty(assetName) || !seenInBundle.Add(assetName)) continue;
+
+                        try
+                        {
+                            table.AddAsset(assetName, bundleName, string.Empty);
+                            mapped++;
+                            mappedNames.Add(assetName);
+                        }
+                        catch (Exception e)
+                        {
+                            Log.LogDebug("Could not map audio '" + assetName + "' from '" + bundleName + "': " + e.Message);
+                        }
                     }
                 }
 
@@ -381,7 +423,7 @@ public static class GameBridge
                     samples.Add(known);
                 }
 
-                Log.LogInfo("Mapped " + mapped + " base-game asset name(s) for mod use. Samples: " +
+                Log.LogInfo("Mapped " + mapped + " base-game asset path name(s) for mod use. Samples: " +
                          string.Join(", ", samples.ToArray()));
             }
             catch (Exception e)
@@ -412,7 +454,7 @@ public static class GameBridge
                 var report = new List<string>();
                 foreach (var pair in scope.OrderBy(p => p.Key, StringComparer.Ordinal).Take(6))
                 {
-var data = pair.Value.GetObjectAs<RenpyAudioData>();
+                    var data = pair.Value.GetObjectAs<RenpyAudioData>();
                     report.Add(pair.Key + " => name='" + data.name + "' path='" + data.path +
                                "' asset='" + data.simpleAssetName + "'");
                 }
@@ -487,7 +529,7 @@ var data = pair.Value.GetObjectAs<RenpyAudioData>();
             }
             catch (Exception e)
             {
-                    Log.LogWarning("resolve audio '" + wanted + "' failed: " + e.Message);
+                Log.LogWarning("resolve audio '" + wanted + "' failed: " + e.Message);
             }
 
             return null;
@@ -508,6 +550,38 @@ var data = pair.Value.GetObjectAs<RenpyAudioData>();
             if (dot > 0) result = result.Substring(0, dot);
 
             return result;
+        }
+
+        /// <summary>Get the leaf asset name from Unity's bundle path without loading the asset.</summary>
+        private static string AssetNameFromPath(string assetPath)
+        {
+            if (string.IsNullOrEmpty(assetPath)) return null;
+            string normalized = assetPath.Replace('\\', '/');
+            int slash = normalized.LastIndexOf('/');
+            string name = slash >= 0 ? normalized.Substring(slash + 1) : normalized;
+            int dot = name.LastIndexOf('.');
+            if (dot > 0) name = name.Substring(0, dot);
+            return name;
+        }
+
+        private static bool IsAudioAssetPath(string assetPath)
+        {
+            if (string.IsNullOrEmpty(assetPath)) return false;
+            return assetPath.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase) ||
+                   assetPath.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase) ||
+                   assetPath.EndsWith(".wav", StringComparison.OrdinalIgnoreCase) ||
+                   assetPath.EndsWith(".aiff", StringComparison.OrdinalIgnoreCase) ||
+                   assetPath.EndsWith(".aif", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsSpriteAssetPath(string assetPath)
+        {
+            if (string.IsNullOrEmpty(assetPath)) return false;
+            return assetPath.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
+                   assetPath.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
+                   assetPath.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+                   assetPath.EndsWith(".tga", StringComparison.OrdinalIgnoreCase) ||
+                   assetPath.EndsWith(".asset", StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>
@@ -540,13 +614,19 @@ var data = pair.Value.GetObjectAs<RenpyAudioData>();
                         var assets = new List<string>();
                         try
                         {
-                            foreach (var asset in loaded[name].LoadAllAssets<GameObject>())
+                            var bundle = loaded[name];
+                            if (bundle == null) continue;
+                            var paths = bundle.GetAllAssetNames();
+                            if (paths != null)
                             {
-                                if (!string.IsNullOrEmpty(asset.name)) assets.Add(asset.name);
-                            }
-                            foreach (var clip in loaded[name].LoadAllAssets<AudioClip>())
-                            {
-                                if (!string.IsNullOrEmpty(clip.name)) assets.Add(clip.name + "  [audio]");
+                                foreach (var assetPath in paths)
+                                {
+                                    string assetName = AssetNameFromPath(assetPath);
+                                    if (string.IsNullOrEmpty(assetName)) continue;
+                                    assets.Add(IsAudioAssetPath(assetPath)
+                                        ? assetName + "  [audio]  (" + assetPath + ")"
+                                        : assetName + "  (" + assetPath + ")");
+                                }
                             }
                         }
                         catch (Exception e)
@@ -633,6 +713,21 @@ var data = pair.Value.GetObjectAs<RenpyAudioData>();
         /// </summary>
         public static int DumpAudioPaths(string path)
         {
+            if (!string.IsNullOrEmpty(path) && System.IO.File.Exists(path))
+            {
+                // This is a listing of shipped bundle paths, so it remains stable between
+                // launches. Delete audio-paths.txt when an explicit refresh is required.
+                try
+                {
+                    int existingCount = System.IO.File.ReadAllLines(path).Count(line =>
+                        line.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase) ||
+                        line.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase));
+                    Log.LogInfo("[StoryAPI] Audio path listing already exists; skipped bundle scan. Delete the file to regenerate it.");
+                    return existingCount;
+                }
+                catch { /* Rebuild it if the cached file cannot be read. */ }
+            }
+
             var report = new StringBuilder();
             int count = 0;
 
@@ -691,70 +786,68 @@ var data = pair.Value.GetObjectAs<RenpyAudioData>();
                     !key.Contains("gui") && !key.Contains("poem")) continue;
 
                 AssetBundle bundle = null;
+                bool openedHere = false;
                 try
                 {
+                    // Prefer the exact instance owned by the game's resource manager.
                     if (resident.TryGetValue(key, out var live)) bundle = live;
-                }
-                catch (Exception)
-                {
-                    bundle = null;
-                }
+                    if (bundle == null) bundle = FindLoadedBundle(key);
 
-                // Ask Unity as well: the game's own dictionary does not list everything it
-                // has open, and loading a second copy is what blanks the screen.
-                if (bundle == null) bundle = FindLoadedBundle(key);
-
-                if (bundle == null)
-                {
-                    bool opened = false;
-                    try
+                    if (bundle == null)
                     {
                         string plain = System.IO.Path.Combine(scratch, key + ".bundle");
                         if (!System.IO.File.Exists(plain) ||
-                            System.IO.File.GetLastWriteTimeUtc(plain) <
-                            System.IO.File.GetLastWriteTimeUtc(file))
+                            System.IO.File.GetLastWriteTimeUtc(plain) < System.IO.File.GetLastWriteTimeUtc(file))
                         {
                             Deobfuscate(file, plain);
                         }
                         bundle = AssetBundle.LoadFromFile(plain);
-                        opened = bundle != null;
+                        openedHere = bundle != null;
+                    }
+
+                    if (bundle == null) continue;
+
+                    // GetAllAssetNames reads the bundle directory; it does not require loading
+                    // the audio clips. Do not keep disk-opened bundles in s_selfOpened just
+                    // for a text listing: on the first scan that would retain every audio
+                    // bundle until a later timer released them.
+                    var rows = new List<string>();
+                    try
+                    {
+                        foreach (var asset in bundle.GetAllAssetNames())
+                        {
+                            if (!asset.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase) &&
+                                !asset.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase)) continue;
+                            rows.Add(asset);
+                        }
                     }
                     catch (Exception e)
                     {
-                        Log.LogWarning("[StoryAPI] Audio bundle " + key + " skipped: " + e.Message);
+                        Log.LogDebug("[StoryAPI] Could not list audio paths in bundle '" + key + "': " + e.Message);
                     }
 
-                    if (opened)
-                    {
-                        // Only the file list is wanted here, so the copy is closed again
-                        // instead of being left resident next to the game's own.
-                        s_selfOpened.Add(bundle);
-                    }
+                    if (rows.Count == 0) continue;
+                    rows.Sort(StringComparer.Ordinal);
+                    report.AppendLine("## " + key + "  (" + rows.Count + ")");
+                    foreach (var row in rows) report.AppendLine(row);
+                    report.AppendLine();
+                    count += rows.Count;
                 }
-
-                if (bundle == null) continue;
-
-                var rows = new List<string>();
-                try
+                catch (Exception e)
                 {
-                    foreach (var asset in bundle.GetAllAssetNames())
+                    Log.LogWarning("[StoryAPI] Audio bundle " + key + " skipped: " + e.Message);
+                }
+                finally
+                {
+                    if (openedHere && bundle != null)
                     {
-                        if (!asset.EndsWith(".ogg", StringComparison.OrdinalIgnoreCase) &&
-                            !asset.EndsWith(".mp3", StringComparison.OrdinalIgnoreCase)) continue;
-                        rows.Add(asset);
+                        try { bundle.Unload(true); }
+                        catch (Exception e)
+                        {
+                            Log.LogDebug("[StoryAPI] Could not unload audio-list bundle '" + key + "': " + e.Message);
+                        }
                     }
                 }
-                catch (Exception)
-                {
-                    // Bundle could not be listed.
-                }
-
-                if (rows.Count == 0) continue;
-                rows.Sort(StringComparer.Ordinal);
-                report.AppendLine("## " + key + "  (" + rows.Count + ")");
-                foreach (var row in rows) report.AppendLine(row);
-                report.AppendLine();
-                count += rows.Count;
             }
 
             System.IO.File.WriteAllText(path, report.ToString());
@@ -789,20 +882,29 @@ var data = pair.Value.GetObjectAs<RenpyAudioData>();
                 }
             }
 
-            // Not resident, so it is read from the bundle file the same way the art
-            // exporter does it.
-            foreach (var bundle in BundlesFromDisk())
+            // Search disk bundles one at a time. Bundles that do not contain this prefab
+            // are fully unloaded before the next bundle is opened.
+            GameObject foundPrefab = null;
+            bool foundOnDisk = FindInDiskBundles((key, bundle) =>
             {
                 string[] paths;
-                try { paths = bundle.GetAllAssetNames(); } catch { continue; }
-                if (paths == null) continue;
+                try { paths = bundle.GetAllAssetNames(); }
+                catch { return false; }
+                if (paths == null) return false;
 
                 foreach (var path in paths)
                 {
                     if (!path.EndsWith(suffix, StringComparison.OrdinalIgnoreCase)) continue;
-                    try { prefab = bundle.LoadAsset<GameObject>(path); } catch { }
-                    if (prefab != null) return true;
+                    try { foundPrefab = bundle.LoadAsset<GameObject>(path); } catch { foundPrefab = null; }
+                    if (foundPrefab != null) return true;
                 }
+                return false;
+            }, key => IsCharacterBundle(key));
+
+            if (foundOnDisk)
+            {
+                prefab = foundPrefab;
+                return prefab != null;
             }
 
             return false;
@@ -819,63 +921,126 @@ var data = pair.Value.GetObjectAs<RenpyAudioData>();
             sprite = null;
             if (string.IsNullOrEmpty(assetName)) return false;
 
-            var all = new List<AssetBundle>(ResidentBundles());
-            all.AddRange(BundlesFromDisk());
-
-            foreach (var bundle in all)
+            // Fast path: the sprite is exposed as a top-level asset by its name.
+            var resident = ResidentBundles();
+            foreach (var bundle in resident)
             {
-                var index = SpriteIndexFor(bundle);
-                if (index != null && index.TryGetValue(assetName, out sprite)) return true;
-
-                try
-                {
-                    sprite = bundle.LoadAsset<Sprite>(assetName);
-                }
-                catch
-                {
-                    sprite = null;
-                }
+                try { sprite = bundle == null ? null : bundle.LoadAsset<Sprite>(assetName); }
+                catch { sprite = null; }
                 if (sprite != null) return true;
+            }
+
+            // DDLC's character poses are often sub-sprites of a character atlas. Only
+            // inspect those four bundles, and only load sub-assets from individual image
+            // paths instead of materializing every Sprite in every bundle.
+            foreach (var bundle in resident)
+            {
+                string name;
+                try { name = bundle == null ? null : bundle.name; }
+                catch { continue; }
+                if (!IsCharacterBundle(name)) continue;
+                sprite = FindSpriteInBundle(bundle, assetName);
+                if (sprite != null) return true;
+            }
+
+            Sprite foundSprite = null;
+            if (FindInDiskBundles((key, bundle) =>
+            {
+                try { foundSprite = bundle.LoadAsset<Sprite>(assetName); }
+                catch { foundSprite = null; }
+                return foundSprite != null;
+            }))
+            {
+                sprite = foundSprite;
+                return true;
+            }
+
+            foundSprite = null;
+            if (FindInDiskBundles((key, bundle) =>
+            {
+                foundSprite = FindSpriteInBundle(bundle, assetName);
+                return foundSprite != null;
+            }, key => IsCharacterBundle(key)))
+            {
+                sprite = foundSprite;
+                return true;
             }
 
             return false;
         }
 
-        private static readonly Dictionary<AssetBundle, Dictionary<string, Sprite>> s_spriteIndexes =
-            new Dictionary<AssetBundle, Dictionary<string, Sprite>>();
-
-        /// <summary>Named sprites of one bundle, looked up once per bundle.</summary>
-        private static Dictionary<string, Sprite> SpriteIndexFor(AssetBundle bundle)
+        /// <summary>
+        /// Look up one named sprite. Sprite names can be sub-assets of a texture, so try
+        /// the direct name first, then inspect image assets one at a time. This deliberately
+        /// avoids LoadAllAssets<Sprite>(), which retains every sprite in the bundle.
+        /// </summary>
+        private static Sprite FindSpriteInBundle(AssetBundle bundle, string spriteName)
         {
-            if (bundle == null) return null;
+            if (bundle == null || string.IsNullOrEmpty(spriteName)) return null;
 
-            Dictionary<string, Sprite> cached;
-            if (s_spriteIndexes.TryGetValue(bundle, out cached)) return cached;
-
-            var index = new Dictionary<string, Sprite>(StringComparer.OrdinalIgnoreCase);
             try
             {
-                foreach (var sprite in bundle.LoadAllAssets<Sprite>())
-                {
-                    if (sprite == null || string.IsNullOrEmpty(sprite.name)) continue;
-                    if (!index.ContainsKey(sprite.name)) index[sprite.name] = sprite;
-
-                    // The sheet a sprite was cut from is often the only name it answers to,
-                    // so the texture's own name is registered as well.
-                    if (sprite.texture != null && !string.IsNullOrEmpty(sprite.texture.name) &&
-                        !index.ContainsKey(sprite.texture.name))
-                    {
-                        index[sprite.texture.name] = sprite;
-                    }
-                }
+                var direct = bundle.LoadAsset<Sprite>(spriteName);
+                if (direct != null) return direct;
             }
             catch
             {
-                // A bundle that cannot be listed simply has no index.
+                // The sprite may be a sub-asset rather than a top-level asset.
             }
 
-            s_spriteIndexes[bundle] = index;
-            return index;
+            string[] paths;
+            try { paths = bundle.GetAllAssetNames(); }
+            catch { return null; }
+            if (paths == null || paths.Length == 0) return null;
+
+            string wanted = AssetNameFromPath(spriteName);
+            var candidates = new List<string>();
+            foreach (var path in paths)
+            {
+                if (IsSpriteAssetPath(path)) candidates.Add(path);
+            }
+
+            // Prefer a path with the same leaf name; atlas fallback is only needed when
+            // the sprite is named differently from its backing image.
+            candidates.Sort((left, right) =>
+            {
+                bool leftExact = string.Equals(AssetNameFromPath(left), wanted, StringComparison.OrdinalIgnoreCase);
+                bool rightExact = string.Equals(AssetNameFromPath(right), wanted, StringComparison.OrdinalIgnoreCase);
+                if (leftExact == rightExact) return StringComparer.OrdinalIgnoreCase.Compare(left, right);
+                return leftExact ? -1 : 1;
+            });
+
+            foreach (var path in candidates)
+            {
+                try
+                {
+                    var direct = bundle.LoadAsset<Sprite>(path);
+                    if (direct != null && string.Equals(direct.name, spriteName, StringComparison.OrdinalIgnoreCase))
+                        return direct;
+                }
+                catch
+                {
+                    // Try the texture's sprite sub-assets below.
+                }
+
+                try
+                {
+                    var subAssets = bundle.LoadAssetWithSubAssets<Sprite>(path);
+                    if (subAssets == null) continue;
+                    foreach (var candidate in subAssets)
+                    {
+                        if (candidate != null &&
+                            string.Equals(candidate.name, spriteName, StringComparison.OrdinalIgnoreCase))
+                            return candidate;
+                    }
+                }
+                catch
+                {
+                    // Not every image asset contains sprites.
+                }
+            }
+
+            return null;
         }
 
         /// <summary>Bundle files the game has already loaded into memory.</summary>
@@ -917,14 +1082,167 @@ var data = pair.Value.GetObjectAs<RenpyAudioData>();
             return null;
         }
 
+        /// <summary>Keys of bundles already owned by the game's active resource manager.</summary>
+        private static HashSet<string> ResidentBundleKeys()
+        {
+            var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                var resources = Renpy.Resources as ActiveLabelAssetBundles;
+                var field = typeof(ActiveLabelAssetBundles).GetField(
+                    "m_ActiveAssetBundles", BindingFlags.Instance | BindingFlags.NonPublic);
+                var holder = field?.GetValue(resources) as ActiveAssetBundles;
+                var loaded = typeof(ActiveAssetBundles).GetField(
+                    "m_ActiveAssetBundles", BindingFlags.Instance | BindingFlags.NonPublic)
+                    ?.GetValue(holder) as Dictionary<string, AssetBundle>;
+                if (loaded != null)
+                    foreach (var key in loaded.Keys) keys.Add(key);
+            }
+            catch (Exception e)
+            {
+                Log.LogWarning("[StoryAPI] Could not list active bundle keys: " + e.Message);
+            }
+            return keys;
+        }
+
+        /// <summary>
+        /// Search disk bundles one by one. A bundle we opened is unloaded after each miss;
+        /// if the visitor found its asset, Unload(false) releases the container but leaves
+        /// that returned Unity object valid. Bundles already owned by the game are never
+        /// unloaded here.
+        /// </summary>
+        private static bool FindInDiskBundles(
+            Func<string, AssetBundle, bool> visitor,
+            Func<string, bool> includeBundle = null)
+        {
+            if (visitor == null) return false;
+            string source = BundleSource();
+            if (source == null)
+            {
+                Log.LogWarning("[StoryAPI] No bundle folder found for disk search.");
+                return false;
+            }
+
+            string scratch = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "storyapi-bundles");
+            System.IO.Directory.CreateDirectory(scratch);
+            var resident = ResidentBundleKeys();
+
+            foreach (var file in System.IO.Directory.GetFiles(source, "*.cy").OrderBy(f => f))
+            {
+                string key = System.IO.Path.GetFileNameWithoutExtension(file);
+                if (resident.Contains(key)) continue;
+                if (includeBundle != null && !includeBundle(key)) continue;
+
+                AssetBundle bundle = FindLoadedBundle(key);
+                bool openedHere = false;
+                if (bundle == null)
+                {
+                    try
+                    {
+                        string plain = System.IO.Path.Combine(scratch, key + ".bundle");
+                        if (!System.IO.File.Exists(plain) ||
+                            System.IO.File.GetLastWriteTimeUtc(plain) < System.IO.File.GetLastWriteTimeUtc(file))
+                        {
+                            Deobfuscate(file, plain);
+                        }
+                        bundle = AssetBundle.LoadFromFile(plain);
+                        openedHere = bundle != null;
+                    }
+                    catch (Exception e)
+                    {
+                        Log.LogWarning("[StoryAPI] Disk bundle '" + key + "' skipped: " + e.Message);
+                    }
+                }
+                if (bundle == null) continue;
+
+                bool found = false;
+                try
+                {
+                    found = visitor(key, bundle);
+                }
+                catch (Exception e)
+                {
+                    Log.LogDebug("[StoryAPI] Disk bundle search failed in '" + key + "': " + e.Message);
+                }
+                finally
+                {
+                    if (openedHere)
+                    {
+                        try { bundle.Unload(!found); }
+                        catch (Exception e) { Log.LogDebug("[StoryAPI] Could not release bundle '" + key + "': " + e.Message); }
+                    }
+                }
+
+                if (found) return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Enumerate disk bundles for read-only scans. Each bundle opened here is fully
+        /// unloaded after its caller has finished with it, so pose/reference exports do not
+        /// accumulate the game's entire bundle set in RAM.
+        /// </summary>
+        private static IEnumerable<AssetBundle> EnumerateDiskBundlesForScan()
+        {
+            string source = BundleSource();
+            if (source == null) yield break;
+
+            string scratch = System.IO.Path.Combine(System.IO.Path.GetTempPath(), "storyapi-bundles");
+            System.IO.Directory.CreateDirectory(scratch);
+            var resident = ResidentBundleKeys();
+
+            foreach (var file in System.IO.Directory.GetFiles(source, "*.cy").OrderBy(f => f))
+            {
+                string key = System.IO.Path.GetFileNameWithoutExtension(file);
+                if (resident.Contains(key)) continue;
+
+                AssetBundle bundle = FindLoadedBundle(key);
+                bool openedHere = false;
+                if (bundle == null)
+                {
+                    try
+                    {
+                        string plain = System.IO.Path.Combine(scratch, key + ".bundle");
+                        if (!System.IO.File.Exists(plain) ||
+                            System.IO.File.GetLastWriteTimeUtc(plain) < System.IO.File.GetLastWriteTimeUtc(file))
+                        {
+                            Deobfuscate(file, plain);
+                        }
+                        bundle = AssetBundle.LoadFromFile(plain);
+                        openedHere = bundle != null;
+                    }
+                    catch (Exception e)
+                    {
+                        Log.LogDebug("[StoryAPI] Bundle '" + key + "' skipped during scan: " + e.Message);
+                    }
+                }
+                if (bundle == null) continue;
+
+                if (openedHere)
+                {
+                    try { yield return bundle; }
+                    finally
+                    {
+                        try { bundle.Unload(true); }
+                        catch (Exception e) { Log.LogDebug("[StoryAPI] Could not unload scanned bundle '" + key + "': " + e.Message); }
+                    }
+                }
+                else
+                {
+                    yield return bundle;
+                }
+            }
+        }
+
         private static readonly List<AssetBundle> s_diskBundles = new List<AssetBundle>();
         private static bool s_diskTried;
 
         /// <summary>
-        /// Every bundle read from disk, decoded out of the game's byte-flip on first use.
-        ///
-        /// The game only keeps the bundles for the scene it is running resident, so the
-        /// rest have to come from the files. This is done once and reused.
+        /// Legacy eager API: opens every disk bundle and keeps it resident for compatibility.
+        /// Internal lookup/export paths use the streaming helpers above instead.
+        /// Calling this method explicitly can consume substantial memory.
         /// </summary>
         public static List<AssetBundle> BundlesFromDisk()
         {
@@ -1348,6 +1666,25 @@ var data = pair.Value.GetObjectAs<RenpyAudioData>();
         /// </summary>
         public static int DumpPoses(string path)
         {
+            if (!string.IsNullOrEmpty(path) && System.IO.File.Exists(path))
+            {
+                // Pose export loads prefab objects and sprite references. Reusing the prior
+                // reference avoids repeating that expensive scan on every game launch.
+                try
+                {
+                    var poseNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var line in System.IO.File.ReadAllLines(path))
+                    {
+                        int separator = line.IndexOf(" | ", StringComparison.Ordinal);
+                        if (separator > 0 && !line.StartsWith("#", StringComparison.Ordinal))
+                            poseNames.Add(line.Substring(0, separator));
+                    }
+                    Log.LogInfo("[StoryAPI] Pose reference already exists; skipped bundle scan. Delete pose-reference.txt to regenerate it.");
+                    return poseNames.Count;
+                }
+                catch { /* Rebuild it if the cached file cannot be read. */ }
+            }
+
             var report = new StringBuilder();
             report.AppendLine("# DDLC Plus pose reference");
             report.AppendLine("# Every pose is a prefab of separate parts; this is what it is made of.");
@@ -1511,12 +1848,19 @@ var data = pair.Value.GetObjectAs<RenpyAudioData>();
                    name.IndexOf("yuri", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        /// <summary>The bundles the game has open, plus the ones it keeps on disk.</summary>
+        /// <summary>The bundles the game has open, plus streamed disk bundles for exports.</summary>
         private static IEnumerable<AssetBundle> AllBundles()
         {
-            var all = new List<AssetBundle>(ResidentBundles());
-            all.AddRange(BundlesFromDisk());
-            return all;
+            var seen = new HashSet<AssetBundle>();
+            foreach (var bundle in ResidentBundles())
+            {
+                if (bundle != null && seen.Add(bundle)) yield return bundle;
+            }
+
+            foreach (var bundle in EnumerateDiskBundlesForScan())
+            {
+                if (bundle != null && seen.Add(bundle)) yield return bundle;
+            }
         }
 
         public static string DumpScript(string path)
@@ -1938,36 +2282,81 @@ var data = pair.Value.GetObjectAs<RenpyAudioData>();
             sprite = null;
             if (string.IsNullOrEmpty(imageName)) return false;
 
-            var all = new List<AssetBundle>(ResidentBundles());
-            all.AddRange(BundlesFromDisk());
-
-            foreach (var bundle in all)
+            // First try direct lookups, which do not enumerate or materialize whole bundles.
+            foreach (var bundle in ResidentBundles())
             {
-                var index = SpriteIndexFor(bundle);
-                if (index != null && index.TryGetValue(imageName, out sprite)) return true;
+                if (TryLoadNativeSpriteFromBundle(bundle, imageName, out sprite)) return true;
+            }
 
-                try
-                {
-                    var texture = bundle.LoadAsset<Texture2D>(imageName);
-                    if (texture != null)
-                    {
-                        // Pixels-per-unit must be 1, exactly as for mod art. The game lays
-                        // everything out in raw pixels against a fixed 1280x720 reference
-                        // and measures images with the sprite's pixel size, so any other
-                        // value would draw the game's own pictures at the wrong scale.
-                        sprite = Sprite.Create(texture,
-                            new Rect(0, 0, texture.width, texture.height),
-                            new Vector2(0.5f, 0.5f), 1f);
-                        return true;
-                    }
-                }
-                catch (Exception)
-                {
-                    // Not in this bundle.
-                }
+            // The sprite can be a sub-asset of a resident character atlas whose filename
+            // differs from the pose. Search these small, known bundles before opening disk copies.
+            foreach (var bundle in ResidentBundles())
+            {
+                string name;
+                try { name = bundle == null ? null : bundle.name; }
+                catch { continue; }
+                if (!IsCharacterBundle(name)) continue;
+                sprite = FindSpriteInBundle(bundle, imageName);
+                if (sprite != null) return true;
+            }
+
+            Sprite foundSprite = null;
+            if (FindInDiskBundles((key, bundle) =>
+            {
+                return TryLoadNativeSpriteFromBundle(bundle, imageName, out foundSprite);
+            }))
+            {
+                sprite = foundSprite;
+                return sprite != null;
+            }
+
+            // Only scan character atlases for sub-assets; other bundles are searched by
+            // direct asset path above so they are not exhaustively materialized.
+            foundSprite = null;
+            if (FindInDiskBundles((key, bundle) =>
+            {
+                foundSprite = FindSpriteInBundle(bundle, imageName);
+                return foundSprite != null;
+            }, key => IsCharacterBundle(key)))
+            {
+                sprite = foundSprite;
+                return true;
             }
 
             return false;
+        }
+
+        private static bool TryLoadNativeSpriteFromBundle(AssetBundle bundle, string imageName, out Sprite sprite)
+        {
+            sprite = null;
+            if (bundle == null) return false;
+
+            try
+            {
+                sprite = bundle.LoadAsset<Sprite>(imageName);
+                if (sprite != null) return true;
+            }
+            catch
+            {
+                // Try the texture name below.
+            }
+
+            try
+            {
+                var texture = bundle.LoadAsset<Texture2D>(imageName);
+                if (texture == null) return false;
+
+                // Pixels-per-unit must be 1, exactly as for mod art. The game lays everything
+                // out in raw pixels against a fixed 1280x720 reference.
+                sprite = Sprite.Create(texture,
+                    new Rect(0, 0, texture.width, texture.height),
+                    new Vector2(0.5f, 0.5f), 1f);
+                return sprite != null;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         /// <summary>
@@ -2322,11 +2711,11 @@ var data = pair.Value.GetObjectAs<RenpyAudioData>();
         /// </summary>
         public static int DumpTextures(string folder, string wantedBundle = null)
         {
-            int written = 0;
             string previous = System.IO.Path.Combine(folder, "sizes.txt");
             if (System.IO.File.Exists(previous))
             {
-                // Already extracted by an earlier run; re-encoding every texture takes minutes.
+                // The game art rarely changes between launches. Do not decode every bundle
+                // again unless the user deletes sizes.txt to request a fresh export.
                 try
                 {
                     foreach (var line in System.IO.File.ReadAllLines(previous))
@@ -2337,10 +2726,11 @@ var data = pair.Value.GetObjectAs<RenpyAudioData>();
                     }
                 }
                 catch { }
+                Log.LogInfo("[StoryAPI] Texture export already exists; skipped. Delete sizes.txt to regenerate it.");
                 return 0;
             }
-            System.IO.Directory.CreateDirectory(folder);
 
+            System.IO.Directory.CreateDirectory(folder);
             var resources = Renpy.Resources as ActiveLabelAssetBundles;
             var bundlesField = typeof(ActiveLabelAssetBundles).GetField(
                 "m_ActiveAssetBundles", BindingFlags.Instance | BindingFlags.NonPublic);
@@ -2348,14 +2738,8 @@ var data = pair.Value.GetObjectAs<RenpyAudioData>();
             var loaded = typeof(ActiveAssetBundles).GetField(
                 "m_ActiveAssetBundles", BindingFlags.Instance | BindingFlags.NonPublic)
                 ?.GetValue(bundles) as Dictionary<string, AssetBundle>;
-
             if (loaded == null) return 0;
 
-            // The game only keeps a label's bundle resident while that label runs, so most
-            // art is not in memory at startup. The bundle files on disk are obfuscated by
-            // flipping every byte with 0x28, so they are undone into a scratch copy first.
-            // Unity's own player then does the rest, which means the art comes out exactly
-            // as shipped rather than as a screenshot of it.
             string source = null;
             foreach (var candidate in new[]
             {
@@ -2373,104 +2757,148 @@ var data = pair.Value.GetObjectAs<RenpyAudioData>();
 
             if (source == null)
             {
-                Log.LogWarning(
-                    "[StoryAPI] Found no .cy bundles to read art from. Looked under " +
-                    Application.streamingAssetsPath + " and " + Application.dataPath);
+                Log.LogWarning("[StoryAPI] Found no .cy bundles to read art from.");
             }
             else
             {
-                Log.LogInfo("[StoryAPI] Reading art bundles from " + source);
+                Log.LogInfo("[StoryAPI] Streaming art export from " + source);
             }
 
             string scratch = System.IO.Path.Combine(
                 System.IO.Path.GetTempPath(), "storyapi-bundles");
             System.IO.Directory.CreateDirectory(scratch);
+            int written = 0;
+            Sizes.Clear();
 
-            var wanted = new List<AssetBundle>();
-            foreach (var name in loaded.Keys) wanted.Add(loaded[name]);
-
-            if (source != null)
+            try
             {
-                foreach (var file in System.IO.Directory.GetFiles(source, "*.cy"))
+                // First inspect only bundles which the game already owns. Do not unload them.
+                foreach (var pair in loaded.OrderBy(p => p.Key, StringComparer.OrdinalIgnoreCase))
                 {
-                    string key = System.IO.Path.GetFileNameWithoutExtension(file);
-                    if (loaded.ContainsKey(key)) continue;
-                    if (FindLoadedBundle(key) != null) continue;
-                    if (wantedBundle != null && key != wantedBundle) continue;
+                    var bundle = pair.Value;
+                    if (bundle == null) continue;
+                    string name;
+                    try { name = bundle.name; }
+                    catch { name = pair.Key; }
+                    if (!string.IsNullOrEmpty(wantedBundle) &&
+                        name.IndexOf(wantedBundle, StringComparison.OrdinalIgnoreCase) < 0) continue;
 
-                    string plain = System.IO.Path.Combine(scratch, key + ".bundle");
-                    try
+                    ExportTextureBundle(bundle, name, folder, ref written);
+                    CleanupExportTextures();
+                }
+
+                // Then process disk-only bundles one by one. The old implementation opened
+                // every .cy bundle into a List before exporting any of them; that kept many
+                // bundles and their decoded assets alive at the same time.
+                if (source != null)
+                {
+                    var residentKeys = new HashSet<string>(loaded.Keys, StringComparer.OrdinalIgnoreCase);
+                    foreach (var file in System.IO.Directory.GetFiles(source, "*.cy").OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
                     {
-                        if (!System.IO.File.Exists(plain) ||
-                            System.IO.File.GetLastWriteTimeUtc(plain) <
-                            System.IO.File.GetLastWriteTimeUtc(file))
-                        {
-                            Deobfuscate(file, plain);
-                        }
+                        string key = System.IO.Path.GetFileNameWithoutExtension(file);
+                        if (residentKeys.Contains(key)) continue;
+                        if (!string.IsNullOrEmpty(wantedBundle) &&
+                            key.IndexOf(wantedBundle, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                        if (FindLoadedBundle(key) != null) continue;
 
-                        var bundle = AssetBundle.LoadFromFile(plain);
-                        if (bundle == null)
+                        string plain = System.IO.Path.Combine(scratch, key + ".bundle");
+                        AssetBundle bundle = null;
+                        try
                         {
-                            Log.LogWarning(
-                                "[StoryAPI] Would not open bundle " + key);
-                            continue;
-                        }
+                            if (!System.IO.File.Exists(plain) ||
+                                System.IO.File.GetLastWriteTimeUtc(plain) < System.IO.File.GetLastWriteTimeUtc(file))
+                            {
+                                Deobfuscate(file, plain);
+                            }
 
-                        wanted.Add(bundle);
-                        s_selfOpened.Add(bundle);
-                    }
-                    catch (Exception e)
-                    {
-                        Log.LogWarning(
-                            "[StoryAPI] Skipped bundle " + key + ": " + e.Message);
+                            bundle = AssetBundle.LoadFromFile(plain);
+                            if (bundle == null)
+                            {
+                                Log.LogWarning("[StoryAPI] Would not open bundle " + key);
+                                continue;
+                            }
+
+                            string name;
+                            try { name = bundle.name; }
+                            catch { name = key; }
+                            ExportTextureBundle(bundle, name, folder, ref written);
+                        }
+                        catch (Exception e)
+                        {
+                            Log.LogWarning("[StoryAPI] Skipped bundle " + key + ": " + e.Message);
+                        }
+                        finally
+                        {
+                            // This bundle was opened only for this export. Unload its objects
+                            // immediately instead of holding it until a later Update tick.
+                            if (bundle != null)
+                            {
+                                try { bundle.Unload(true); }
+                                catch (Exception e) { Log.LogDebug("[StoryAPI] Could not unload exported bundle '" + key + "': " + e.Message); }
+                            }
+                            CleanupExportTextures();
+                        }
                     }
                 }
             }
-
-            foreach (var bundle in wanted)
+            finally
             {
-                string name;
-                try { name = bundle.name; } catch { continue; }
-                if (string.IsNullOrEmpty(name)) continue;
-                if (wantedBundle != null && !name.Contains(wantedBundle)) continue;
+                ActiveBundle = null;
+                CleanupExportTextures();
+            }
 
-                int nullLoads = 0;
-                int prefabs = 0;
-                var done = new HashSet<string>();
+            try
+            {
+                System.IO.File.WriteAllLines(System.IO.Path.Combine(folder, "sizes.txt"),
+                    Sizes.OrderBy(p => p.Key, StringComparer.Ordinal)
+                         .Select(p => p.Key + "  " + p.Value));
+            }
+            catch (Exception e)
+            {
+                Log.LogWarning("[StoryAPI] Could not write texture sizes: " + e.Message);
+            }
 
-                // The sprite index is per bundle, so the bundle being read is noted first.
-                ActiveBundle = bundle;
+            return written;
+        }
 
+        private static void ExportTextureBundle(AssetBundle bundle, string name, string folder, ref int written)
+        {
+            if (bundle == null || string.IsNullOrEmpty(name)) return;
+
+            int nullLoads = 0;
+            ActiveBundle = bundle;
+            try
+            {
+                var done = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (var path in AssetPaths(bundle))
                 {
-                    // The art is shipped as ordinary image assets inside the bundle, so the
-                    // name a modder types is simply the file name without its extension.
                     string asset = System.IO.Path.GetFileNameWithoutExtension(path);
                     if (string.IsNullOrEmpty(asset)) continue;
-                    if (!path.EndsWith(".png", StringComparison.OrdinalIgnoreCase) &&
+                    bool isPng = path.EndsWith(".png", StringComparison.OrdinalIgnoreCase);
+                    if (!isPng &&
                         !path.EndsWith(".prefab", StringComparison.OrdinalIgnoreCase) &&
                         !path.EndsWith(".asset", StringComparison.OrdinalIgnoreCase)) continue;
 
-                    if (!path.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+                    if (!isPng)
                     {
-                        // The same picture is often listed twice: once as a plain image and
-                        // once as the scene object that uses it. The plain image is the one
-                        // to keep, because on a scene object several pictures are referenced
-                        // and picking the wrong one would put the same artwork under a lot
-                        // of different names.
-                        prefabs++;
+                        // Prefab export is only needed for assets that can actually carry art.
+                        // Do not load an arbitrary object just to see whether it exists.
                         if (done.Contains(asset)) continue;
-
-                        var obj = bundle.LoadAsset<GameObject>(path);
+                        GameObject obj;
+                        try { obj = bundle.LoadAsset<GameObject>(path); }
+                        catch { obj = null; }
                         if (obj == null)
                         {
-                            try { bundle.LoadAsset(path); } catch { }
                             nullLoads++;
                             continue;
                         }
 
-                        var art = FindTexture(obj, new HashSet<object>(), asset);
-                        if (art == null) { nullLoads++; continue; }
+                        Texture2D art = FindTexture(obj, new HashSet<object>(), asset);
+                        if (art == null)
+                        {
+                            nullLoads++;
+                            continue;
+                        }
 
                         Write(name, folder, obj.name, art, path, ref written);
                         done.Add(obj.name);
@@ -2479,45 +2907,63 @@ var data = pair.Value.GetObjectAs<RenpyAudioData>();
 
                     try
                     {
-                        // Which one an image arrives as depends on how it was imported:
-                        // some are plain textures, others are sprites, possibly cropped out
-                        // of a shared sheet. Both are handled, and a sprite that covers only
-                        // part of its sheet is cut down to just its own rectangle.
-                        var texture = bundle.LoadAsset<Texture2D>(path);
-
+                        Texture2D texture = bundle.LoadAsset<Texture2D>(path);
                         if (texture == null)
                         {
-                            var sprite = bundle.LoadAsset<Sprite>(path);
-                            if (sprite == null || sprite.texture == null) { nullLoads++; continue; }
+                            Sprite sprite = bundle.LoadAsset<Sprite>(path);
+                            if (sprite == null || sprite.texture == null)
+                            {
+                                nullLoads++;
+                                continue;
+                            }
                             texture = Crop(sprite);
                         }
+                        if (texture == null)
+                        {
+                            nullLoads++;
+                            continue;
+                        }
 
-                        byte[] png = texture.EncodeToPNG();
-                        if (png == null || png.Length == 0) continue;
-
+                        // Write performs one encode; the previous implementation encoded a
+                        // complete PNG here and discarded it, then encoded it again in Write.
                         Write(name, folder, asset, texture, path, ref written);
                         done.Add(asset);
                     }
-                    catch (Exception)
+                    catch (Exception e)
                     {
-                        // Not every listed asset is a readable image.
+                        Log.LogDebug("[StoryAPI] Could not export texture '" + path + "': " + e.Message);
                     }
                 }
-
-                if (nullLoads > 0)
-                {
-                    Log.LogWarning("[StoryAPI] bundle '" + name + "': " + nullLoads +
-                                   " listed image(s) could not be loaded");
-                }
             }
-
-            try
+            finally
             {
-                System.IO.File.WriteAllLines(System.IO.Path.Combine(folder, "sizes.txt"),
-                    Sizes.OrderBy(p => p.Key, StringComparer.Ordinal).Select(p => p.Key + "  " + p.Value));
+                ActiveBundle = null;
             }
-            catch { }
-            return written;
+
+            if (nullLoads > 0)
+            {
+                Log.LogWarning("[StoryAPI] bundle '" + name + "': " + nullLoads +
+                               " listed image(s) could not be loaded");
+            }
+        }
+
+        private static readonly HashSet<Texture2D> s_exportCutTextures = new HashSet<Texture2D>();
+
+        private static void CleanupExportTextures()
+        {
+            var toDestroy = new HashSet<Texture2D>(s_exportCutTextures);
+            foreach (var texture in ReadBackCache.Values)
+            {
+                if (texture != null) toDestroy.Add(texture);
+            }
+            foreach (var texture in toDestroy)
+            {
+                if (texture == null) continue;
+                try { UnityEngine.Object.Destroy(texture); }
+                catch { /* already destroyed */ }
+            }
+            s_exportCutTextures.Clear();
+            ReadBackCache.Clear();
         }
 
         /// <summary>
@@ -2526,52 +2972,75 @@ var data = pair.Value.GetObjectAs<RenpyAudioData>();
         /// A sprite that fills its sheet needs no work, and its texture is returned as it
         /// is, because copying would cost memory for no gain.
         /// </summary>
-private static Texture2D Crop(Sprite sprite)
+        private static Texture2D Crop(Sprite sprite)
         {
-            var sheet = sprite.texture;
-            var rect = sprite.rect;
+            if (sprite == null || sprite.texture == null) return null;
 
-            // An atlas sheet often cannot be read directly, so a readable copy is made
-            // before the rectangle is cut out of it.
-            if (!sheet.isReadable)
-            {
-                var readable = ReadBack(sheet);
-                if (readable == null) return null;
-                sheet = readable;
-            }
+            Texture2D sheet = sprite.texture;
+            Rect rect = sprite.rect;
+            int width = (int)rect.width;
+            int height = (int)rect.height;
+            int left = (int)rect.x;
+            int bottom = (int)rect.y;
 
-            if (rect.width >= sheet.width && rect.height >= sheet.height) return sheet;
+            if (width <= 0 || height <= 0) return null;
 
-            int width = (int)rect.width, height = (int)rect.height;
-            int left = (int)rect.x, bottom = (int)rect.y;
+            // A full-sheet sprite can be written directly. MakeReadable will create a
+            // readable copy if necessary; there is no reason to copy the atlas here too.
+            if (width >= sheet.width && height >= sheet.height) return sheet;
 
+            Texture2D cut = null;
             try
             {
-                // Read the sheet row by row rather than through a sub-rectangle read,
-                // because the pixel array is laid out bottom-up and the offsets are easier
-                // to reason about explicitly.
-                Color[] all = sheet.GetPixels();
-                var cutPixels = new Color[width * height];
-                for (int y = 0; y < height; y++)
+                cut = new Texture2D(width, height, TextureFormat.RGBA32, false);
+                if (sheet.isReadable)
                 {
-                    for (int x = 0; x < width; x++)
+                    // Only allocate pixel data for the requested rectangle, not the entire
+                    // atlas. Color[] is 16 bytes/pixel, so a whole-sheet read can be huge.
+                    Color[] cutPixels = sheet.GetPixels(left, bottom, width, height);
+                    cut.SetPixels(cutPixels);
+                    cut.Apply();
+                }
+                else
+                {
+                    // Read back only this sprite's rectangle on the GPU. The former path
+                    // copied the full atlas to CPU memory before cropping it, which could
+                    // create hundreds of megabytes of transient allocations per atlas.
+                    RenderTexture target = RenderTexture.GetTemporary(width, height, 0);
+                    RenderTexture previous = RenderTexture.active;
+                    try
                     {
-                        cutPixels[y * width + x] = all[(bottom + y) * sheet.width + left + x];
+                        Vector2 scale = new Vector2((float)width / sheet.width,
+                                                    (float)height / sheet.height);
+                        Vector2 offset = new Vector2((float)left / sheet.width,
+                                                     (float)bottom / sheet.height);
+                        Graphics.Blit(sheet, target, scale, offset);
+                        RenderTexture.active = target;
+                        cut.ReadPixels(new Rect(0, 0, width, height), 0, 0);
+                        cut.Apply();
+                    }
+                    finally
+                    {
+                        RenderTexture.active = previous;
+                        RenderTexture.ReleaseTemporary(target);
                     }
                 }
 
-                var cut = new Texture2D(width, height, TextureFormat.RGBA32, false);
-                cut.SetPixels(cutPixels);
-                cut.Apply();
+                if (ActiveBundle != null) s_exportCutTextures.Add(cut);
                 return cut;
             }
-            catch (Exception)
+            catch (Exception e)
             {
-                // Textures that are not marked readable cannot be copied this way, but the
-                // whole sheet is still worth keeping.
+                if (cut != null)
+                {
+                    try { UnityEngine.Object.Destroy(cut); }
+                    catch { /* already destroyed */ }
+                }
+                Log.LogDebug("[StoryAPI] Could not crop sprite '" + sprite.name + "': " + e.Message);
+                // A full sheet is still a usable export fallback.
                 return sheet;
             }
-}
+        }
 
         /// <summary>
         /// Save one piece of art, unless it is a loose part rather than a pose.
@@ -2585,12 +3054,13 @@ private static Texture2D Crop(Sprite sprite)
         {
             if (string.IsNullOrEmpty(asset)) return;
 
+            Texture2D readable = null;
             try
             {
                 Sizes[asset] = texture.width + "x" + texture.height + "  " + path;
                 if (DetailNames.Contains(asset)) return;
 
-                var readable = MakeReadable(texture);
+                readable = MakeReadable(texture);
                 if (readable == null) return;
 
                 string sub = System.IO.Path.Combine(folder, SanitizeFileName(bundleName));
@@ -2602,6 +3072,16 @@ private static Texture2D Crop(Sprite sprite)
             catch (Exception e)
             {
                 Log.LogWarning("[StoryAPI] Could not save '" + asset + "': " + e.Message);
+            }
+            finally
+            {
+                // MakeReadable returns the source when it is already CPU-readable. Only
+                // destroy a copy allocated specifically for this write.
+                if (readable != null && !object.ReferenceEquals(readable, texture))
+                {
+                    try { UnityEngine.Object.Destroy(readable); }
+                    catch { /* already destroyed */ }
+                }
             }
         }
 
@@ -2615,28 +3095,33 @@ private static Texture2D Crop(Sprite sprite)
         /// </summary>
         private static Texture2D MakeReadable(Texture2D texture)
         {
-            if (texture.isReadable) return texture;
+            if (texture == null || texture.isReadable) return texture;
 
             var target = RenderTexture.GetTemporary(texture.width, texture.height, 0);
+            var previous = RenderTexture.active;
+            Texture2D copy = null;
             try
             {
                 Graphics.Blit(texture, target);
-                var previous = RenderTexture.active;
                 RenderTexture.active = target;
 
-                var copy = new Texture2D(texture.width, texture.height, TextureFormat.RGBA32, false);
+                copy = new Texture2D(texture.width, texture.height, TextureFormat.RGBA32, false);
                 copy.ReadPixels(new Rect(0, 0, texture.width, texture.height), 0, 0);
                 copy.Apply();
-
-                RenderTexture.active = previous;
                 return copy;
             }
             catch (Exception)
             {
+                if (copy != null)
+                {
+                    try { UnityEngine.Object.Destroy(copy); }
+                    catch { /* already destroyed */ }
+                }
                 return null;
             }
             finally
             {
+                RenderTexture.active = previous;
                 RenderTexture.ReleaseTemporary(target);
             }
         }
@@ -2661,24 +3146,17 @@ private static Texture2D Crop(Sprite sprite)
         /// </summary>
         private static string[] AssetPaths(AssetBundle bundle)
         {
+            if (bundle == null) return new string[0];
             try
             {
                 var paths = bundle.GetAllAssetNames();
-                if (paths != null && paths.Length > 0) return paths;
+                return paths ?? new string[0];
             }
-            catch (Exception)
+            catch (Exception e)
             {
-                // Fall through to loading every asset instead.
-            }
-
-            try
-            {
-                return bundle.LoadAllAssets<Texture2D>()
-                    .Where(t => t != null && !string.IsNullOrEmpty(t.name))
-                    .Select(t => t.name + ".png").ToArray();
-            }
-            catch (Exception)
-            {
+                // Do not fall back to LoadAllAssets<Texture2D>(); that can force every
+                // texture in a bundle into memory just to reconstruct a list of names.
+                Log.LogDebug("[StoryAPI] Could not read asset path metadata: " + e.Message);
                 return new string[0];
             }
         }
@@ -2695,12 +3173,10 @@ private static Texture2D Crop(Sprite sprite)
         private static Texture2D FindTexture(GameObject go, HashSet<object> inspected, string assetName)
         {
             // Poses are packed into texture atlases, so the picture is a rectangle inside
-            // a shared sheet and has to be cut out. The atlas sprites are named after the
-            // poses, so the bundle's own sprite index is the reliable way in; walking the
-            // scene object is only a fallback.
-            var indexed = SpriteIndex(ActiveBundle);
-            Sprite sprite;
-            if (indexed != null && assetName != null && indexed.TryGetValue(assetName, out sprite))
+            // a shared sheet and has to be cut out. Try one named sprite from this bundle
+            // first; walking the scene object is the fallback.
+            Sprite sprite = FindSpriteInBundle(ActiveBundle, assetName);
+            if (sprite != null)
             {
                 var cut = Crop(sprite);
                 if (cut != null) return cut;
@@ -2746,48 +3222,13 @@ private static Texture2D Crop(Sprite sprite)
 
         private static int Probed;
 
-        /// <summary>The bundle being read, so the sprite index can be cached against it.</summary>
+        /// <summary>The bundle being read by the art exporter.</summary>
         [ThreadStatic] private static AssetBundle ActiveBundle;
 
         /// <summary>Readable copies, so a shared atlas is only copied out once.</summary>
         private static readonly Dictionary<int, Texture2D> ReadBackCache =
             new Dictionary<int, Texture2D>();
 
-        /// <summary>
-        /// Every sprite in the bundle, keyed by name.
-        ///
-        /// Character poses are cut from per-character atlases and the sprites are named
-        /// after the poses, so one lookup per bundle replaces walking every scene object.
-        /// </summary>
-        private static Dictionary<string, Sprite> _index;
-        private static AssetBundle _indexBundle;
-
-        private static Dictionary<string, Sprite> SpriteIndex(AssetBundle bundle)
-        {
-            if (bundle == null) return null;
-            if (ReferenceEquals(_indexBundle, bundle) && _index != null) return _index;
-
-            var index = new Dictionary<string, Sprite>(StringComparer.OrdinalIgnoreCase);
-            try
-            {
-                foreach (var sprite in bundle.LoadAllAssets<Sprite>())
-                {
-                    if (sprite == null || string.IsNullOrEmpty(sprite.name)) continue;
-                    if (!index.ContainsKey(sprite.name)) index[sprite.name] = sprite;
-                }
-            }
-            catch (Exception e)
-            {
-                Log.LogWarning("[StoryAPI] Could not list sprites: " + e.Message);
-                return null;
-            }
-
-            _indexBundle = bundle;
-            _index = index;
-            Log.LogInfo("[StoryAPI] bundle '" + bundle.name + "' lists " +
-                        index.Count + " named sprite(s)");
-            return index;
-        }
 
         /// <summary>Gather every sprite and texture an object or its children reference.</summary>
         private static void CollectArt(GameObject go, HashSet<object> inspected,
@@ -2884,8 +3325,8 @@ private static Texture2D Crop(Sprite sprite)
         {
             if (texture == null || texture.isReadable) return texture;
 
-            // One copy per sheet: an atlas is shared by dozens of poses, and copying it
-            // out once per pose would make the export take far longer than it needs to.
+            // Keep one CPU-readable copy per source during a bundle export, so multiple
+            // prefabs that point at the same fallback texture do not recopy it each time.
             Texture2D cached;
             if (ReadBackCache.TryGetValue(texture.GetInstanceID(), out cached) && cached != null)
             {
@@ -2893,26 +3334,31 @@ private static Texture2D Crop(Sprite sprite)
             }
 
             var target = RenderTexture.GetTemporary(texture.width, texture.height, 0);
+            var previous = RenderTexture.active;
+            Texture2D copy = null;
             try
             {
                 Graphics.Blit(texture, target);
-                var previous = RenderTexture.active;
                 RenderTexture.active = target;
 
-                var copy = new Texture2D(texture.width, texture.height, TextureFormat.RGBA32, false);
+                copy = new Texture2D(texture.width, texture.height, TextureFormat.RGBA32, false);
                 copy.ReadPixels(new Rect(0, 0, texture.width, texture.height), 0, 0);
                 copy.Apply();
-
-                RenderTexture.active = previous;
                 ReadBackCache[texture.GetInstanceID()] = copy;
                 return copy;
             }
             catch (Exception)
             {
+                if (copy != null)
+                {
+                    try { UnityEngine.Object.Destroy(copy); }
+                    catch { /* already destroyed */ }
+                }
                 return null;
             }
             finally
             {
+                RenderTexture.active = previous;
                 RenderTexture.ReleaseTemporary(target);
             }
         }
@@ -3317,30 +3763,110 @@ private static Texture2D Crop(Sprite sprite)
         /// be written into every translation table the game has, otherwise it renders
         /// as "!MISSING" the moment the player is not running in English.
         /// </summary>
+        // Keep StoryAPI's lines independently of the game's translation providers. The
+        // providers are lazy: asking for every language during registration can instantiate
+        // all of the game's large translation dictionaries in one frame.
+        private static readonly Dictionary<string, Dictionary<int, string>> s_registeredModText =
+            new Dictionary<string, Dictionary<int, string>>(StringComparer.Ordinal);
+        private static Lines s_lastSyncedActiveTextStore;
+
+        /// <summary>
+        /// Register one line in the currently active text provider only. Do not enumerate
+        /// all shipped languages here: that forces Unity to construct every locale table
+        /// during startup and can make the managed heap grow by several gigabytes.
+        /// </summary>
         public static bool RegisterText(string label, int id, string text)
         {
             if (string.IsNullOrEmpty(label) || id <= 0 || text == null) return false;
 
-            int written = 0;
-            foreach (var store in TextStores())
+            Dictionary<int, string> modLines;
+            if (!s_registeredModText.TryGetValue(label, out modLines))
             {
-                try
+                modLines = new Dictionary<int, string>();
+                s_registeredModText.Add(label, modLines);
+            }
+            modLines[id] = text;
+
+            var store = GetActiveTextStore();
+            if (store == null) return false;
+
+            if (!TryWriteText(store, label, id, text)) return false;
+            s_lastSyncedActiveTextStore = store;
+            return true;
+        }
+
+        /// <summary>
+        /// Called each frame to detect a language change. When Renpy.Text points at a new
+        /// provider, copy StoryAPI's registered lines into that one provider only. This
+        /// preserves language switching without eagerly touching all 12 locale tables.
+        /// </summary>
+        public static void SyncRegisteredTextToCurrentLanguage()
+        {
+            if (s_registeredModText.Count == 0) return;
+
+            Lines store = null;
+            try { store = Renpy.Text as Lines; }
+            catch { /* Story runtime may be between scenes. */ }
+            if (store == null || object.ReferenceEquals(store, s_lastSyncedActiveTextStore)) return;
+
+            try
+            {
+                var dictionary = store.GetDictionary();
+                foreach (var labelPair in s_registeredModText)
                 {
-                    var dictionary = store.GetDictionary();
-                    if (!dictionary.TryGetValue(label, out var bucket))
+                    Dictionary<int, string> bucket;
+                    if (!dictionary.TryGetValue(labelPair.Key, out bucket) || bucket == null)
                     {
                         bucket = new Dictionary<int, string>();
-                        dictionary[label] = bucket;
+                        dictionary[labelPair.Key] = bucket;
                     }
-                    bucket[id] = text;
-                    written++;
+                    foreach (var line in labelPair.Value)
+                        bucket[line.Key] = line.Value;
                 }
-                catch (Exception e)
-                {
-                    Log.LogWarning("[StoryAPI] could not write text into one language table: " + e.Message);
-                }
+
+                s_lastSyncedActiveTextStore = store;
+                Log.LogInfo("[StoryAPI] synced " + s_registeredModText.Sum(p => p.Value.Count) +
+                            " mod text line(s) to the active language table.");
             }
-            return written > 0;
+            catch (Exception e)
+            {
+                Log.LogWarning("[StoryAPI] could not sync mod text to the active language table: " + e.Message);
+            }
+        }
+
+        private static Lines GetActiveTextStore()
+        {
+            try
+            {
+                var current = Renpy.Text as Lines;
+                if (current != null) return current;
+            }
+            catch { /* Fall back only if the active provider is not available yet. */ }
+
+            try { return Renpy.EnglishText as Lines; }
+            catch { return null; }
+        }
+
+        private static bool TryWriteText(Lines store, string label, int id, string text)
+        {
+            if (store == null) return false;
+            try
+            {
+                var dictionary = store.GetDictionary();
+                Dictionary<int, string> bucket;
+                if (!dictionary.TryGetValue(label, out bucket) || bucket == null)
+                {
+                    bucket = new Dictionary<int, string>();
+                    dictionary[label] = bucket;
+                }
+                bucket[id] = text;
+                return true;
+            }
+            catch (Exception e)
+            {
+                Log.LogWarning("[StoryAPI] could not write mod text to the active language table: " + e.Message);
+                return false;
+            }
         }
 
         /// <summary>Every language table currently loaded, English first.</summary>

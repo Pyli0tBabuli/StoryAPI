@@ -110,14 +110,16 @@ namespace StoryAPI.Scripting
                 return ParseLabelBody(name, line);
             }
 
+            if (MatchKeyword("define")) return ParseVariableDeclaration(false, line);
+            if (MatchKeyword("default")) return ParseVariableDeclaration(true, line);
             if (MatchKeyword("character")) return ParseCharacter();
             if (MatchKeyword("image")) return ParseImage();
             if (MatchKeyword("audio")) return ParseAudio();
-if (MatchKeyword("override")) return ParseOverride();
+            if (MatchKeyword("override")) return ParseOverride();
             if (MatchKeyword("hook")) return ParseHook();
 
             throw new ScriptSyntaxException(
-                "Only 'label', 'character', 'image', 'audio', 'override' and 'hook' may " +
+                "Only 'label', 'define', 'default', 'character', 'image', 'audio', 'override' and 'hook' may " +
                 "appear at the top level. Found '" + Describe(Current) + "'.", line);
         }
 
@@ -203,10 +205,16 @@ if (MatchKeyword("override")) return ParseOverride();
                     case "turn": return ParseTurn();
                     case "pose": return ParsePose();
                     case "layer": return ParseLayer();
+                    case "while": return ParseWhile();
+                    case "break": return ParseLoopControl(false);
+                    case "continue": return ParseLoopControl(true);
+                    case "pass": _index++; FinishLine(); return new PassStatement { Line = line };
                     case "if": return ParseIf();
                     case "menu": return ParseMenu();
                     case "python": return ParsePythonBlock();
-                    case "define": return ParseDefine();
+                    case "define":
+                    case "default":
+                        throw new ScriptSyntaxException("'define' and 'default' must be declared at the top level of a file.", line);
                     case "override": return ParseOverride();
                 }
             }
@@ -327,7 +335,12 @@ if (MatchKeyword("override")) return ParseOverride();
             if (Current.Type == TokenType.Number ||
                 (Current.Type == TokenType.Identifier && !IsShowOption(Current.Text)))
             {
-                statement.Variant = Advance().Text;
+                // Ren'Py image attributes may start with digits and continue with
+                // letters without whitespace, e.g. "show monika 2a". The lexer emits
+                // "2" and "a" as separate tokens, so join only when they were adjacent
+                // in the original source. A separated option such as "at left" remains
+                // a separate clause.
+                statement.Variant = ReadPosePart();
             }
 
             if (MatchIdentifier("as"))
@@ -535,6 +548,28 @@ if (MatchKeyword("override")) return ParseOverride();
             return new PauseStatement { Seconds = seconds, Line = line };
         }
 
+        private Statement ParseWhile()
+        {
+            int line = Current.Line;
+            _index++;   // while
+            string condition = ReadRestOfLine();
+            if (string.IsNullOrWhiteSpace(condition))
+                throw new ScriptSyntaxException("Expected a condition after 'while'.", line);
+            ExpectColon();
+
+            var statement = new WhileStatement { Condition = condition, Line = line };
+            statement.Body.AddRange(ParseBranchBody());
+            return statement;
+        }
+
+        private Statement ParseLoopControl(bool isContinue)
+        {
+            int line = Current.Line;
+            _index++;
+            FinishLine();
+            return new LoopControlStatement { IsContinue = isContinue, Line = line };
+        }
+
         private Statement ParseIf()
         {
             int line = Current.Line;
@@ -689,13 +724,98 @@ if (MatchKeyword("override")) return ParseOverride();
         // ----------------------------------------------------------- declarations
 
         /// <summary>
-        /// `define ...:` groups declarations, so it only makes sense at the top level of
-        /// a file. Inside a scene it is rejected rather than silently doing nothing.
+        /// Parse a Ren'Py-style define/default declaration. The current runtime does not
+        /// expose Ren'Py's full initialization/Python phase, so values are initialized
+        /// from scalar literals. The common Character("Name") form maps to StoryAPI's
+        /// own character registry.
         /// </summary>
-        private Statement ParseDefine()
+        private Statement ParseVariableDeclaration(bool isDefault, int line)
         {
-            throw new ScriptSyntaxException(
-                "'define' is only allowed at the top level of a file, not inside a scene.", Current.Line);
+            string name = ReadName("variable name");
+            ExpectEquals();
+
+            int expressionStart = _index;
+            string expression = ReadRestOfLine();
+            int expressionEnd = _index;
+            if (string.IsNullOrWhiteSpace(expression))
+                throw new ScriptSyntaxException("Expected an initializer after '='.", line);
+            FinishLine();
+
+            CharacterStatement character;
+            if (!isDefault && TryReadCharacterDefinition(expressionStart, expressionEnd, name, line, out character))
+                return character;
+
+            var declaration = new VariableDeclarationStatement
+            {
+                Name = name,
+                Expression = expression,
+                IsDefault = isDefault,
+                Line = line,
+            };
+
+            // Only simple literal initializers are evaluated during declaration loading.
+            bool oneToken = expressionEnd == expressionStart + 1;
+            if (oneToken)
+            {
+                Token token = _tokens[expressionStart];
+                if (token.Type == TokenType.String)
+                {
+                    declaration.HasLiteral = true;
+                    declaration.LiteralValue = token.Text;
+                }
+                else if (token.Type == TokenType.Number)
+                {
+                    string numberText = expression.Trim();
+                    bool isInteger = numberText.IndexOf('.') < 0 && numberText.IndexOf('e') < 0 &&
+                        numberText.IndexOf('E') < 0;
+                    int integer;
+                    double number;
+                    if (isInteger && int.TryParse(numberText, NumberStyles.Integer,
+                        CultureInfo.InvariantCulture, out integer))
+                    {
+                        declaration.HasLiteral = true;
+                        declaration.LiteralValue = integer;
+                    }
+                    else if (double.TryParse(numberText, NumberStyles.Float,
+                        CultureInfo.InvariantCulture, out number))
+                    {
+                        declaration.HasLiteral = true;
+                        declaration.LiteralValue = number;
+                    }
+                }
+                else if (token.Type == TokenType.Keyword && token.Text == "True")
+                {
+                    declaration.HasLiteral = true;
+                    declaration.LiteralValue = true;
+                }
+                else if (token.Type == TokenType.Keyword && token.Text == "False")
+                {
+                    declaration.HasLiteral = true;
+                    declaration.LiteralValue = false;
+                }
+            }
+
+            return declaration;
+        }
+
+        private bool TryReadCharacterDefinition(int start, int end, string tag, int line,
+            out CharacterStatement character)
+        {
+            character = null;
+            // The supported subset is exactly Character("Display name").
+            if (end - start != 4) return false;
+            if (_tokens[start].Text != "Character" || _tokens[start + 1].Text != "(" ||
+                _tokens[start + 2].Type != TokenType.String || _tokens[start + 3].Text != ")")
+                return false;
+
+            character = new CharacterStatement
+            {
+                Tag = tag,
+                DisplayName = _tokens[start + 2].Text,
+                Image = tag,
+                Line = line,
+            };
+            return true;
         }
 
         /// <summary>
@@ -798,10 +918,29 @@ bool hasX = false;
                 (Current.Type == TokenType.Identifier && !IsShowOption(Current.Text) &&
                  !IsAnimationOption(Current.Text)))
             {
-                return first + " " + Advance().Text;
+                return first + " " + ReadPosePart();
             }
 
             return first;
+        }
+
+        /// <summary>
+        /// Reads one pose/image attribute. In shipped DDLC scripts, attributes such as
+        /// "2a" and "1f" contain digits followed immediately by letters. The lexer splits
+        /// those into separate tokens; rejoin them only if there was no whitespace in the
+        /// original source, so a numeric attribute like "1" followed by an option is safe.
+        /// </summary>
+        private string ReadPosePart()
+        {
+            Token first = Advance();
+            if (first.Type == TokenType.Number &&
+                (Current.Type == TokenType.Identifier || Current.Type == TokenType.Keyword) &&
+                first.Start + first.Length == Current.Start)
+            {
+                return first.Text + Advance().Text;
+            }
+
+            return first.Text;
         }
 
         /// <summary>
@@ -821,6 +960,51 @@ bool hasX = false;
             }
 
             return ReadName(what);
+        }
+
+        /// <summary>
+        /// Reads the rest of a layer command as one art/resource name.
+        /// Game asset names can contain spaces and digits, for example "monika 5a".
+        /// The lexer splits those names into multiple tokens, so consuming only one token
+        /// leaves a stray number at the end of the line. Since the asset is the final
+        /// argument of a layer command, the remaining source text belongs to that name.
+        /// </summary>
+        private string ReadRemainingArtName(string what)
+        {
+            if (Current.Type == TokenType.Newline || Current.Type == TokenType.EndOfFile ||
+                Current.Type == TokenType.Dedent)
+            {
+                throw new ScriptSyntaxException("Expected " + what + ".", Current.Line);
+            }
+
+            int firstIndex = _index;
+            int endIndex = firstIndex;
+            while (endIndex < _tokens.Count &&
+                   _tokens[endIndex].Type != TokenType.Newline &&
+                   _tokens[endIndex].Type != TokenType.EndOfFile &&
+                   _tokens[endIndex].Type != TokenType.Dedent)
+            {
+                endIndex++;
+            }
+
+            if (endIndex == firstIndex)
+                throw new ScriptSyntaxException("Expected " + what + ".", Current.Line);
+
+            // Quoted names should be returned without their quotes and with escapes decoded.
+            if (endIndex == firstIndex + 1 && _tokens[firstIndex].Type == TokenType.String)
+            {
+                string quoted = _tokens[firstIndex].Text;
+                _index = endIndex;
+                return quoted;
+            }
+
+            Token first = _tokens[firstIndex];
+            Token last = _tokens[endIndex - 1];
+            int start = first.Start;
+            int end = last.Start + last.Length;
+            string name = _source.Substring(start, end - start).Trim();
+            _index = endIndex;
+            return name;
         }
 
         private Statement ParsePose()
@@ -847,7 +1031,9 @@ bool hasX = false;
 
             var statement = new LayerStatement { Pose = ReadPoseName("pose name"), Line = line };
             statement.Layer = ReadArtName("layer name, for example an eye or mouth layer");
-            statement.Asset = ReadArtName("the name of the art to show there instead");
+            // The replacement asset is the final argument and can itself contain spaces
+            // and digits (for example: layer monika 1 a monika 5a).
+            statement.Asset = ReadRemainingArtName("the name of the art to show there instead");
 
             FinishLine();
             return statement;

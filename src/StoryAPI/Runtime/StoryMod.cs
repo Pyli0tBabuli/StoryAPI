@@ -31,6 +31,7 @@ namespace StoryAPI.Runtime
 
         private readonly List<OverrideStatement> _overrides = new List<OverrideStatement>();
         private readonly List<CharacterStatement> _characters = new List<CharacterStatement>();
+        private readonly List<VariableDeclarationStatement> _variables = new List<VariableDeclarationStatement>();
         private readonly List<LabelStatement> _labelStatements = new List<LabelStatement>();
         private readonly List<StoryAPI.Scripting.HookStatement> _hookStatements = new List<StoryAPI.Scripting.HookStatement>();
 
@@ -50,8 +51,12 @@ namespace StoryAPI.Runtime
             Warnings.Clear();
             _overrides.Clear();
             _characters.Clear();
+            _variables.Clear();
+            _images.Clear();
+            _audio.Clear();
             _labelStatements.Clear();
             _hookStatements.Clear();
+            _compiledLabels.Clear();
 
             string[] files;
             try
@@ -157,6 +162,10 @@ namespace StoryAPI.Runtime
                 case ImageStatement image: _images.Add(image); break;
                 case AudioStatement audio: _audio.Add(audio); break;
                 case CharacterStatement character: _characters.Add(character); break;
+                case VariableDeclarationStatement variable:
+                    variable.SourcePath = _currentFile;
+                    _variables.Add(variable);
+                    break;
                 case OverrideStatement replace: _overrides.Add(replace); break;
                 case GroupStatement group:
                     foreach (var inner in group.Body) Collect(inner);
@@ -218,9 +227,10 @@ namespace StoryAPI.Runtime
                 return false;
             }
 
-RegisterCharacters();
+            RegisterVariables();
+            RegisterCharacters();
 
-int registered = 0;
+            int registered = 0;
             int writtenText = 0;
             foreach (var pair in _compiledLabels)
             {
@@ -321,6 +331,28 @@ int registered = 0;
             catch (Exception e)
             {
                 Debug.LogWarning("[StoryAPI] '" + Name + "' could not be fully unloaded: " + e.Message);
+            }
+        }
+
+        private void RegisterVariables()
+        {
+            foreach (var variable in _variables)
+            {
+                if (!variable.HasLiteral)
+                {
+                    Warnings.Add(Relative(variable.SourcePath) + ":" + variable.Line +
+                        ": " + (variable.IsDefault ? "default" : "define") + " '" + variable.Name +
+                        "' uses an initializer not supported yet by StoryAPI: " + variable.Expression +
+                        ". Use a quoted string, number, True or False. Arbitrary Python expressions and " +
+                        "containers are not evaluated during declaration loading.");
+                    continue;
+                }
+
+                if (!GameBridge.TrySetVariableLiteral(variable.Name, variable.LiteralValue, variable.IsDefault))
+                {
+                    Warnings.Add(Relative(variable.SourcePath) + ":" + variable.Line +
+                        ": could not initialize variable '" + variable.Name + "'.");
+                }
             }
         }
 

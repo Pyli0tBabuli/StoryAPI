@@ -121,6 +121,21 @@ namespace StoryAPI.Scripting
         public string Code { get; set; }
     }
 
+    /// <summary>
+    /// A top-level define/default declaration. StoryAPI currently initializes scalar
+    /// literals only; arbitrary Python expressions are retained so the loader can report
+    /// an actionable warning rather than silently assigning a wrong value.
+    /// </summary>
+    public sealed class VariableDeclarationStatement : Statement
+    {
+        public string Name { get; set; }
+        public string Expression { get; set; }
+        public bool IsDefault { get; set; }
+        public bool HasLiteral { get; set; }
+        public object LiteralValue { get; set; }
+        public string SourcePath { get; set; }
+    }
+
     /// <summary>Registers a new speaker so it can be used as a dialogue tag.</summary>
     /// <summary>Slides a sprite to a new spot over time.</summary>
     /// <summary>
@@ -283,4 +298,23 @@ namespace StoryAPI.Scripting
     {
         public List<Statement> Body { get; } = new List<Statement>();
     }
+
+    /// <summary>A Ren'Py-style while loop, compiled to conditional and backward jumps.</summary>
+    public sealed class WhileStatement : Statement
+    {
+        public string Condition { get; set; }
+        public List<Statement> Body { get; } = new List<Statement>();
+    }
+
+    /// <summary>Loop control. It is an error to use it outside a while loop.</summary>
+    public sealed class LoopControlStatement : Statement
+    {
+        public bool IsContinue { get; set; }
+    }
+
+    /// <summary>An intentionally empty statement.</summary>
+    public sealed class PassStatement : Statement
+    {
+    }
+
 }

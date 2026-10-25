@@ -3990,5 +3990,119 @@ namespace StoryAPI.Game
                 Log.LogWarning("[StoryAPI] SetVariable('" + name + "') failed: " + e.Message);
             }
         }
+
+        /// <summary>
+        /// Initialize a scalar script variable. Reflection bridges primitive C# values to
+        /// the game's DataValue wrapper, whose conversion operators can vary between builds.
+        /// If defaultOnly is true, an existing variable is never overwritten.
+        /// </summary>
+        public static bool TrySetVariableLiteral(string name, object literal, bool defaultOnly)
+        {
+            if (string.IsNullOrEmpty(name) || Context == null) return false;
+            if (defaultOnly && TryGetVariable(name, out DataValue _)) return true;
+
+            DataValue value;
+            if (!TryConvertDataValue(literal, out value)) return false;
+            SetVariable(name, value);
+            return true;
+        }
+
+        private static bool TryConvertDataValue(object source, out DataValue value)
+        {
+            value = default(DataValue);
+            Type targetType = typeof(DataValue);
+            Type sourceType = source == null ? typeof(string) : source.GetType();
+
+            // Prefer an implicit conversion supplied by the game, then try a public
+            // one-argument constructor for builds that expose it instead.
+            foreach (Type declaringType in new[] { targetType, sourceType }.Distinct())
+            {
+                foreach (MethodInfo method in declaringType.GetMethods(Static))
+                {
+                    if (method.Name != "op_Implicit" || !targetType.IsAssignableFrom(method.ReturnType)) continue;
+                    var parameters = method.GetParameters();
+                    if (parameters.Length != 1) continue;
+                    object argument;
+                    if (!TryPrepareDataValueArgument(source, parameters[0].ParameterType, out argument)) continue;
+                    try
+                    {
+                        value = (DataValue)method.Invoke(null, new[] { argument });
+                        return true;
+                    }
+                    catch { /* Try another conversion. */ }
+                }
+            }
+
+            foreach (ConstructorInfo constructor in targetType.GetConstructors(Instance))
+            {
+                var parameters = constructor.GetParameters();
+                if (parameters.Length != 1) continue;
+                object argument;
+                if (!TryPrepareDataValueArgument(source, parameters[0].ParameterType, out argument)) continue;
+                try
+                {
+                    value = (DataValue)constructor.Invoke(new[] { argument });
+                    return true;
+                }
+                catch { /* This constructor is not compatible. */ }
+            }
+
+            Log.LogWarning("[StoryAPI] This DDLC+ build cannot convert a " + sourceType.Name +
+                " literal to a Ren'Py variable value.");
+            return false;
+        }
+
+        private static bool TryPrepareDataValueArgument(object source, Type parameterType, out object argument)
+        {
+            argument = null;
+            Type nullableType = Nullable.GetUnderlyingType(parameterType);
+            Type effectiveType = nullableType ?? parameterType;
+            if (source == null)
+                return !parameterType.IsValueType || nullableType != null;
+
+            if (parameterType.IsInstanceOfType(source) || effectiveType.IsInstanceOfType(source))
+            {
+                argument = source;
+                return true;
+            }
+
+            Type sourceType = source.GetType();
+            if (!IsNumericLiteralType(sourceType) || !IsNumericLiteralType(effectiveType)) return false;
+            bool sourceIsIntegral = sourceType != typeof(float) && sourceType != typeof(double) && sourceType != typeof(decimal);
+            bool targetIsIntegral = effectiveType != typeof(float) && effectiveType != typeof(double) && effectiveType != typeof(decimal);
+            if (!sourceIsIntegral && targetIsIntegral) return false;
+
+            try
+            {
+                argument = Convert.ChangeType(source, effectiveType, System.Globalization.CultureInfo.InvariantCulture);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool IsNumericLiteralType(Type type)
+        {
+            switch (Type.GetTypeCode(type))
+            {
+                case TypeCode.Byte:
+                case TypeCode.SByte:
+                case TypeCode.Int16:
+                case TypeCode.UInt16:
+                case TypeCode.Int32:
+                case TypeCode.UInt32:
+                case TypeCode.Int64:
+                case TypeCode.UInt64:
+                case TypeCode.Single:
+                case TypeCode.Double:
+                case TypeCode.Decimal:
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
     }
 }

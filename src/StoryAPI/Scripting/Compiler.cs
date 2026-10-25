@@ -302,6 +302,21 @@ namespace StoryAPI.Scripting
                 return;
             }
 
+            // In DDLC+, character poses such as "monika 1a" are generated prefabs,
+            // not ordinary named Sprite assets. When a named transform follows "at",
+            // do not route these through NativeSpriteLine("monika", ...): that asks
+            // the game for a single sprite called "monika" and fails. Hand the complete
+            // pose name to the prefab renderer instead.
+            if (!string.IsNullOrEmpty(variant))
+            {
+                string poseName = image + " " + variant;
+                if (BaseSprites.IsPose(poseName))
+                {
+                    _out.Add(new PoseLine(poseName, statement.At, statement.ZOrder ?? 1));
+                    return;
+                }
+            }
+
             // A named transform on art the game owns is read and applied by the mod,
             // because the game's own animation runner does not run in a mod label. Plain
             // position words are left to the game as before.

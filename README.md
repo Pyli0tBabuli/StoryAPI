@@ -141,7 +141,8 @@ transitions can be used by name:
 ```
 label my_scene:
     scene bg club_day with Dissolve(0.5)   # a shipped background, with a transition
-    show monika 2a at left                 # a shipped character pose with a digit-letter attribute
+    show monika 1a at f33                # a shipped prefab pose using a named transform
+    show monika 2a at left                # a shipped character pose with a digit-letter attribute
     pose monika 1 at right                 # the same pose, but under the mod's control
     # layer monika 1 <layer-name> <sprite-asset-name>
     # Use a real single-sprite name from the generated pose reference; `monika 5a`

@@ -163,6 +163,57 @@ namespace StoryAPI.Runtime
                 var instance = ArtInjector.Hosted(name);
                 if (instance == null) return null;
 
+                // A named "at transform" such as f33 must be run by StoryAPI inside a
+                // mod label; DDLC+'s own transform runner is not active there. Apply the
+                // transform to the prefab root so the body, eyes, mouth, and other layers
+                // move together as one character pose.
+                if (!string.IsNullOrEmpty(at) && !IsScreenPosition(at))
+                {
+                    GameBridge.TransformAnimation animation;
+                    if (GameBridge.TryGetTransformAnimation(at, out animation))
+                    {
+                        int width = 0;
+                        int height = 0;
+                        Bounds bounds = new Bounds();
+                        bool hasBounds = false;
+
+                        foreach (var renderer in instance.GetComponentsInChildren<SpriteRenderer>(true))
+                        {
+                            if (renderer == null || renderer.sprite == null) continue;
+                            if (!hasBounds)
+                            {
+                                bounds = renderer.bounds;
+                                hasBounds = true;
+                            }
+                            else
+                            {
+                                bounds.Encapsulate(renderer.bounds);
+                            }
+                        }
+
+                        if (hasBounds)
+                        {
+                            width = Mathf.Max(1, Mathf.RoundToInt(bounds.size.x));
+                            height = Mathf.Max(1, Mathf.RoundToInt(bounds.size.y));
+                        }
+
+                        if (width > 0 && height > 0)
+                        {
+                            AtlScheduler.Start(image, instance.transform, width, height, animation);
+                        }
+                        else
+                        {
+                            Log.Warn("pose: could not determine the size of '" + name +
+                                     "' to apply transform '" + at + "'");
+                        }
+                    }
+                    else
+                    {
+                        Log.Warn("pose: the game has no transform called '" + at +
+                                 "'; showing '" + name + "' at its default position");
+                    }
+                }
+
                 // The root keeps the name the game gave it. For a single layer pose the
                 // renderer sits on the root, so renaming it would rename the layer too and
                 // leave the author with a name they could never have guessed.
@@ -188,6 +239,13 @@ namespace StoryAPI.Runtime
                 Log.Error("Could not build pose '" + name + "': " + e.Message);
                 return null;
             }
+        }
+
+        private static bool IsScreenPosition(string at)
+        {
+            return at == "left" || at == "center" || at == "right" ||
+                   at == "truecenter" || at == "offscreenleft" ||
+                   at == "offscreenright" || at == "true_left" || at == "true_right";
         }
 
         /// <summary>Swap a layer of a held pose for other art from the game.</summary>

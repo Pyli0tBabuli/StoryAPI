@@ -114,7 +114,7 @@ label my_farewell:
 StoryAPI supports a limited subset of Ren'Py variable declarations and loop statements:
 
 ```renpy
-define monokuma = Character("Monokuma")
+define june = Character("June")
 define starting_points = 3
 default points = 0
 default has_key = False

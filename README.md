@@ -109,6 +109,30 @@ label my_farewell:
     return
 ```
 
+### Variable declarations and loop control
+
+StoryAPI supports a limited subset of Ren'Py variable declarations and loop statements:
+
+```renpy
+define june = Character("June")
+define starting_points = 3
+default points = 0
+default has_key = False
+
+label example:
+    $ points += 1
+    while points < 3:
+        $ points += 1
+    return
+```
+
+The supported scalar initializers are quoted strings, numbers, `True`, and `False`. The
+common `define name = Character("Display name")` form registers a StoryAPI speaker.
+`default` leaves an existing game variable unchanged. Arbitrary initializer expressions,
+container literals, Python class instances, and the full Ren'Py initialization phase are
+not implemented. Within a label, `while`, `break`, `continue`, and `pass` are supported.
+A loop must eventually change its condition or break; infinite loops can stall the game.
+
 ### The base game's own scenes
 
 A mod does not have to bring its own pictures. The base game's backgrounds, poses and
@@ -117,9 +141,11 @@ transitions can be used by name:
 ```
 label my_scene:
     scene bg club_day with Dissolve(0.5)   # a shipped background, with a transition
-    show monika 1 at left                  # a shipped character, in a shipped pose
+    show monika 2a at left                 # a shipped character pose with a digit-letter attribute
     pose monika 1 at right                 # the same pose, but under the mod's control
-    layer monika 1 a monika 5a             # swap one layer of the pose
+    # layer monika 1 <layer-name> <sprite-asset-name>
+    # Use a real single-sprite name from the generated pose reference; `monika 5a`
+    # is a complete pose name, not a single sprite that can replace one layer.
     show s_kill as the_kill at center      # a shipped cut scene, filed under a name
     return
 ```
@@ -155,7 +181,7 @@ statements after it, so the transition into the mod's part is the game's own.
 | `show name [pose] [as alias] [at left|center|right] [zorder N]` | Put a sprite on screen. |
 | `hide name` | Take a sprite off screen. |
 | `pose name [at left|center|right]` | Show a base-game pose, but let the mod move it. |
-| `layer pose layer asset` | Swap one layer of a pose for other art. |
+| `layer pose layer asset` | Swap one layer using an individual sprite asset name, not a complete pose name. Use the sprite names in the generated pose reference. |
 | `play [music|sound] name [fadein S] [fadeout S] [loop|noloop]` | Start a track. |
 | `stop [music|sound]` | Stop a channel. |
 | `jump label` | Go to another label. |

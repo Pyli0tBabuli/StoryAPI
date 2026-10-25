@@ -57,6 +57,13 @@ namespace StoryAPI.Scripting
         private readonly List<Line> _out = new List<Line>();
         private readonly HashSet<string> _speakers = new HashSet<string>(StringComparer.Ordinal);
 
+        private sealed class LoopContext
+        {
+            public int Start;
+            public readonly List<RenpyGoToLine> Breaks = new List<RenpyGoToLine>();
+        }
+        private readonly Stack<LoopContext> _loops = new Stack<LoopContext>();
+
         private string _textLabel;
         private int _nextTextId = 1;
 
@@ -72,6 +79,7 @@ namespace StoryAPI.Scripting
         {
             _textLabel = label.Name;
             _out.Clear();
+            _loops.Clear();
 
             try
             {
@@ -105,6 +113,7 @@ namespace StoryAPI.Scripting
         {
             _textLabel = hook.Block;
             _out.Clear();
+            _loops.Clear();
 
             try
             {
@@ -154,6 +163,9 @@ namespace StoryAPI.Scripting
                 case LayerStatement layer: EmitLayer(layer); break;
                 case PythonStatement python: _out.Add(new RenpyOneLinePython("$ " + python.Code)); break;
                 case IfStatement branch: EmitIf(branch); break;
+                case WhileStatement loop: EmitWhile(loop); break;
+                case LoopControlStatement control: EmitLoopControl(control); break;
+                case PassStatement _: break;
                 case MenuStatement menu: EmitMenu(menu); break;
                 case GroupStatement group: EmitBody(group.Body); break;
 
@@ -507,6 +519,47 @@ namespace StoryAPI.Scripting
         {
             _out.Add(new RenpyGoToLineUnless(condition, -1));
             return _out.Count - 1;
+        }
+
+        private void EmitWhile(WhileStatement statement)
+        {
+            int start = _out.Count;
+            int guard = EmitUnless(statement.Condition);
+            var loop = new LoopContext { Start = start };
+            _loops.Push(loop);
+            try
+            {
+                EmitBody(statement.Body);
+            }
+            finally
+            {
+                _loops.Pop();
+            }
+
+            _out.Add(new RenpyGoToLine(start));
+            int end = _out.Count;
+            PatchUnless(statement.Condition, guard, end);
+            foreach (var jump in loop.Breaks) jump.targetLine = end;
+            _out.Add(new RenpyNOP());
+        }
+
+        private void EmitLoopControl(LoopControlStatement statement)
+        {
+            if (_loops.Count == 0)
+                throw new InvalidOperationException("'" + (statement.IsContinue ? "continue" : "break") +
+                    "' is only valid inside a while loop (line " + statement.Line + ").");
+
+            var loop = _loops.Peek();
+            if (statement.IsContinue)
+            {
+                _out.Add(new RenpyGoToLine(loop.Start));
+            }
+            else
+            {
+                var jump = new RenpyGoToLine(-1);
+                _out.Add(jump);
+                loop.Breaks.Add(jump);
+            }
         }
 
         private void PatchUnless(string condition, int index, int target)

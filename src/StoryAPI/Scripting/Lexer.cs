@@ -61,7 +61,8 @@ namespace StoryAPI.Scripting
         {
             "label", "scene", "show", "hide", "with", "play", "stop", "queue",
             "jump", "call", "return", "menu", "if", "elif", "else", "otherwise",
-            "python", "define", "character", "image", "audio", "override",
+            "while", "break", "continue", "python", "define", "default",
+            "character", "image", "audio", "override",
             "pause", "move", "zoom", "fade", "turn", "pose", "layer", "hook",
             "and", "or", "not", "True", "False", "None", "pass",
         };

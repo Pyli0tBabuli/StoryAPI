@@ -156,6 +156,10 @@ namespace StoryAPI.Runtime
                 }
 
                 instance.transform.SetParent(image.Object.transform, worldPositionStays: false);
+                // Some generated character prefabs are saved inactive in the asset bundle.
+                // The game normally activates them as part of its own Show pipeline, but
+                // StoryAPI hosts the prefab directly, so it must explicitly enable the root.
+                instance.SetActive(true);
 
                 Remember(container, instance.transform, image, new SavedArt
                 {

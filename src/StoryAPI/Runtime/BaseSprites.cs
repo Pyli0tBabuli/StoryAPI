@@ -150,12 +150,28 @@ namespace StoryAPI.Runtime
 
             try
             {
-                var show = new Show(string.Empty);
-                show.ImageName = name;
-                show.Variant = string.Empty;
+                // A character pose is stored under a combined name such as
+                // "monika 2a", but RenPy's Show instruction expects ImageName and Variant
+                // separately. Passing the whole pose as ImageName creates a display slot
+                // that exists but does not resolve/render the base game's character image.
+                int separator = name.IndexOf(' ');
+                string imageName = separator > 0 ? name.Substring(0, separator) : name;
+                string variant = separator > 0 ? name.Substring(separator + 1) : string.Empty;
+
+                var show = new Show("show " + name);
+                show.ImageName = imageName;
+                show.Variant = variant;
                 show.Layer = "master";
                 show.ZOrder = zOrder;
                 show.HasZOrder = true;
+
+                // Keep a distinct slot key for the complete pose so StoryAPI's
+                // move/zoom/fade/layer helpers can refer to "monika 2a".
+                if (separator > 0)
+                {
+                    show.As = name;
+                    show.HasSynonym = true;
+                }
 
                 var image = ArtInjector.Host(prefab, name, show, x);
                 if (image == null || image.Object == null) return null;

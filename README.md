@@ -141,7 +141,7 @@ transitions can be used by name:
 ```
 label my_scene:
     scene bg club_day with Dissolve(0.5)   # a shipped background, with a transition
-    show monika 1a at f33                # a shipped prefab pose using a named transform
+    show monika 1a at center             # a shipped prefab pose in the center
     show monika 2a at left                # a shipped character pose with a digit-letter attribute
     pose monika 1 at right                 # the same pose, but under the mod's control
     # layer monika 1 <layer-name> <sprite-asset-name>
@@ -150,6 +150,11 @@ label my_scene:
     show s_kill as the_kill at center      # a shipped cut scene, filed under a name
     return
 ```
+
+A plain position such as `left`, `center` or `right` does not need a named transform.
+A name after `at` (for example `f33`) is treated as a transform block and must exist in the
+loaded DDLC+ script block table; StoryAPI reports a warning if it cannot find one. Names
+from another Ren'Py project are not guaranteed to exist in DDLC+.
 
 ### Hooking into the base game
 

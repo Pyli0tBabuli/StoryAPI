@@ -830,7 +830,8 @@ namespace StoryAPI.Scripting
                     return false;
                 }
 
-                if ((token.Type == TokenType.Identifier || token.Type == TokenType.Keyword) &&
+                if ((token.Type == TokenType.Identifier ||
+                     (token.Type == TokenType.Keyword && token.Text != "not")) &&
                     i + 1 < end && _tokens[i + 1].Text == "(")
                 {
                     return false;

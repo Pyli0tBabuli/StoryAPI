@@ -19,7 +19,7 @@ music channel.
 
 ## Status
 
-Version 0.1.0, tested on the PC (Epic Games Store) release of DDLC+ in October 2026.
+Version 0.1.1, tested on the PC (Epic Games Store) release of DDLC+ in October 2026.
 Story mods are still an early feature: back up your saves and expect rough edges.
 
 ## Install

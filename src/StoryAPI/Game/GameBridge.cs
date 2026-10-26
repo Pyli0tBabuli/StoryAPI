@@ -3981,13 +3981,89 @@ namespace StoryAPI.Game
         {
             var context = Context;
             if (context == null || string.IsNullOrEmpty(name)) return;
+            TrySetContextVariable(context, name, value);
+        }
+
+        /// <summary>
+        /// Calls the SetVariable overload exposed by the installed DDLC+ assemblies.
+        /// Some game builds expose SetVariable(name, value, flag), while others expose
+        /// SetVariable(name, value). Reflection keeps StoryAPI source-compatible with both.
+        /// The three-argument form is preferred to preserve the original false flag.
+        /// </summary>
+        private static bool TrySetContextVariable(IContext context, string name, DataValue value)
+        {
+            if (context == null) return false;
+
+            var candidateTypes = new[] { typeof(IContext), context.GetType() };
+            MethodInfo selected = null;
+
+            // Prefer the three-argument form where it exists.
+            foreach (Type candidateType in candidateTypes)
+            {
+                foreach (MethodInfo method in candidateType.GetMethods(Instance))
+                {
+                    if (method.Name != "SetVariable" &&
+                        !method.Name.EndsWith(".SetVariable", StringComparison.Ordinal))
+                        continue;
+
+                    var parameters = method.GetParameters();
+                    if (parameters.Length != 3) continue;
+                    if (parameters[0].ParameterType != typeof(string) ||
+                        parameters[1].ParameterType != typeof(DataValue) ||
+                        parameters[2].ParameterType != typeof(bool))
+                        continue;
+
+                    selected = method;
+                    break;
+                }
+                if (selected != null) break;
+            }
+
+            // Older/newer builds may expose only the two-argument form.
+            if (selected == null)
+            {
+                foreach (Type candidateType in candidateTypes)
+                {
+                    foreach (MethodInfo method in candidateType.GetMethods(Instance))
+                    {
+                        if (method.Name != "SetVariable" &&
+                            !method.Name.EndsWith(".SetVariable", StringComparison.Ordinal))
+                            continue;
+
+                        var parameters = method.GetParameters();
+                        if (parameters.Length != 2) continue;
+                        if (parameters[0].ParameterType != typeof(string) ||
+                            parameters[1].ParameterType != typeof(DataValue))
+                            continue;
+
+                        selected = method;
+                        break;
+                    }
+                    if (selected != null) break;
+                }
+            }
+
+            if (selected == null)
+            {
+                Log.LogWarning("[StoryAPI] No compatible SetVariable overload was found on " +
+                    context.GetType().FullName + ".");
+                return false;
+            }
+
             try
             {
-                context.SetVariable(name, value, false);
+                object[] arguments = selected.GetParameters().Length == 3
+                    ? new object[] { name, value, false }
+                    : new object[] { name, value };
+
+                selected.Invoke(context, arguments);
+                return true;
             }
             catch (Exception e)
             {
-                Log.LogWarning("[StoryAPI] SetVariable('" + name + "') failed: " + e.Message);
+                Log.LogWarning("[StoryAPI] SetVariable('" + name + "') failed: " +
+                    e.GetBaseException().Message);
+                return false;
             }
         }
 
@@ -4016,16 +4092,7 @@ namespace StoryAPI.Game
 
             DataValue value;
             if (!TryConvertDataValue(literal, out value)) return false;
-            try
-            {
-                context.SetVariable(name, value, false);
-                return true;
-            }
-            catch (Exception e)
-            {
-                Log.LogWarning("[StoryAPI] SetVariable('" + name + "') failed: " + e.Message);
-                return false;
-            }
+            return TrySetContextVariable(context, name, value);
         }
 
         private static bool TryConvertDataValue(object source, out DataValue value)

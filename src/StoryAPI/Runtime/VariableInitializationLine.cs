@@ -112,17 +112,12 @@ namespace StoryAPI.Runtime
 
             try
             {
-                // Reuse the same instruction DDLC+ executes for a normal `$ name = expr`.
-                // This keeps expression semantics in the game's own runtime, not a second evaluator.
-                var assignment = new RenpyOneLinePython("$ " + _name + " = " + _expression);
-                var apply = assignment as IApply;
-                if (apply == null)
+                if (!GameBridge.TrySetVariableExpression(_name, _expression, context))
                 {
-                    Fail("the game's one-line expression instruction does not expose IApply");
+                    Fail("DDLC+'s expression engine could not evaluate or assign the value");
                     return;
                 }
 
-                apply.Apply(context);
                 _state.Initialized = true;
                 Log.Info("Evaluated " + (_isDefault ? "default" : "define") +
                          " expression for variable '" + _name + "' at first mod-label entry.");

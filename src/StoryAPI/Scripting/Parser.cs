@@ -816,25 +816,56 @@ namespace StoryAPI.Scripting
             {
                 Token token = _tokens[i];
 
-                if (token.Type != TokenType.String &&
-                    (token.Text == "[" || token.Text == "]" ||
-                     token.Text == "{" || token.Text == "}" ||
-                     token.Text == "," || token.Text == ";"))
+                if (token.Type == TokenType.String || token.Type == TokenType.Number)
+                    continue;
+
+                if (token.Type == TokenType.Keyword)
                 {
+                    if (token.Text == "True" || token.Text == "False" || token.Text == "None" ||
+                        token.Text == "and" || token.Text == "or" || token.Text == "not")
+                        continue;
+
                     return false;
                 }
 
-                if (token.Type != TokenType.String && token.Text == "." &&
-                    (i == start || _tokens[i - 1].Type != TokenType.Number))
-                {
+                if (token.Type != TokenType.Identifier)
                     return false;
+
+                // Ordinary variable names are allowed, but function calls are not.
+                if (token.Text.Length > 0 &&
+                    (char.IsLetter(token.Text[0]) || token.Text[0] == '_'))
+                {
+                    if (i + 1 < end && _tokens[i + 1].Text == "(")
+                        return false;
+                    continue;
                 }
 
-                if ((token.Type == TokenType.Identifier ||
-                     (token.Type == TokenType.Keyword && token.Text != "not")) &&
-                    i + 1 < end && _tokens[i + 1].Text == "(")
-                {
+                // Only scalar arithmetic, comparison and grouping operators are allowed.
+                if (token.Text != "(" && token.Text != ")" &&
+                    token.Text != "+" && token.Text != "-" &&
+                    token.Text != "*" && token.Text != "/" &&
+                    token.Text != "%" && token.Text != "<" &&
+                    token.Text != ">" && token.Text != "=" &&
+                    token.Text != "!")
                     return false;
+
+                if (token.Text == "!")
+                {
+                    if (i + 1 >= end || _tokens[i + 1].Text != "=" ||
+                        token.Start + token.Length != _tokens[i + 1].Start)
+                        return false;
+                }
+
+                if (token.Text == "=")
+                {
+                    bool joinedToPrevious = i > start &&
+                        token.Start == _tokens[i - 1].Start + _tokens[i - 1].Length &&
+                        (_tokens[i - 1].Text == "=" || _tokens[i - 1].Text == "<" ||
+                         _tokens[i - 1].Text == ">" || _tokens[i - 1].Text == "!");
+                    bool joinedToNext = i + 1 < end &&
+                        token.Start + token.Length == _tokens[i + 1].Start &&
+                        _tokens[i + 1].Text == "=";
+                    if (!joinedToPrevious && !joinedToNext) return false;
                 }
             }
 

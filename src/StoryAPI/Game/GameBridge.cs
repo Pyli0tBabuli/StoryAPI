@@ -4140,6 +4140,129 @@ namespace StoryAPI.Game
             return false;
         }
 
+        /// <summary>
+        /// Evaluate a supported scalar expression using DDLC+'s own expression compiler and
+        /// write the resulting value into the live script context.
+        /// </summary>
+        public static bool TrySetVariableExpression(string name, string expression, IContext activeContext)
+        {
+            IContext context = activeContext ?? Context;
+            if (string.IsNullOrEmpty(name) || string.IsNullOrWhiteSpace(expression) || context == null)
+                return false;
+
+            object evaluated;
+            if (!TryEvaluateCompiledExpression(expression, context, out evaluated))
+                return false;
+
+            DataValue value;
+            if (evaluated is DataValue)
+            {
+                value = (DataValue)evaluated;
+            }
+            else if (!TryConvertDataValue(evaluated, out value))
+            {
+                Log.LogWarning("[StoryAPI] Expression for variable '" + name +
+                    "' produced unsupported value type " +
+                    (evaluated == null ? "null" : evaluated.GetType().FullName) + ".");
+                return false;
+            }
+
+            return TrySetContextVariable(context, name, value);
+        }
+
+        /// <summary>
+        /// The expression engine's compiled-expression API differs between game builds.
+        /// Support its delegate form and common object-based evaluator forms without assuming
+        /// that a RenpyOneLinePython instruction implements StoryAPI's IApply interface.
+        /// </summary>
+        private static bool TryEvaluateCompiledExpression(string expression, IContext context, out object value)
+        {
+            value = null;
+            object compiled;
+
+            try
+            {
+                compiled = SimpleExpressionEngine.Parser.Compile(expression);
+            }
+            catch (Exception e)
+            {
+                Log.LogWarning("[StoryAPI] Could not compile scalar expression '" + expression +
+                    "': " + e.GetBaseException().Message);
+                return false;
+            }
+
+            if (compiled == null)
+            {
+                Log.LogWarning("[StoryAPI] The expression compiler returned no evaluator for '" +
+                    expression + "'.");
+                return false;
+            }
+
+            try
+            {
+                Delegate evaluator = compiled as Delegate;
+                if (evaluator != null)
+                {
+                    MethodInfo invoke = evaluator.GetType().GetMethod("Invoke", Instance);
+                    ParameterInfo[] parameters = invoke == null
+                        ? new ParameterInfo[0]
+                        : invoke.GetParameters();
+
+                    if (parameters.Length == 1 && CanPassExpressionContext(parameters[0].ParameterType, context))
+                    {
+                        value = evaluator.DynamicInvoke(new object[] { context });
+                        return true;
+                    }
+                }
+
+                string[] methodNames = { "Evaluate", "Eval", "Execute", "Calculate", "Invoke" };
+                foreach (MethodInfo method in compiled.GetType().GetMethods(Instance))
+                {
+                    if (!methodNames.Contains(method.Name)) continue;
+                    ParameterInfo[] parameters = method.GetParameters();
+                    if (parameters.Length != 1 ||
+                        !CanPassExpressionContext(parameters[0].ParameterType, context) ||
+                        method.ReturnType == typeof(void))
+                        continue;
+
+                    try
+                    {
+                        value = method.Invoke(compiled, new object[] { context });
+                        return true;
+                    }
+                    catch (TargetInvocationException e)
+                    {
+                        Log.LogWarning("[StoryAPI] Expression evaluator '" + method.Name +
+                            "' failed: " + e.GetBaseException().Message);
+                        return false;
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Log.LogWarning("[StoryAPI] Could not evaluate expression '" + expression +
+                    "': " + e.GetBaseException().Message);
+                return false;
+            }
+
+            string signature = string.Join(", ", compiled.GetType().GetMethods(Instance)
+                .Where(m => !m.IsSpecialName)
+                .Select(m => m.Name + "(" + string.Join(", ", m.GetParameters()
+                    .Select(p => p.ParameterType.Name).ToArray()) + ")")
+                .Distinct().Take(12).ToArray());
+
+            Log.LogWarning("[StoryAPI] Could not find a compatible evaluator for expression '" +
+                expression + "' on " + compiled.GetType().FullName + ". Methods: " + signature);
+            return false;
+        }
+
+        private static bool CanPassExpressionContext(Type parameterType, IContext context)
+        {
+            return parameterType == typeof(object) ||
+                parameterType.IsInstanceOfType(context) ||
+                parameterType.IsAssignableFrom(context.GetType());
+        }
+
         private static bool TryPrepareDataValueArgument(object source, Type parameterType, out object argument)
         {
             argument = null;

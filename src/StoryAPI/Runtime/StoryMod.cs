@@ -349,13 +349,13 @@ namespace StoryAPI.Runtime
         {
             foreach (var variable in _variables)
             {
-                if (!variable.HasLiteral)
+                if (!variable.HasLiteral && !variable.HasRuntimeExpression)
                 {
                     Warnings.Add(Relative(variable.SourcePath) + ":" + variable.Line +
                         ": " + (variable.IsDefault ? "default" : "define") + " '" + variable.Name +
-                        "' uses an initializer not supported yet by StoryAPI: " + variable.Expression +
-                        ". Use a quoted string, number, True or False. Arbitrary Python expressions and " +
-                        "containers are not evaluated during declaration loading.");
+                        "' uses an initializer not supported by StoryAPI: " + variable.Expression +
+                        ". Use a scalar literal or a scalar arithmetic/logical expression. " +
+                        "Lists, dictionaries, indexing, function calls, and arbitrary Python are not supported.");
                 }
             }
         }
@@ -373,7 +373,7 @@ namespace StoryAPI.Runtime
                 var initLines = new List<Line>();
                 foreach (var variable in _variables)
                 {
-                    if (!variable.HasLiteral) continue;
+                    if (!variable.HasLiteral && !variable.HasRuntimeExpression) continue;
 
                     if (!_variableInitializationStates.TryGetValue(variable, out var state))
                     {
@@ -381,13 +381,26 @@ namespace StoryAPI.Runtime
                         _variableInitializationStates[variable] = state;
                     }
 
-                    initLines.Add(new VariableInitializationLine(
-                        variable.Name,
-                        variable.LiteralValue,
-                        variable.IsDefault,
-                        variable.SourcePath,
-                        variable.Line,
-                        state));
+                    if (variable.HasLiteral)
+                    {
+                        initLines.Add(new VariableInitializationLine(
+                            variable.Name,
+                            variable.LiteralValue,
+                            variable.IsDefault,
+                            variable.SourcePath,
+                            variable.Line,
+                            state));
+                    }
+                    else
+                    {
+                        initLines.Add(new VariableInitializationLine(
+                            variable.Name,
+                            variable.Expression,
+                            variable.IsDefault,
+                            variable.SourcePath,
+                            variable.Line,
+                            state));
+                    }
                 }
 
                 if (initLines.Count == 0) continue;

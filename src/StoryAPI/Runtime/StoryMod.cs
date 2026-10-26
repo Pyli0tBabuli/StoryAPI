@@ -345,6 +345,24 @@ namespace StoryAPI.Runtime
             }
         }
 
+        private string ExpressionGateName(VariableDeclarationStatement variable)
+        {
+            // A stable private Ren'Py variable avoids piling up a new gate on every F10 reload.
+            // The mod/path/variable/line tuple is hashed to a valid, compact identifier.
+            string identity = Name + "|" + variable.SourcePath + "|" + variable.Name + "|" + variable.Line;
+            ulong hash = 14695981039346656037UL;
+            unchecked
+            {
+                foreach (char c in identity)
+                {
+                    hash ^= c;
+                    hash *= 1099511628211UL;
+                }
+            }
+
+            return "_storyapi_expression_gate_" + hash.ToString("x16");
+        }
+
         private void RegisterVariables()
         {
             foreach (var variable in _variables)
@@ -393,9 +411,24 @@ namespace StoryAPI.Runtime
                     }
                     else
                     {
+                        string gateName = ExpressionGateName(variable);
+                        // Four instructions: choose whether to run, skip when false, assign,
+                        // and mark initialized. The jump target is an absolute index because
+                        // this initializer block is inserted at the beginning of the label.
+                        int skipTarget = initLines.Count + 4;
+
                         initLines.Add(new VariableInitializationLine(
                             variable.Name,
                             variable.Expression,
+                            variable.IsDefault,
+                            gateName,
+                            variable.SourcePath,
+                            variable.Line,
+                            state));
+                        initLines.Add(new RenpyGoToLineUnless(gateName, skipTarget));
+                        initLines.Add(new RenpyOneLinePython("$ " + variable.Name + " = " + variable.Expression));
+                        initLines.Add(new VariableExpressionCompleteLine(
+                            variable.Name,
                             variable.IsDefault,
                             variable.SourcePath,
                             variable.Line,

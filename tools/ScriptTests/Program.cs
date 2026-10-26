@@ -17,6 +17,7 @@ namespace StoryAPI.Tests
             Run("digit-letter sprite attribute", TestDigitLetterSpriteAttribute);
             Run("sprite alias and position", TestSpriteAliasAndPosition);
             Run("define/default scalar declarations", TestVariableDeclarations);
+            Run("runtime scalar initializer expressions", TestRuntimeExpressionDeclarations);
             Run("if/elif/else branches", TestConditionalBranches);
             Run("menu choices and nested statements", TestMenuChoices);
             Run("while and loop-control statements", TestWhileAndLoopControl);
@@ -163,6 +164,52 @@ namespace StoryAPI.Tests
                 "define tag = Character(\"Name\") should map to a character declaration.");
             Check(character.Tag == "monokuma" && character.DisplayName == "Monokuma",
                 "Character display name/tag mismatch.");
+        }
+
+        private static void TestRuntimeExpressionDeclarations()
+        {
+            var statements = Parse(
+                "define calculated = (base_points + 2) * 3\n" +
+                "default available = has_key and points >= 3\n" +
+                "default optional = None\n" +
+                "define list_value = [1, 2]\n" +
+                "define dictionary_value = {\"answer\": 42}\n" +
+                "define call_value = random()\n" +
+                "label expression_variables:\n" +
+                "    return\n");
+
+            var calculated = Require<VariableDeclarationStatement>(statements[0],
+                "Expected arithmetic define.");
+            Check(!calculated.HasLiteral && calculated.HasRuntimeExpression,
+                "Arithmetic expressions should be deferred to the runtime evaluator.");
+            Check(calculated.Expression == "(base_points + 2) * 3",
+                "The arithmetic expression should be preserved exactly.");
+
+            var available = Require<VariableDeclarationStatement>(statements[1],
+                "Expected logical default.");
+            Check(available.IsDefault && available.HasRuntimeExpression &&
+                available.Expression == "has_key and points >= 3",
+                "Logical expressions should be preserved as runtime defaults.");
+
+            var optional = Require<VariableDeclarationStatement>(statements[2],
+                "Expected None initializer.");
+            Check(optional.HasRuntimeExpression && optional.Expression == "None",
+                "None should be delegated to the native expression evaluator.");
+
+            var list = Require<VariableDeclarationStatement>(statements[3],
+                "Expected list declaration.");
+            Check(!list.HasLiteral && !list.HasRuntimeExpression,
+                "List literals should stay unsupported until the game's container-value support is confirmed.");
+
+            var dictionary = Require<VariableDeclarationStatement>(statements[4],
+                "Expected dictionary declaration.");
+            Check(!dictionary.HasLiteral && !dictionary.HasRuntimeExpression,
+                "Dictionary literals should stay unsupported until the game's container-value support is confirmed.");
+
+            var function = Require<VariableDeclarationStatement>(statements[5],
+                "Expected function-call declaration.");
+            Check(!function.HasRuntimeExpression,
+                "Function calls should not be automatically accepted as scalar expressions.");
         }
 
         private static void TestConditionalBranches()

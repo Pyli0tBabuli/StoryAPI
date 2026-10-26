@@ -795,7 +795,81 @@ namespace StoryAPI.Scripting
                 }
             }
 
+            if (!declaration.HasLiteral)
+            {
+                declaration.HasRuntimeExpression = IsSupportedRuntimeScalarExpression(expressionStart, expressionEnd);
+            }
+
             return declaration;
+        }
+
+        /// <summary>
+        /// Only delegate expression forms that look like scalar expressions to the game's
+        /// own $ evaluator. Container/index syntax, comma-separated values and function calls
+        /// remain unsupported until the runtime's value model can be verified.
+        /// </summary>
+        private bool IsSupportedRuntimeScalarExpression(int start, int end)
+        {
+            if (start >= end) return false;
+
+            for (int i = start; i < end; i++)
+            {
+                Token token = _tokens[i];
+
+                if (token.Type == TokenType.String || token.Type == TokenType.Number)
+                    continue;
+
+                if (token.Type == TokenType.Keyword)
+                {
+                    if (token.Text == "True" || token.Text == "False" || token.Text == "None" ||
+                        token.Text == "and" || token.Text == "or" || token.Text == "not")
+                        continue;
+
+                    return false;
+                }
+
+                if (token.Type != TokenType.Identifier)
+                    return false;
+
+                // Ordinary variable names are allowed, but function calls are not.
+                if (token.Text.Length > 0 &&
+                    (char.IsLetter(token.Text[0]) || token.Text[0] == '_'))
+                {
+                    if (i + 1 < end && _tokens[i + 1].Text == "(")
+                        return false;
+                    continue;
+                }
+
+                // Only scalar arithmetic, comparison and grouping operators are allowed.
+                if (token.Text != "(" && token.Text != ")" &&
+                    token.Text != "+" && token.Text != "-" &&
+                    token.Text != "*" && token.Text != "/" &&
+                    token.Text != "%" && token.Text != "<" &&
+                    token.Text != ">" && token.Text != "=" &&
+                    token.Text != "!")
+                    return false;
+
+                if (token.Text == "!")
+                {
+                    if (i + 1 >= end || _tokens[i + 1].Text != "=" ||
+                        token.Start + token.Length != _tokens[i + 1].Start)
+                        return false;
+                }
+
+                if (token.Text == "=")
+                {
+                    bool joinedToPrevious = i > start &&
+                        token.Start == _tokens[i - 1].Start + _tokens[i - 1].Length &&
+                        (_tokens[i - 1].Text == "=" || _tokens[i - 1].Text == "<" ||
+                         _tokens[i - 1].Text == ">" || _tokens[i - 1].Text == "!");
+                    bool joinedToNext = i + 1 < end &&
+                        token.Start + token.Length == _tokens[i + 1].Start &&
+                        _tokens[i + 1].Text == "=";
+                    if (!joinedToPrevious && !joinedToNext) return false;
+                }
+            }
+
+            return true;
         }
 
         private bool TryReadCharacterDefinition(int start, int end, string tag, int line,

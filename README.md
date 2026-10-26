@@ -119,6 +119,11 @@ define starting_points = 3
 default points = 0
 default has_key = False
 
+# Scalar expressions are evaluated by DDLC+ when a mod label first executes.
+define bonus_points = starting_points * 2
+default can_enter = has_key and points >= 3
+default optional_value = None
+
 label example:
     $ points += 1
     while points < 3:
@@ -126,14 +131,17 @@ label example:
     return
 ```
 
-The supported scalar initializers are quoted strings, numbers, `True`, and `False`. The
-common `define name = Character("Display name")` form registers a StoryAPI speaker.
-Scalar `define` and `default` values are initialized when a mod label first executes, not
-while the mod is being registered: DDLC+ does not provide a live script execution context
-during registration. A shared per-declaration guard prevents `define` values being reset
-on each subsequent label entry, while `default` leaves an existing game variable unchanged.
-Arbitrary initializer expressions, container literals, Python class instances, and the full
-Ren'Py initialization phase are not implemented. Within a label, `while`, `break`,
+Supported literal initializers are quoted strings, numbers, `True`, and `False`. Conservative
+scalar expressions involving arithmetic, comparisons, and boolean operators are also delegated
+to DDLC+'s own `$` expression instruction when a mod label first executes; `None` is delegated
+there as well. The common `define name = Character("Display name")` form registers a StoryAPI
+speaker. Initializers are not evaluated during mod registration because there is no live script
+execution context at that point. A shared per-declaration guard prevents `define` values being
+reset on later label entries, while `default` leaves an existing game variable unchanged.
+
+This expression support is deliberately limited: lists, dictionaries, tuples, indexing,
+attribute access, function calls, arbitrary Python initializers, Python class instances, and
+the full Ren'Py initialization phase are not implemented. Within a label, `while`, `break`,
 `continue`, and `pass` are supported. A loop must eventually change its condition or
 break; infinite loops can stall the game.
 

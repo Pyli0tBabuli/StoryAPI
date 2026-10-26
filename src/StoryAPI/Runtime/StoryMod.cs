@@ -345,17 +345,35 @@ namespace StoryAPI.Runtime
             }
         }
 
+        private string ExpressionGateName(VariableDeclarationStatement variable)
+        {
+            // A stable private Ren'Py variable avoids piling up a new gate on every F10 reload.
+            // The mod/path/variable/line tuple is hashed to a valid, compact identifier.
+            string identity = Name + "|" + variable.SourcePath + "|" + variable.Name + "|" + variable.Line;
+            ulong hash = 14695981039346656037UL;
+            unchecked
+            {
+                foreach (char c in identity)
+                {
+                    hash ^= c;
+                    hash *= 1099511628211UL;
+                }
+            }
+
+            return "_storyapi_expression_gate_" + hash.ToString("x16");
+        }
+
         private void RegisterVariables()
         {
             foreach (var variable in _variables)
             {
-                if (!variable.HasLiteral)
+                if (!variable.HasLiteral && !variable.HasRuntimeExpression)
                 {
                     Warnings.Add(Relative(variable.SourcePath) + ":" + variable.Line +
                         ": " + (variable.IsDefault ? "default" : "define") + " '" + variable.Name +
-                        "' uses an initializer not supported yet by StoryAPI: " + variable.Expression +
-                        ". Use a quoted string, number, True or False. Arbitrary Python expressions and " +
-                        "containers are not evaluated during declaration loading.");
+                        "' uses an initializer not supported by StoryAPI: " + variable.Expression +
+                        ". Use a scalar literal or a scalar arithmetic/logical expression. " +
+                        "Lists, dictionaries, indexing, function calls, and arbitrary Python are not supported.");
                 }
             }
         }
@@ -373,7 +391,7 @@ namespace StoryAPI.Runtime
                 var initLines = new List<Line>();
                 foreach (var variable in _variables)
                 {
-                    if (!variable.HasLiteral) continue;
+                    if (!variable.HasLiteral && !variable.HasRuntimeExpression) continue;
 
                     if (!_variableInitializationStates.TryGetValue(variable, out var state))
                     {
@@ -381,13 +399,40 @@ namespace StoryAPI.Runtime
                         _variableInitializationStates[variable] = state;
                     }
 
-                    initLines.Add(new VariableInitializationLine(
-                        variable.Name,
-                        variable.LiteralValue,
-                        variable.IsDefault,
-                        variable.SourcePath,
-                        variable.Line,
-                        state));
+                    if (variable.HasLiteral)
+                    {
+                        initLines.Add(new VariableInitializationLine(
+                            variable.Name,
+                            variable.LiteralValue,
+                            variable.IsDefault,
+                            variable.SourcePath,
+                            variable.Line,
+                            state));
+                    }
+                    else
+                    {
+                        string gateName = ExpressionGateName(variable);
+                        // Four instructions: choose whether to run, skip when false, assign,
+                        // and mark initialized. The jump target is an absolute index because
+                        // this initializer block is inserted at the beginning of the label.
+                        int skipTarget = initLines.Count + 4;
+
+                        initLines.Add(new VariableInitializationLine(
+                            variable.Name,
+                            variable.IsDefault,
+                            gateName,
+                            variable.SourcePath,
+                            variable.Line,
+                            state));
+                        initLines.Add(new RenpyGoToLineUnless(gateName, skipTarget));
+                        initLines.Add(new RenpyOneLinePython("$ " + variable.Name + " = " + variable.Expression));
+                        initLines.Add(new VariableExpressionCompleteLine(
+                            variable.Name,
+                            variable.IsDefault,
+                            variable.SourcePath,
+                            variable.Line,
+                            state));
+                    }
                 }
 
                 if (initLines.Count == 0) continue;

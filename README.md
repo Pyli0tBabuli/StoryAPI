@@ -113,21 +113,23 @@ label my_farewell:
 
 StoryAPI supports a limited subset of Ren'Py variable declarations and loop statements:
 
-    define june = Character("June")
-    define starting_points = 3
-    default points = 0
-    default has_key = False
+```renpy
+define june = Character("June")
+define starting_points = 3
+default points = 0
+default has_key = False
 
-    # Scalar expressions are evaluated by DDLC+ when a mod label first executes.
-    define bonus_points = starting_points * 2
-    default can_enter = has_key and points >= 3
-    default optional_value = None
+# Scalar expressions are evaluated by DDLC+ when a mod label first executes.
+define bonus_points = starting_points * 2
+default can_enter = has_key and points >= 3
+default optional_value = None
 
-    label example:
+label example:
+    $ points += 1
+    while points < 3:
         $ points += 1
-        while points < 3:
-            $ points += 1
-        return
+    return
+```
 
 Supported literal initializers are quoted strings, numbers, `True`, and `False`. Conservative
 scalar expressions involving arithmetic, comparisons, and boolean operators are also delegated
@@ -142,6 +144,7 @@ attribute access, function calls, arbitrary Python initializers, Python class in
 the full Ren'Py initialization phase are not implemented. Within a label, `while`, `break`,
 `continue`, and `pass` are supported. A loop must eventually change its condition or
 break; infinite loops can stall the game.
+
 ### The base game's own scenes
 
 A mod does not have to bring its own pictures. The base game's backgrounds, poses and

@@ -128,10 +128,14 @@ label example:
 
 The supported scalar initializers are quoted strings, numbers, `True`, and `False`. The
 common `define name = Character("Display name")` form registers a StoryAPI speaker.
-`default` leaves an existing game variable unchanged. Arbitrary initializer expressions,
-container literals, Python class instances, and the full Ren'Py initialization phase are
-not implemented. Within a label, `while`, `break`, `continue`, and `pass` are supported.
-A loop must eventually change its condition or break; infinite loops can stall the game.
+Scalar `define` and `default` values are initialized when a mod label first executes, not
+while the mod is being registered: DDLC+ does not provide a live script execution context
+during registration. A shared per-declaration guard prevents `define` values being reset
+on each subsequent label entry, while `default` leaves an existing game variable unchanged.
+Arbitrary initializer expressions, container literals, Python class instances, and the full
+Ren'Py initialization phase are not implemented. Within a label, `while`, `break`,
+`continue`, and `pass` are supported. A loop must eventually change its condition or
+break; infinite loops can stall the game.
 
 ### The base game's own scenes
 

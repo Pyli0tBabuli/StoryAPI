@@ -32,6 +32,9 @@ namespace StoryAPI.Runtime
         private readonly List<OverrideStatement> _overrides = new List<OverrideStatement>();
         private readonly List<CharacterStatement> _characters = new List<CharacterStatement>();
         private readonly List<VariableDeclarationStatement> _variables = new List<VariableDeclarationStatement>();
+        private readonly Dictionary<VariableDeclarationStatement, VariableInitializationState> _variableInitializationStates =
+            new Dictionary<VariableDeclarationStatement, VariableInitializationState>();
+        private bool _variableInitLinesInjected;
         private readonly List<LabelStatement> _labelStatements = new List<LabelStatement>();
         private readonly List<StoryAPI.Scripting.HookStatement> _hookStatements = new List<StoryAPI.Scripting.HookStatement>();
 
@@ -52,6 +55,8 @@ namespace StoryAPI.Runtime
             _overrides.Clear();
             _characters.Clear();
             _variables.Clear();
+            _variableInitializationStates.Clear();
+            _variableInitLinesInjected = false;
             _images.Clear();
             _audio.Clear();
             _labelStatements.Clear();
@@ -230,6 +235,12 @@ namespace StoryAPI.Runtime
             RegisterVariables();
             RegisterCharacters();
 
+            // The engine's execution context does not exist while mods are being
+            // registered. Put scalar declarations at the start of labels and initialize
+            // them only when that instruction is reached during live script execution.
+            // Shared state ensures define values are not reset on every label transition.
+            if (!_variableInitLinesInjected) PrepareVariableInitializers();
+
             int registered = 0;
             int writtenText = 0;
             foreach (var pair in _compiledLabels)
@@ -345,15 +356,49 @@ namespace StoryAPI.Runtime
                         "' uses an initializer not supported yet by StoryAPI: " + variable.Expression +
                         ". Use a quoted string, number, True or False. Arbitrary Python expressions and " +
                         "containers are not evaluated during declaration loading.");
-                    continue;
-                }
-
-                if (!GameBridge.TrySetVariableLiteral(variable.Name, variable.LiteralValue, variable.IsDefault))
-                {
-                    Warnings.Add(Relative(variable.SourcePath) + ":" + variable.Line +
-                        ": could not initialize variable '" + variable.Name + "'.");
                 }
             }
+        }
+
+        private void PrepareVariableInitializers()
+        {
+            if (_variables.Count == 0)
+            {
+                _variableInitLinesInjected = true;
+                return;
+            }
+
+            foreach (var pair in _compiledLabels)
+            {
+                var initLines = new List<Line>();
+                foreach (var variable in _variables)
+                {
+                    if (!variable.HasLiteral) continue;
+
+                    if (!_variableInitializationStates.TryGetValue(variable, out var state))
+                    {
+                        state = new VariableInitializationState();
+                        _variableInitializationStates[variable] = state;
+                    }
+
+                    initLines.Add(new VariableInitializationLine(
+                        variable.Name,
+                        variable.LiteralValue,
+                        variable.IsDefault,
+                        variable.SourcePath,
+                        variable.Line,
+                        state));
+                }
+
+                if (initLines.Count == 0) continue;
+
+                // These initializers are prepended, so compiled branch/menu targets need
+                // to move down by the same number of instructions.
+                GameBridge.ShiftLineJumps(pair.Value.Lines, initLines.Count);
+                pair.Value.Lines.InsertRange(0, initLines);
+            }
+
+            _variableInitLinesInjected = true;
         }
 
         private void RegisterCharacters()

@@ -3996,15 +3996,36 @@ namespace StoryAPI.Game
         /// the game's DataValue wrapper, whose conversion operators can vary between builds.
         /// If defaultOnly is true, an existing variable is never overwritten.
         /// </summary>
-        public static bool TrySetVariableLiteral(string name, object literal, bool defaultOnly)
+        public static bool TrySetVariableLiteral(string name, object literal, bool defaultOnly,
+            IContext activeContext = null)
         {
-            if (string.IsNullOrEmpty(name) || Context == null) return false;
-            if (defaultOnly && TryGetVariable(name, out DataValue _)) return true;
+            // Registration happens before a story is executing, so the game's execution
+            // context may not exist yet. A VariableInitializationLine passes the live
+            // instruction context when the declaration is actually reached.
+            IContext context = activeContext ?? Context;
+            if (string.IsNullOrEmpty(name) || context == null) return false;
+
+            if (defaultOnly)
+            {
+                try
+                {
+                    if (context.ResolveVariable(name, out DataValue _)) return true;
+                }
+                catch { }
+            }
 
             DataValue value;
             if (!TryConvertDataValue(literal, out value)) return false;
-            SetVariable(name, value);
-            return true;
+            try
+            {
+                context.SetVariable(name, value, false);
+                return true;
+            }
+            catch (Exception e)
+            {
+                Log.LogWarning("[StoryAPI] SetVariable('" + name + "') failed: " + e.Message);
+                return false;
+            }
         }
 
         private static bool TryConvertDataValue(object source, out DataValue value)

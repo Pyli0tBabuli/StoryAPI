@@ -150,18 +150,116 @@ namespace StoryAPI.Runtime
 
             try
             {
-                var show = new Show(string.Empty);
-                show.ImageName = name;
-                show.Variant = string.Empty;
+                // A character pose is stored under a combined name such as
+                // "monika 2a", but RenPy's Show instruction expects ImageName and Variant
+                // separately. Passing the whole pose as ImageName creates a display slot
+                // that exists but does not resolve/render the base game's character image.
+                int separator = name.IndexOf(' ');
+                string imageName = separator > 0 ? name.Substring(0, separator) : name;
+                string variant = separator > 0 ? name.Substring(separator + 1) : string.Empty;
+
+                var show = new Show("show " + name);
+                show.ImageName = imageName;
+                show.Variant = variant;
                 show.Layer = "master";
                 show.ZOrder = zOrder;
                 show.HasZOrder = true;
+
+                // Keep a distinct slot key for the complete pose so StoryAPI's
+                // move/zoom/fade/layer helpers can refer to "monika 2a".
+                if (separator > 0)
+                {
+                    show.As = name;
+                    show.HasSynonym = true;
+                }
 
                 var image = ArtInjector.Host(prefab, name, show, x);
                 if (image == null || image.Object == null) return null;
 
                 var instance = ArtInjector.Hosted(name);
                 if (instance == null) return null;
+
+                // Unlike the game's own Show runner, Host() instantiates the pose prefab
+                // directly. Some character prefabs contain inactive renderer objects or
+                // parent groups because the game normally toggles them during scene setup.
+                // A prefab here is already the exact requested pose, so enable only the
+                // hierarchy paths that contain a real sprite, then ensure that renderer
+                // itself is enabled. This prevents a successfully loaded pose from being
+                // registered but invisible.
+                int visibleLayerCount = 0;
+                foreach (var renderer in instance.GetComponentsInChildren<SpriteRenderer>(true))
+                {
+                    if (renderer == null || renderer.sprite == null) continue;
+
+                    Transform node = renderer.transform;
+                    while (node != null && node != image.Object.transform)
+                    {
+                        if (!node.gameObject.activeSelf) node.gameObject.SetActive(true);
+                        if (node == instance.transform) break;
+                        node = node.parent;
+                    }
+
+                    renderer.enabled = true;
+                    visibleLayerCount++;
+                }
+
+                Log.Info("pose: '" + name + "' has " + visibleLayerCount +
+                         " sprite renderer(s) with a sprite; renderers enabled before placement");
+                if (visibleLayerCount == 0)
+                {
+                    Log.Warn("pose: '" + name + "' loaded but contains no SpriteRenderer with a sprite");
+                }
+
+                // A named "at transform" such as f33 must be run by StoryAPI inside a
+                // mod label; DDLC+'s own transform runner is not active there. Apply the
+                // transform to the prefab root so the body, eyes, mouth, and other layers
+                // move together as one character pose.
+                if (!string.IsNullOrEmpty(at) && !IsScreenPosition(at))
+                {
+                    GameBridge.TransformAnimation animation;
+                    if (GameBridge.TryGetTransformAnimation(at, out animation))
+                    {
+                        int width = 0;
+                        int height = 0;
+                        Bounds bounds = new Bounds();
+                        bool hasBounds = false;
+
+                        foreach (var renderer in instance.GetComponentsInChildren<SpriteRenderer>(true))
+                        {
+                            if (renderer == null || renderer.sprite == null) continue;
+                            if (!hasBounds)
+                            {
+                                bounds = renderer.bounds;
+                                hasBounds = true;
+                            }
+                            else
+                            {
+                                bounds.Encapsulate(renderer.bounds);
+                            }
+                        }
+
+                        if (hasBounds)
+                        {
+                            width = Mathf.Max(1, Mathf.RoundToInt(bounds.size.x));
+                            height = Mathf.Max(1, Mathf.RoundToInt(bounds.size.y));
+                        }
+
+                        if (width > 0 && height > 0)
+                        {
+                            AtlScheduler.Start(image, instance.transform, width, height, animation);
+                        }
+                        else
+                        {
+                            Log.Warn("pose: could not determine the size of '" + name +
+                                     "' to apply transform '" + at + "'");
+                        }
+                    }
+                    else
+                    {
+                        Log.Warn("pose: the game has no transform called '" + at +
+                                 "'; showing '" + name + "' at its default position");
+                    }
+                }
 
                 // The root keeps the name the game gave it. For a single layer pose the
                 // renderer sits on the root, so renaming it would rename the layer too and
@@ -188,6 +286,13 @@ namespace StoryAPI.Runtime
                 Log.Error("Could not build pose '" + name + "': " + e.Message);
                 return null;
             }
+        }
+
+        private static bool IsScreenPosition(string at)
+        {
+            return at == "left" || at == "center" || at == "right" ||
+                   at == "truecenter" || at == "offscreenleft" ||
+                   at == "offscreenright" || at == "true_left" || at == "true_right";
         }
 
         /// <summary>Swap a layer of a held pose for other art from the game.</summary>

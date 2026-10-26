@@ -122,9 +122,9 @@ namespace StoryAPI.Scripting
     }
 
     /// <summary>
-    /// A top-level define/default declaration. StoryAPI currently initializes scalar
-    /// literals only; arbitrary Python expressions are retained so the loader can report
-    /// an actionable warning rather than silently assigning a wrong value.
+    /// A top-level define/default declaration. Scalar literals are initialized directly;
+    /// conservative arithmetic/logical scalar expressions can be evaluated by the live
+    /// game's own expression runner. Container literals and arbitrary calls remain unsupported.
     /// </summary>
     public sealed class VariableDeclarationStatement : Statement
     {
@@ -133,6 +133,10 @@ namespace StoryAPI.Scripting
         public bool IsDefault { get; set; }
         public bool HasLiteral { get; set; }
         public object LiteralValue { get; set; }
+
+        /// <summary>True when Expression is a scalar expression safe to delegate to the game.</summary>
+        public bool HasRuntimeExpression { get; set; }
+
         public string SourcePath { get; set; }
     }
 

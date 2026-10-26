@@ -31,7 +31,6 @@ namespace StoryAPI.Runtime
     {
         private readonly string _name;
         private readonly object _literal;
-        private readonly string _expression;
         private readonly string _gateName;
         private readonly bool _isRuntimeExpression;
         private readonly bool _isDefault;
@@ -50,11 +49,10 @@ namespace StoryAPI.Runtime
             _state = state;
         }
 
-        public VariableInitializationLine(string name, string expression, bool isDefault,
+        public VariableInitializationLine(string name, bool isDefault,
             string gateName, string sourcePath, int sourceLine, VariableInitializationState state)
         {
             _name = name;
-            _expression = expression;
             _gateName = gateName;
             _isRuntimeExpression = true;
             _isDefault = isDefault;
@@ -163,7 +161,8 @@ namespace StoryAPI.Runtime
 
             _state.Initialized = true;
             Log.Info("Evaluated " + (_isDefault ? "default" : "define") +
-                     " expression for variable '" + _name + "' at first mod-label entry.");
+                     " expression for variable '" + _name + "' at " + _sourcePath + ":" +
+                     _sourceLine + " during script execution.");
         }
     }
 }

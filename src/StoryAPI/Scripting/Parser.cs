@@ -795,7 +795,49 @@ namespace StoryAPI.Scripting
                 }
             }
 
+            if (!declaration.HasLiteral)
+            {
+                declaration.HasRuntimeExpression = IsSupportedRuntimeScalarExpression(expressionStart, expressionEnd);
+            }
+
             return declaration;
+        }
+
+        /// <summary>
+        /// Only delegate expression forms that look like scalar expressions to the game's
+        /// own $ evaluator. Container/index syntax, comma-separated values and function calls
+        /// remain unsupported until the runtime's value model can be verified.
+        /// </summary>
+        private bool IsSupportedRuntimeScalarExpression(int start, int end)
+        {
+            if (start >= end) return false;
+
+            for (int i = start; i < end; i++)
+            {
+                Token token = _tokens[i];
+
+                if (token.Type != TokenType.String &&
+                    (token.Text == "[" || token.Text == "]" ||
+                     token.Text == "{" || token.Text == "}" ||
+                     token.Text == "," || token.Text == ";"))
+                {
+                    return false;
+                }
+
+                if (token.Type != TokenType.String && token.Text == "." &&
+                    (i == start || _tokens[i - 1].Type != TokenType.Number))
+                {
+                    return false;
+                }
+
+                if ((token.Type == TokenType.Identifier || token.Type == TokenType.Keyword) &&
+                    i + 1 < end && _tokens[i + 1].Text == "(")
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         private bool TryReadCharacterDefinition(int start, int end, string tag, int line,

@@ -32,6 +32,7 @@ namespace StoryAPI.Runtime
         private readonly string _name;
         private readonly object _literal;
         private readonly string _expression;
+        private readonly string _gateName;
         private readonly bool _isRuntimeExpression;
         private readonly bool _isDefault;
         private readonly string _sourcePath;
@@ -50,10 +51,11 @@ namespace StoryAPI.Runtime
         }
 
         public VariableInitializationLine(string name, string expression, bool isDefault,
-            string sourcePath, int sourceLine, VariableInitializationState state)
+            string gateName, string sourcePath, int sourceLine, VariableInitializationState state)
         {
             _name = name;
             _expression = expression;
+            _gateName = gateName;
             _isRuntimeExpression = true;
             _isDefault = isDefault;
             _sourcePath = sourcePath;
@@ -63,13 +65,15 @@ namespace StoryAPI.Runtime
 
         public void Apply(IContext context)
         {
-            if (_state == null || _state.Initialized || _state.Failed) return;
+            if (_state == null) return;
 
             if (_isRuntimeExpression)
             {
-                ApplyRuntimeExpression(context);
+                PrepareRuntimeExpression(context);
                 return;
             }
+
+            if (_state.Initialized || _state.Failed) return;
 
             if (GameBridge.TrySetVariableLiteral(_name, _literal, _isDefault, context))
             {
@@ -85,7 +89,7 @@ namespace StoryAPI.Runtime
                      " during script execution. Check the preceding GameBridge warning.");
         }
 
-        private void ApplyRuntimeExpression(IContext context)
+        private void PrepareRuntimeExpression(IContext context)
         {
             if (context == null)
             {
@@ -93,15 +97,20 @@ namespace StoryAPI.Runtime
                 return;
             }
 
-            if (_isDefault)
+            // The following native RenpyOneLinePython instruction will execute the expression
+            // if and only if this flag is true. The compiled expression object is a bytecode
+            // builder, not an evaluator, so it must be run by DDLC+'s normal script runner.
+            bool shouldEvaluate = !_state.Initialized && !_state.Failed;
+
+            if (shouldEvaluate && _isDefault)
             {
                 try
                 {
                     if (context.ResolveVariable(_name, out DataValue _))
                     {
                         _state.Initialized = true;
+                        shouldEvaluate = false;
                         Log.Info("Kept existing value for default variable '" + _name + "'.");
-                        return;
                     }
                 }
                 catch
@@ -110,30 +119,51 @@ namespace StoryAPI.Runtime
                 }
             }
 
-            try
-            {
-                if (!GameBridge.TrySetVariableExpression(_name, _expression, context))
-                {
-                    Fail("DDLC+'s expression engine could not evaluate or assign the value");
-                    return;
-                }
-
-                _state.Initialized = true;
-                Log.Info("Evaluated " + (_isDefault ? "default" : "define") +
-                         " expression for variable '" + _name + "' at first mod-label entry.");
-            }
-            catch (Exception e)
-            {
-                Fail(e.GetBaseException().Message);
-            }
+            if (!GameBridge.TrySetVariableLiteral(_gateName, shouldEvaluate, false, context))
+                Fail("could not set the runtime expression gate variable '" + _gateName + "'");
         }
 
         private void Fail(string reason)
         {
             _state.Failed = true;
+            // A failed declaration must not accidentally execute if its gate had a stale value.
+            if (!string.IsNullOrEmpty(_gateName))
+                GameBridge.TrySetVariableLiteral(_gateName, false, false);
             Log.Warn("Could not initialize " + (_isDefault ? "default" : "define") +
                      " expression for variable '" + _name + "' at " + _sourcePath + ":" +
                      _sourceLine + ": " + reason);
+        }
+    }
+
+    /// <summary>
+    /// Marks a runtime expression initialized after DDLC+ has executed its native
+    /// RenpyOneLinePython assignment instruction.
+    /// </summary>
+    internal sealed class VariableExpressionCompleteLine : Line, IApply
+    {
+        private readonly string _name;
+        private readonly bool _isDefault;
+        private readonly string _sourcePath;
+        private readonly int _sourceLine;
+        private readonly VariableInitializationState _state;
+
+        public VariableExpressionCompleteLine(string name, bool isDefault, string sourcePath,
+            int sourceLine, VariableInitializationState state)
+        {
+            _name = name;
+            _isDefault = isDefault;
+            _sourcePath = sourcePath;
+            _sourceLine = sourceLine;
+            _state = state;
+        }
+
+        public void Apply(IContext context)
+        {
+            if (_state == null || _state.Initialized || _state.Failed) return;
+
+            _state.Initialized = true;
+            Log.Info("Evaluated " + (_isDefault ? "default" : "define") +
+                     " expression for variable '" + _name + "' at first mod-label entry.");
         }
     }
 }

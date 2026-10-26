@@ -419,7 +419,6 @@ namespace StoryAPI.Runtime
 
                         initLines.Add(new VariableInitializationLine(
                             variable.Name,
-                            variable.Expression,
                             variable.IsDefault,
                             gateName,
                             variable.SourcePath,

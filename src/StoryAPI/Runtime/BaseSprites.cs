@@ -179,6 +179,37 @@ namespace StoryAPI.Runtime
                 var instance = ArtInjector.Hosted(name);
                 if (instance == null) return null;
 
+                // Unlike the game's own Show runner, Host() instantiates the pose prefab
+                // directly. Some character prefabs contain inactive renderer objects or
+                // parent groups because the game normally toggles them during scene setup.
+                // A prefab here is already the exact requested pose, so enable only the
+                // hierarchy paths that contain a real sprite, then ensure that renderer
+                // itself is enabled. This prevents a successfully loaded pose from being
+                // registered but invisible.
+                int visibleLayerCount = 0;
+                foreach (var renderer in instance.GetComponentsInChildren<SpriteRenderer>(true))
+                {
+                    if (renderer == null || renderer.sprite == null) continue;
+
+                    Transform node = renderer.transform;
+                    while (node != null && node != image.Object.transform)
+                    {
+                        if (!node.gameObject.activeSelf) node.gameObject.SetActive(true);
+                        if (node == instance.transform) break;
+                        node = node.parent;
+                    }
+
+                    renderer.enabled = true;
+                    visibleLayerCount++;
+                }
+
+                Log.Info("pose: '" + name + "' has " + visibleLayerCount +
+                         " sprite renderer(s) with a sprite; renderers enabled before placement");
+                if (visibleLayerCount == 0)
+                {
+                    Log.Warn("pose: '" + name + "' loaded but contains no SpriteRenderer with a sprite");
+                }
+
                 // A named "at transform" such as f33 must be run by StoryAPI inside a
                 // mod label; DDLC+'s own transform runner is not active there. Apply the
                 // transform to the prefab root so the body, eyes, mouth, and other layers

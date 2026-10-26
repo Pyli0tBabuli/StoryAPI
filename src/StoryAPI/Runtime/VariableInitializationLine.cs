@@ -24,8 +24,8 @@ namespace StoryAPI.Runtime
     }
 
     /// <summary>
-    /// Initializes a top-level scalar variable while the game's story runner has a live
-    /// execution context. This must not run during mod registration.
+    /// Initializes a top-level scalar literal or supported scalar expression while the
+    /// game's story runner has a live execution context. This must not run during registration.
     /// </summary>
     internal sealed class VariableInitializationLine : Line, IApply
     {

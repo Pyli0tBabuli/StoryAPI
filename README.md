@@ -113,143 +113,25 @@ label my_farewell:
 
 StoryAPI supports a limited subset of Ren'Py variable declarations and loop statements:
 
-```renpy
-define june = Character("June")
-define starting_points = 3
-default points = 0
-default has_key = False
+    define june = Character("June")
+    define starting_points = 3
+    default points = 0
+    default has_key = False
 
-# Scalar expressions are evaluated by DDLC+ when a mod label first executes.
-define bonus_points = starting_points * 2
-default can_enter = has_key and points >= 3
-default optional_value = None
+    # Scalar expressions are evaluated by DDLC+ when a mod label first executes.
+    define bonus_points = starting_points * 2
+    default can_enter = has_key and points >= 3
+    default optional_value = None
 
-label example:
-    $ points += 1
-    while points < 3:
+    label example:
         $ points += 1
-    return
-```
+        while points < 3:
+            $ points += 1
+        return
 
 Supported literal initializers are quoted strings, numbers, `True`, and `False`. Conservative
 scalar expressions involving arithmetic, comparisons, and boolean operators are also delegated
-to DDLC+'s own `# StoryAPI
-
-A scripting layer for **Doki Doki Literature Club Plus**.
-
-The original DDLC was built in Ren'Py, which meant anyone could drop a folder of
-`.rpy` files next to the game, write new scenes, add characters, swap in their own
-pictures, and it just worked. DDLC Plus is a Unity/Mono port that kept the whole Ren'Py
-story engine but shipped the scripts as compiled asset bundles, so that ease of use was
-lost.
-
-StoryAPI puts it back. You write plain `.rpy` files in a folder, and the plugin compiles
-them into the game's own instruction format and registers them as ordinary labels. From
-the story runner's point of view a mod label is indistinguishable from a shipped one:
-custom dialogue renders in DDLC's own text box with its own typewriter effect, custom
-sprites sit in its sprite layers with its depth sorting, and custom music plays on its
-music channel.
-
-![example](docs/example.png)
-
-## Status
-
-Version 0.1.1, tested on the PC (Epic Games Store) release of DDLC+ in October 2026.
-Story mods are still an early feature: back up your saves and expect rough edges.
-
-## Install
-
-The game is a Unity/Mono build, so it needs [BepInEx 5](https://github.com/BepInEx/BepInEx).
-
-1. Close the game.
-2. Download `BepInEx_win_x64_5.4.23.5.zip` and extract it into the game folder, next to
-   `Doki Doki Literature Club Plus.exe`.
-3. Download the release archive and extract it into the game folder, or copy the built
-   `StoryAPI.dll` into `<game>\BepInEx\plugins\StoryAPI\`.
-4. Put your mods in `<game>\BepInEx\plugins\StoryAPI\Mods\<your mod>\`.
-5. Start the game. `BepInEx\config\storyapi.cfg` appears on first launch.
-
-To uninstall, delete the `StoryAPI` folder.
-
-### Building from source
-
-The build references assemblies from an installed copy of the game. The default path
-is the Epic Games Store location; override it for your install:
-
-```
-dotnet build src/StoryAPI/StoryAPI.csproj -c Release -p:GameDir="D:\Games\DokiDokiLitClubPlus"
-```
-
-The output is `src/StoryAPI/bin/StoryAPI.dll`. The project targets `netstandard2.0`
-and needs the .NET SDK; BepInEx 5 supplies the runtime inside the game.
-
-## Writing a mod
-
-A mod is a folder containing one or more `.rpy` files and whatever art they mention.
-
-```
-Mods/
-  my_story/
-    story.rpy
-    images/
-      room.png
-    audio/
-      theme.ogg
-```
-
-### The language
-
-```
-# --- declarations -------------------------------------------------------
-
-character june "June" image june      # a speaker of your own
-image june = june.png                 # art that ships with the mod
-audio june_theme = theme.ogg          # a track that ships with the mod
-
-# --- a scene ------------------------------------------------------------
-
-label my_scene:
-    scene modclassroom                # background
-    play june_theme fadein 1.0        # music (channel defaults to music)
-
-    show june at left                 # a sprite, positioned
-    hide june
-
-    june "Hello. This is my own character speaking."
-    m "And this is the real Monika, in the same scene."
-    _ "Narration is written with a leading underscore."
-
-    $ points = 3                      # a variable
-    $ player_knows = True
-
-    if points > 5:
-        june "Plenty of points."
-    elif points > 0:
-        june "You have [points] points."     # [points] is interpolated
-    else:
-        june "No points at all."
-
-    menu "What next?":
-        "Keep talking":
-            june "Sure."
-        "Leave":
-            jump my_farewell
-
-    return
-
-label my_farewell:
-    stop music
-    scene black
-    june "Goodbye."
-    return
-```
-
-### Variable declarations and loop control
-
-StoryAPI supports a limited subset of Ren'Py variable declarations and loop statements:
-
-```renpy
- expression instruction when a mod label first executes; `None` is delegated
+to DDLC+'s own `$` expression instruction when a mod label first executes; `None` is delegated
 there as well. The common `define name = Character("Display name")` form registers a StoryAPI
 speaker. Initializers are not evaluated during mod registration because there is no live script
 execution context at that point. A shared per-declaration guard prevents `define` values being
@@ -260,7 +142,6 @@ attribute access, function calls, arbitrary Python initializers, Python class in
 the full Ren'Py initialization phase are not implemented. Within a label, `while`, `break`,
 `continue`, and `pass` are supported. A loop must eventually change its condition or
 break; infinite loops can stall the game.
-
 ### The base game's own scenes
 
 A mod does not have to bring its own pictures. The base game's backgrounds, poses and

@@ -814,17 +814,45 @@ namespace StoryAPI.Scripting
         }
 
         /// <summary>
-        /// Only delegate expression forms that look like scalar expressions to the game's
-        /// own $ evaluator. Container literals are handled separately as inert values; indexing,
-        /// comma-separated expressions and function calls are not accepted by this scalar path.
+        /// Delegate a conservative scalar expression to the game's own $ evaluator.
+        /// Container literals are handled separately as inert values. Index reads are
+        /// allowed so a scalar define/default may read list or dictionary entries, but
+        /// function calls, slices, comma-separated expressions and arbitrary Python remain
+        /// outside this path.
         /// </summary>
         private bool IsSupportedRuntimeScalarExpression(int start, int end)
         {
             if (start >= end) return false;
 
+            int indexDepth = 0;
             for (int i = start; i < end; i++)
             {
                 Token token = _tokens[i];
+
+                // Permit only subscription reads rooted in a variable or another subscription.
+                // An empty index, unmatched bracket, or standalone list-like bracket is rejected.
+                if (token.Text == "[")
+                {
+                    if (i == start || i + 1 >= end || _tokens[i + 1].Text == "]")
+                        return false;
+
+                    string previous = _tokens[i - 1].Text;
+                    if (_tokens[i - 1].Type != TokenType.Identifier &&
+                        previous != "]")
+                        return false;
+
+                    indexDepth++;
+                    continue;
+                }
+
+                if (token.Text == "]")
+                {
+                    if (indexDepth == 0 || i == start || _tokens[i - 1].Text == "[")
+                        return false;
+
+                    indexDepth--;
+                    continue;
+                }
 
                 if (token.Type == TokenType.String || token.Type == TokenType.Number)
                     continue;
@@ -879,7 +907,7 @@ namespace StoryAPI.Scripting
                 }
             }
 
-            return true;
+            return indexDepth == 0;
         }
 
         /// <summary>

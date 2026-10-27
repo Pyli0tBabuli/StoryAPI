@@ -15,9 +15,10 @@ using StoryAPI.Game;
 namespace StoryAPI.Runtime
 {
     /// <summary>
-    /// Evaluates a restricted chain of container index reads without sending the
-    /// subscription syntax to DDLC+'s scalar expression evaluator.
-    /// Supported examples: items[0], settings["count"], items[2]["nested"].
+    /// Evaluates restricted container index reads without sending subscription syntax
+    /// to DDLC+'s scalar expression evaluator. It can also replace index reads inside
+    /// scalar expressions with temporary variables before the native evaluator runs.
+    /// Supported examples: items[0], settings["count"], items[2]["nested"], items[0] * 2.
     /// </summary>
     internal sealed class VariableIndexExpressionLine : Line, IApply
     {

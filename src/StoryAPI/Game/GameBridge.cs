@@ -59,6 +59,7 @@ namespace StoryAPI.Game
         private static ConstructorInfo s_dialogueCtor;
         private static bool s_probed;
         private static string s_probeError;
+        private static bool s_dataValueCapabilitiesLogged;
 
         // ---------------------------------------------------------------- state
 
@@ -4093,6 +4094,70 @@ namespace StoryAPI.Game
             DataValue value;
             if (!TryConvertDataValue(literal, out value)) return false;
             return TrySetContextVariable(context, name, value);
+        }
+
+        /// <summary>
+        /// Log the actual game-build value wrapper surface when a mod declares a value type
+        /// StoryAPI does not yet support. The data-value implementation lives in DDLC+'s
+        /// game assemblies, so its collection constructors/conversions must be discovered
+        /// at runtime instead of guessed from the parser.
+        /// </summary>
+        public static void ReportDataValueCapabilities(string sourcePath, int sourceLine, string expression)
+        {
+            if (s_dataValueCapabilitiesLogged) return;
+            s_dataValueCapabilitiesLogged = true;
+
+            Type type = typeof(DataValue);
+            Log.LogInfo("[StoryAPI] Value capability probe requested by " + sourcePath + ":" +
+                sourceLine + " for initializer: " + expression);
+            Log.LogInfo("[StoryAPI] DataValue runtime type: " + type.AssemblyQualifiedName +
+                "; IsValueType=" + type.IsValueType + "; BaseType=" +
+                (type.BaseType == null ? "<none>" : type.BaseType.FullName));
+
+            var conversions = type.GetMethods(Static)
+                .Where(m => m.Name == "op_Implicit" || m.Name == "op_Explicit")
+                .Select(m => FormatSignature(m))
+                .OrderBy(s => s, StringComparer.Ordinal)
+                .ToArray();
+            Log.LogInfo("[StoryAPI] DataValue conversions: " +
+                (conversions.Length == 0 ? "<none>" : string.Join(" | ", conversions)));
+
+            var constructors = type.GetConstructors(Instance)
+                .Select(c => FormatSignature(c))
+                .OrderBy(s => s, StringComparer.Ordinal)
+                .ToArray();
+            Log.LogInfo("[StoryAPI] DataValue constructors: " +
+                (constructors.Length == 0 ? "<none>" : string.Join(" | ", constructors)));
+
+            var members = type.GetFields(Instance).Select(f =>
+                    (f.IsPublic ? "public " : "nonpublic ") + "field " + f.FieldType.FullName + " " + f.Name)
+                .Concat(type.GetProperties(Instance).Select(p =>
+                    "property " + (p.PropertyType == null ? "<unknown>" : p.PropertyType.FullName) +
+                    " " + p.Name))
+                .OrderBy(s => s, StringComparer.Ordinal)
+                .ToArray();
+            Log.LogInfo("[StoryAPI] DataValue fields/properties: " +
+                (members.Length == 0 ? "<none>" : string.Join(" | ", members)));
+
+            Type expressionType = typeof(CompiledExpression);
+            var expressionBuilders = expressionType.GetMethods(Instance)
+                .Where(m => !m.IsSpecialName && m.DeclaringType != typeof(object))
+                .Select(m => FormatSignature(m))
+                .OrderBy(s => s, StringComparer.Ordinal)
+                .ToArray();
+            Log.LogInfo("[StoryAPI] CompiledExpression API: " +
+                (expressionBuilders.Length == 0 ? "<none>" : string.Join(" | ", expressionBuilders)));
+        }
+
+        private static string FormatSignature(MethodBase method)
+        {
+            string parameters = string.Join(", ", method.GetParameters()
+                .Select(p => p.ParameterType.FullName + " " + p.Name).ToArray());
+            if (method is ConstructorInfo)
+                return method.DeclaringType.FullName + "(" + parameters + ")";
+            var info = method as MethodInfo;
+            return (info == null ? string.Empty : info.ReturnType.FullName + " ") +
+                method.DeclaringType.FullName + "." + method.Name + "(" + parameters + ")";
         }
 
         private static bool TryConvertDataValue(object source, out DataValue value)

@@ -142,7 +142,7 @@ namespace StoryAPI.Runtime
                     continue;
                 }
 
-                if (c == '"' || c == '\\'')
+                if (c == '"' || c == '\'')
                 {
                     inString = true;
                     quote = c;
@@ -230,7 +230,7 @@ namespace StoryAPI.Runtime
                         continue;
                     }
 
-                    if (c == '"' || c == '\\'')
+                    if (c == '"' || c == '\'')
                     {
                         inKeyString = true;
                         quote = c;

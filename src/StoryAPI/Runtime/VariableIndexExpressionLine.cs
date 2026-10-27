@@ -652,9 +652,39 @@ namespace StoryAPI.Runtime
                 if (!context.ResolveVariable(name, out DataValue dataValue)) return false;
                 Type dataValueType = typeof(DataValue);
 
+                FieldInfo typeField = dataValueType.GetField(
+                    "type", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                object typeValue = typeField == null ? null : typeField.GetValue(dataValue);
+                string typeName = typeValue == null ? string.Empty :
+                    Convert.ToString(typeValue, CultureInfo.InvariantCulture);
+                bool isString = typeName.IndexOf("string", StringComparison.OrdinalIgnoreCase) >= 0;
+                bool isNumeric = typeName.IndexOf("float", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    typeName.IndexOf("number", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    typeName.IndexOf("numeric", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    typeName.IndexOf("integer", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    typeName.IndexOf("int", StringComparison.OrdinalIgnoreCase) >= 0;
+                bool isNullOrObject = typeName.IndexOf("none", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    typeName.IndexOf("null", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    typeName.IndexOf("object", StringComparison.OrdinalIgnoreCase) >= 0;
+
                 FieldInfo objectField = dataValueType.GetField(
                     "objectRef", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
                 object objectValue = objectField == null ? null : objectField.GetValue(dataValue);
+
+                // Prefer the discriminator over the backing fields: DDLC+ keeps inactive
+                // fields at their default values (for example stringVal may be empty for a
+                // numeric DataValue). Reading stringVal before type used to turn index 1
+                // into the empty string and made valid dynamic list indexes fail.
+                if (isString)
+                {
+                    FieldInfo stringField = dataValueType.GetField(
+                        "stringVal", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                    object stringValue = stringField == null ? null : stringField.GetValue(dataValue);
+                    if (!(stringValue is string)) return false;
+                    value = (string)stringValue;
+                    return true;
+                }
+
                 if (objectValue is string || objectValue is byte || objectValue is sbyte ||
                     objectValue is short || objectValue is ushort || objectValue is int ||
                     objectValue is uint || objectValue is long || objectValue is ulong ||
@@ -664,37 +694,46 @@ namespace StoryAPI.Runtime
                     return true;
                 }
 
-                if (objectValue != null)
-                    return false;
-
-                FieldInfo stringField = dataValueType.GetField(
-                    "stringVal", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-                object stringValue = stringField == null ? null : stringField.GetValue(dataValue);
-                if (stringValue is string)
+                if (isNumeric)
                 {
-                    value = (string)stringValue;
+                    FieldInfo numberField = dataValueType.GetField(
+                        "floatVal", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                    object numberValue = numberField == null ? null : numberField.GetValue(dataValue);
+                    if (!(numberValue is float) && !(numberValue is double) &&
+                        !(numberValue is decimal) && !(numberValue is int))
+                        return false;
+
+                    value = numberValue;
                     return true;
                 }
 
-                FieldInfo typeField = dataValueType.GetField(
-                    "type", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-                string typeName = typeField == null ? string.Empty :
-                    Convert.ToString(typeField.GetValue(dataValue), CultureInfo.InvariantCulture);
-                if (typeName.IndexOf("none", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    typeName.IndexOf("null", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    typeName.IndexOf("object", StringComparison.OrdinalIgnoreCase) >= 0)
+                if (isNullOrObject || objectValue != null)
                     return false;
 
-                FieldInfo numberField = dataValueType.GetField(
+                // Compatibility fallback for a game build that renames its numeric enum
+                // members but keeps the documented numeric/string backing fields.
+                FieldInfo fallbackStringField = dataValueType.GetField(
+                    "stringVal", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                object fallbackStringValue = fallbackStringField == null ? null :
+                    fallbackStringField.GetValue(dataValue);
+                if (fallbackStringValue is string && !string.IsNullOrEmpty((string)fallbackStringValue))
+                {
+                    value = (string)fallbackStringValue;
+                    return true;
+                }
+
+                FieldInfo fallbackNumberField = dataValueType.GetField(
                     "floatVal", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-                if (numberField == null) return false;
-                object numberValue = numberField.GetValue(dataValue);
-                if (!(numberValue is float) && !(numberValue is double) &&
-                    !(numberValue is decimal) && !(numberValue is int))
-                    return false;
+                object fallbackNumberValue = fallbackNumberField == null ? null :
+                    fallbackNumberField.GetValue(dataValue);
+                if (fallbackNumberValue is float || fallbackNumberValue is double ||
+                    fallbackNumberValue is decimal || fallbackNumberValue is int)
+                {
+                    value = fallbackNumberValue;
+                    return true;
+                }
 
-                value = numberValue;
-                return true;
+                return false;
             }
             catch
             {

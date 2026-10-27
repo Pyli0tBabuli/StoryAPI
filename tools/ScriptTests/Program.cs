@@ -31,6 +31,7 @@ namespace StoryAPI.Tests
             Run("list and dictionary length conditions", TestCollectionLengthConditions);
             Run("list and dictionary clear methods", TestCollectionClearMethods);
             Run("list extend method", TestListExtendMethod);
+            Run("list insert and pop methods", TestListInsertAndPopMethods);
             Run("if/elif/else branches", TestConditionalBranches);
             Run("menu choices and nested statements", TestMenuChoices);
             Run("while and loop-control statements", TestWhileAndLoopControl);
@@ -991,6 +992,120 @@ namespace StoryAPI.Tests
             Check(Require<PythonStatement>(label.Body[0],
                     "The extend call should parse as a Python statement.").Code == "inventory.extend(rewards)",
                 "The parser should preserve the list extend() call.");
+        }
+
+        private static void TestListInsertAndPopMethods()
+        {
+            const string sourcePath = "list-insert-pop-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var inventory = new List<object> { "key", "medkit" };
+            context.SetVariable("inventory",
+                new SimpleExpressionEngine.DataValue((object)inventory));
+
+            const string insertPrefix = "_storyapi_insert_test";
+            context.SetVariable(insertPrefix + "_insert_index",
+                new SimpleExpressionEngine.DataValue(1f));
+            context.SetVariable(insertPrefix + "_insert_value",
+                new SimpleExpressionEngine.DataValue("flashlight"));
+
+            List<RenPyParser.Line> lines;
+            Check(VariableIndexExpressionLine.TryCreateListInsertLines(
+                    "inventory.insert(1, \"flashlight\")", insertPrefix, sourcePath, 10, 100,
+                    out lines),
+                "inventory.insert(index, value) should be recognized.");
+            Check(lines.Last().GetType().Name == "ListInsertLine",
+                "insert() should emit the dedicated list-insert instruction.");
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
+            Check(inventory.Count == 3 && (string)inventory[0] == "key" &&
+                    (string)inventory[1] == "flashlight" && (string)inventory[2] == "medkit",
+                "insert() should place the value at the requested index.");
+
+            context.SetVariable(insertPrefix + "_insert_index",
+                new SimpleExpressionEngine.DataValue(-1f));
+            context.SetVariable(insertPrefix + "_insert_value",
+                new SimpleExpressionEngine.DataValue("battery"));
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
+            Check(inventory.Count == 4 && (string)inventory[2] == "battery",
+                "insert() should clamp a negative index relative to the end.");
+
+            context.SetVariable(insertPrefix + "_insert_index",
+                new SimpleExpressionEngine.DataValue(100f));
+            context.SetVariable(insertPrefix + "_insert_value",
+                new SimpleExpressionEngine.DataValue("map"));
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
+            Check((string)inventory[inventory.Count - 1] == "map",
+                "insert() should clamp an index above Count to the end.");
+
+            Check(!VariableIndexExpressionLine.TryCreateListInsertLines(
+                    "inventory.insert(1)", insertPrefix, sourcePath, 11, 100, out lines),
+                "insert() should reject a missing value argument.");
+            Check(!VariableIndexExpressionLine.TryCreateListInsertLines(
+                    "inventory.insert(1, \"a\", \"b\")", insertPrefix, sourcePath, 12, 100, out lines),
+                "insert() should reject more than two arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateListInsertLines(
+                    "inventory[0].insert(1, \"a\")", insertPrefix, sourcePath, 13, 100, out lines),
+                "insert() should reject indexed targets.");
+            Check(!VariableIndexExpressionLine.TryCreateListInsertLines(
+                    "inventory.insert(inventory[0], \"a\")", insertPrefix, sourcePath, 14, 100, out lines),
+                "insert() should reject collection reads in the index expression.");
+
+            // pop() both removes the final item and can assign its scalar result.
+            string popped;
+            context.SetVariable("inventory",
+                new SimpleExpressionEngine.DataValue((object)new List<object> { "key", "battery" }));
+            var popInventory = new List<object> { "key", "battery" };
+            context.SetVariable("inventory", new SimpleExpressionEngine.DataValue((object)popInventory));
+
+            const string popPrefix = "_storyapi_pop_test";
+            Check(VariableIndexExpressionLine.TryCreateListPopLines(
+                    "last_item = inventory.pop()", popPrefix, sourcePath, 20, out lines),
+                "Assignment from pop() should be recognized.");
+            Check(lines.Last().GetType().Name == "ListPopLine",
+                "pop() should emit the dedicated list-pop instruction.");
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
+            object removed;
+            Check(GameBridge.TryGetLastTestLiteral("last_item", out removed) &&
+                    string.Equals(removed as string, "battery", StringComparison.Ordinal),
+                "Assignment from pop() should preserve the popped scalar value.");
+            Check(popInventory.Count == 1 && (string)popInventory[0] == "key",
+                "pop() with no index should remove the final item.");
+
+            context.SetVariable(popPrefix + "_pop_index",
+                new SimpleExpressionEngine.DataValue(0f));
+            Check(VariableIndexExpressionLine.TryCreateListPopLines(
+                    "first_item = inventory.pop(0)", popPrefix, sourcePath, 21, out lines),
+                "pop(index) assignment should be recognized.");
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("first_item", out removed) &&
+                    string.Equals(removed as string, "key", StringComparison.Ordinal),
+                "pop(index) should assign the value at the requested index.");
+            Check(popInventory.Count == 0,
+                "pop(index) should remove the requested item.");
+
+            Check(!VariableIndexExpressionLine.TryCreateListPopLines(
+                    "item = inventory.pop(0, 1)", popPrefix, sourcePath, 22, out lines),
+                "pop() should reject multiple arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateListPopLines(
+                    "inventory[0].pop()", popPrefix, sourcePath, 23, out lines),
+                "pop() should reject indexed targets.");
+            Check(!VariableIndexExpressionLine.TryCreateListPopLines(
+                    "item = inventory.pop(inventory[0])", popPrefix, sourcePath, 24, out lines),
+                "pop() should reject collection reads in the index expression.");
+
+            var statements = Parse(
+                "label insert_pop_test:\n" +
+                "    $ inventory.insert(1, \"flashlight\")\n" +
+                "    $ item = inventory.pop()\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing insert() and pop() calls.");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The insert call should parse as a Python statement.").Code ==
+                    "inventory.insert(1, \"flashlight\")",
+                "The parser should preserve insert() calls.");
+            Check(Require<PythonStatement>(label.Body[1],
+                    "The pop assignment should parse as a Python statement.").Code == "item = inventory.pop()",
+                "The parser should preserve pop() assignments.");
         }
 
         private static void TestConditionalBranches()

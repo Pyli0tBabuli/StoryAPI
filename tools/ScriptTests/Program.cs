@@ -479,10 +479,10 @@ namespace StoryAPI.Tests
             Check(VariableIndexExpressionLine.TryCreateAssignmentLines(
                     "inventory[1] = 99", prefix, "assignment-test.rpy", 2, 4, out lines),
                 "A literal list element assignment should be recognized.");
-            Check(lines.Count == 4 + 1 &&
+            Check(lines.Count == 4 &&
                 lines.Last().GetType().Name == "CollectionMutationLine",
                 "The assignment should emit a guarded block ending in a collection mutation line.");
-            Check(lines.OfType<RenpyParser.RenpyGoToLineUnless>().Single().Target == 9,
+            Check(lines.OfType<RenpyParser.RenpyGoToLineUnless>().Single().Target == 8,
                 "The guard jump should target the instruction after the assignment block.");
 
             var context = new RenpyParser.DynamicIndexTestContext();

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using StoryAPI.Scripting;
+using StoryAPI.Runtime;
 
 namespace StoryAPI.Tests
 {
@@ -19,6 +20,7 @@ namespace StoryAPI.Tests
             Run("define/default scalar declarations", TestVariableDeclarations);
             Run("runtime scalar initializer expressions", TestRuntimeExpressionDeclarations);
             Run("container index expressions", TestContainerIndexExpressions);
+            Run("runtime index expression rewriting", TestRuntimeIndexExpressionRewriting);
             Run("if/elif/else branches", TestConditionalBranches);
             Run("menu choices and nested statements", TestMenuChoices);
             Run("while and loop-control statements", TestWhileAndLoopControl);
@@ -255,6 +257,9 @@ namespace StoryAPI.Tests
                 "default default_first = starting_points[0]\n" +
                 "define unclosed_index = starting_points[0\n" +
                 "define extra_closing_index = starting_points[0]]\n" +
+                "define multiplied_item = starting_points[0] * 2\n" +
+                "define summed_items = starting_points[0] + starting_points[1]\n" +
+                "default combined_condition = starting_points[0] >= 1 and has_key\n" +
                 "label container_index_test:\n" +
                 "    return\n");
 
@@ -279,7 +284,7 @@ namespace StoryAPI.Tests
                 "Expected an index expression with arithmetic.");
             Check(calculated.HasRuntimeExpression &&
                 calculated.Expression == "starting_points[index_value + 1] * 2",
-                "Index expressions should allow scalar arithmetic.");
+                "The parser should preserve indexed expressions so runtime validation can reject dynamic indexes.");
 
             var bracketKey = Require<VariableDeclarationStatement>(statements[4],
                 "Expected a dictionary key containing a closing bracket.");
@@ -322,6 +327,76 @@ namespace StoryAPI.Tests
                 "Expected a declaration with an unmatched closing bracket.");
             Check(!extraClosing.HasLiteral && !extraClosing.HasRuntimeExpression,
                 "Unmatched closing brackets should remain unsupported.");
+
+            var multiplied = Require<VariableDeclarationStatement>(statements[12],
+                "Expected arithmetic applied to an indexed list value.");
+            Check(multiplied.HasRuntimeExpression &&
+                multiplied.Expression == "starting_points[0] * 2",
+                "Index reads should be valid operands in scalar multiplication.");
+
+            var summed = Require<VariableDeclarationStatement>(statements[13],
+                "Expected an expression adding two indexed values.");
+            Check(summed.HasRuntimeExpression &&
+                summed.Expression == "starting_points[0] + starting_points[1]",
+                "Multiple index reads should be retained in one scalar expression.");
+
+            var combinedCondition = Require<VariableDeclarationStatement>(statements[14],
+                "Expected a logical expression with an indexed comparison.");
+            Check(combinedCondition.IsDefault && combinedCondition.HasRuntimeExpression &&
+                combinedCondition.Expression == "starting_points[0] >= 1 and has_key",
+                "Index reads should be valid operands in scalar comparisons and logical expressions.");
+        }
+
+        private static void TestRuntimeIndexExpressionRewriting()
+        {
+            Check(VariableIndexExpressionLine.CanHandle("starting_points[0]"),
+                "A pure list index chain should use the direct runtime reader.");
+
+            string rewritten;
+            List<KeyValuePair<string, string>> reads;
+            Check(VariableIndexExpressionLine.TryRewriteExpression(
+                    "starting_points[0] * 2", "_storyapi_test",
+                    out rewritten, out reads),
+                "An indexed value multiplied by a scalar should be rewriteable.");
+            Check(rewritten == "_storyapi_test_index_0 * 2",
+                "The index read should be replaced with a temporary variable.");
+            Check(reads.Count == 1 &&
+                reads[0].Key == "_storyapi_test_index_0" &&
+                reads[0].Value == "starting_points[0]",
+                "The rewriter should preserve the exact source chain for runtime reading.");
+
+            Check(VariableIndexExpressionLine.TryRewriteExpression(
+                    "starting_points[0] + settings[\"count\"]",
+                    "_storyapi_test", out rewritten, out reads),
+                "Two index reads in one expression should both be rewriteable.");
+            Check(rewritten ==
+                    "_storyapi_test_index_0 + _storyapi_test_index_1" &&
+                reads.Count == 2 &&
+                reads[1].Value == "settings[\"count\"]",
+                "Multiple index reads should create distinct temporary variables.");
+
+            Check(VariableIndexExpressionLine.TryRewriteExpression(
+                    "settings[\"count\"] >= 2 and has_key",
+                    "_storyapi_test", out rewritten, out reads) &&
+                rewritten == "_storyapi_test_index_0 >= 2 and has_key",
+                "Index reads should be rewriteable inside comparisons and logical expressions.");
+
+            Check(VariableIndexExpressionLine.TryRewriteExpression(
+                    "starting_points[0] + settings[\"]\"]",
+                    "_storyapi_test", out rewritten, out reads) &&
+                reads.Count == 2 &&
+                reads[1].Value == "settings[\"]\"]",
+                "A closing bracket inside a quoted key must not end the index early.");
+
+            Check(!VariableIndexExpressionLine.TryRewriteExpression(
+                    "items[index_value + 1] * 2",
+                    "_storyapi_test", out rewritten, out reads),
+                "Dynamic indexes should remain unsupported by the runtime rewriter.");
+
+            Check(!VariableIndexExpressionLine.TryRewriteExpression(
+                    "label_text == \"[\"",
+                    "_storyapi_test", out rewritten, out reads),
+                "Bracket characters inside strings must not be treated as index reads.");
         }
 
         private static void TestConditionalBranches()

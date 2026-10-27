@@ -15,9 +15,10 @@ using StoryAPI.Game;
 namespace StoryAPI.Runtime
 {
     /// <summary>
-    /// Evaluates a restricted chain of container index reads without sending the
-    /// subscription syntax to DDLC+'s scalar expression evaluator.
-    /// Supported examples: items[0], settings["count"], items[2]["nested"].
+    /// Evaluates restricted container index reads without sending subscription syntax
+    /// to DDLC+'s scalar expression evaluator. It can also replace index reads inside
+    /// scalar expressions with temporary variables before the native evaluator runs.
+    /// Supported examples: items[0], settings["count"], items[2]["nested"], items[0] * 2.
     /// </summary>
     internal sealed class VariableIndexExpressionLine : Line, IApply
     {
@@ -28,9 +29,15 @@ namespace StoryAPI.Runtime
         private readonly string _sourcePath;
         private readonly int _sourceLine;
         private readonly VariableInitializationState _state;
+        private readonly VariableInitializationState _failureState;
+        private readonly string _failureGateName;
+        private readonly string _reportedName;
+        private readonly bool _isTemporary;
 
         private VariableIndexExpressionLine(string name, string rootName, List<object> indices,
-            bool isDefault, string sourcePath, int sourceLine, VariableInitializationState state)
+            bool isDefault, string sourcePath, int sourceLine, VariableInitializationState state,
+            VariableInitializationState failureState = null, string failureGateName = null,
+            string reportedName = null, bool isTemporary = false)
         {
             _name = name;
             _rootName = rootName;
@@ -39,6 +46,10 @@ namespace StoryAPI.Runtime
             _sourcePath = sourcePath;
             _sourceLine = sourceLine;
             _state = state;
+            _failureState = failureState;
+            _failureGateName = failureGateName;
+            _reportedName = reportedName ?? name;
+            _isTemporary = isTemporary;
         }
 
         public static bool ContainsIndexSyntax(string expression)
@@ -95,6 +106,192 @@ namespace StoryAPI.Runtime
 
             line = new VariableIndexExpressionLine(name, rootName, indices, isDefault,
                 sourcePath, sourceLine, state);
+            return true;
+        }
+
+        /// <summary>
+        /// Replaces each supported literal index chain inside a scalar expression with a
+        /// temporary variable. The returned pairs are (temporary variable name, source chain).
+        /// Example: "items[0] * 2 + items[1]" becomes
+        /// "_storyapi_expr_index_0 * 2 + _storyapi_expr_index_1".
+        /// </summary>
+        public static bool TryRewriteExpression(string expression, string temporaryPrefix,
+            out string rewrittenExpression, out List<KeyValuePair<string, string>> indexReads)
+        {
+            rewrittenExpression = null;
+            indexReads = new List<KeyValuePair<string, string>>();
+            if (string.IsNullOrWhiteSpace(expression) || string.IsNullOrWhiteSpace(temporaryPrefix))
+                return false;
+
+            var builder = new StringBuilder(expression.Length + 32);
+            bool inString = false;
+            bool escaped = false;
+            char quote = '\0';
+            int cursor = 0;
+
+            while (cursor < expression.Length)
+            {
+                char c = expression[cursor];
+
+                if (inString)
+                {
+                    builder.Append(c);
+                    cursor++;
+                    if (escaped) escaped = false;
+                    else if (c == '\\') escaped = true;
+                    else if (c == quote) inString = false;
+                    continue;
+                }
+
+                if (c == '"' || c == '\'')
+                {
+                    inString = true;
+                    quote = c;
+                    builder.Append(c);
+                    cursor++;
+                    continue;
+                }
+
+                if (IsIdentifierStart(c))
+                {
+                    int nameStart = cursor;
+                    cursor++;
+                    while (cursor < expression.Length && IsIdentifierPart(expression[cursor]))
+                        cursor++;
+
+                    int chainEnd;
+                    if (TryFindIndexExpressionEnd(expression, cursor, out chainEnd))
+                    {
+                        string chain = expression.Substring(nameStart, chainEnd - nameStart).Trim();
+                        string rootName;
+                        List<object> ignoredIndices;
+                        if (!TryParse(chain, out rootName, out ignoredIndices))
+                            return false;
+
+                        string temporaryName = temporaryPrefix + "_index_" + indexReads.Count;
+                        indexReads.Add(new KeyValuePair<string, string>(temporaryName, chain));
+                        builder.Append(temporaryName);
+                        cursor = chainEnd;
+                    }
+                    else
+                    {
+                        // A '[' after an identifier that cannot be parsed as a supported
+                        // literal index chain makes the whole expression unsupported.
+                        int lookahead = cursor;
+                        SkipWhitespace(expression, ref lookahead);
+                        if (lookahead < expression.Length && expression[lookahead] == '[')
+                            return false;
+
+                        builder.Append(expression, nameStart, cursor - nameStart);
+                    }
+
+                    continue;
+                }
+
+                builder.Append(c);
+                cursor++;
+            }
+
+            if (indexReads.Count == 0)
+                return false;
+
+            rewrittenExpression = builder.ToString();
+            return true;
+        }
+
+        private static bool TryFindIndexExpressionEnd(string expression, int afterName, out int end)
+        {
+            end = afterName;
+            int cursor = afterName;
+            int bracketCount = 0;
+
+            while (true)
+            {
+                int bracketStart = cursor;
+                SkipWhitespace(expression, ref bracketStart);
+                if (bracketStart >= expression.Length || expression[bracketStart] != '[')
+                    break;
+
+                bracketCount++;
+                int scan = bracketStart + 1;
+                bool inKeyString = false;
+                bool escaped = false;
+                char quote = '\0';
+                bool foundClose = false;
+
+                while (scan < expression.Length)
+                {
+                    char c = expression[scan];
+                    if (inKeyString)
+                    {
+                        if (escaped) escaped = false;
+                        else if (c == '\\') escaped = true;
+                        else if (c == quote) inKeyString = false;
+                        scan++;
+                        continue;
+                    }
+
+                    if (c == '"' || c == '\'')
+                    {
+                        inKeyString = true;
+                        quote = c;
+                        scan++;
+                        continue;
+                    }
+
+                    if (c == '[')
+                        return false; // No dynamic/nested expressions inside an index.
+
+                    if (c == ']')
+                    {
+                        scan++;
+                        foundClose = true;
+                        break;
+                    }
+
+                    scan++;
+                }
+
+                if (!foundClose || inKeyString) return false;
+                cursor = scan;
+            }
+
+            if (bracketCount == 0) return false;
+            end = cursor;
+            return true;
+        }
+
+        public static bool CanRewriteExpression(string expression)
+        {
+            string rewritten;
+            List<KeyValuePair<string, string>> reads;
+            return TryRewriteExpression(expression, "_storyapi_probe", out rewritten, out reads);
+        }
+
+        public static bool TryCreateTemporary(string temporaryName, string chainExpression,
+            string sourcePath, int sourceLine, VariableInitializationState declarationState,
+            string gateName, string declarationName, out VariableIndexExpressionLine line)
+        {
+            string rootName;
+            List<object> indices;
+            if (!TryParse(chainExpression, out rootName, out indices))
+            {
+                line = null;
+                return false;
+            }
+
+            line = new VariableIndexExpressionLine(
+                temporaryName,
+                rootName,
+                indices,
+                false,
+                sourcePath,
+                sourceLine,
+                new VariableInitializationState(),
+                declarationState,
+                gateName,
+                declarationName,
+                true);
             return true;
         }
 
@@ -263,14 +460,34 @@ namespace StoryAPI.Runtime
                     throw new InvalidOperationException("could not write the indexed value");
 
                 _state.Initialized = true;
-                Log.Info("Evaluated indexed " + (_isDefault ? "default" : "define") +
-                    " variable '" + _name + "' at " + _sourcePath + ":" + _sourceLine + ".");
+                if (_isTemporary)
+                {
+                    Log.Info("Resolved an indexed value for variable '" + _reportedName +
+                        "' at " + _sourcePath + ":" + _sourceLine + ".");
+                }
+                else
+                {
+                    Log.Info("Evaluated indexed " + (_isDefault ? "default" : "define") +
+                        " variable '" + _name + "' at " + _sourcePath + ":" + _sourceLine + ".");
+                }
             }
             catch (Exception e)
             {
                 _state.Failed = true;
+                if (_failureState != null)
+                {
+                    _failureState.Failed = true;
+
+                    // Keep a failed read from passing an undefined temporary into the
+                    // native expression engine, and prevent that expression from running.
+                    GameBridge.TrySetVariableLiteral(_name, 0, false, context);
+                    if (!string.IsNullOrEmpty(_failureGateName))
+                        GameBridge.TrySetVariableLiteral(_failureGateName, false, false, context);
+                }
+
+                string targetName = _reportedName ?? _name;
                 Log.Warn("Could not evaluate indexed " + (_isDefault ? "default" : "define") +
-                    " variable '" + _name + "' at " + _sourcePath + ":" + _sourceLine +
+                    " variable '" + targetName + "' at " + _sourcePath + ":" + _sourceLine +
                     ": " + e.GetBaseException().Message);
             }
         }

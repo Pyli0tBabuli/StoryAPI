@@ -409,6 +409,17 @@ namespace StoryAPI.Tests
                 dynamicIndexes[0].Value == "key_name",
                 "A variable string key should be represented as a dynamic dictionary index.");
 
+            Check(VariableIndexExpressionLine.TryRewriteExpression(
+                    "items[first_index] + items[second_index + 1]",
+                    "_storyapi_test", out rewritten, out reads, out dynamicIndexes) &&
+                reads.Count == 2 &&
+                reads[0].Value == "items[_storyapi_test_key_0]" &&
+                reads[1].Value == "items[_storyapi_test_key_1]" &&
+                dynamicIndexes.Count == 2 &&
+                dynamicIndexes[0].Key == "_storyapi_test_key_0" &&
+                dynamicIndexes[1].Key == "_storyapi_test_key_1",
+                "Dynamic index temporaries must be unique across multiple collection reads.");
+
             Check(!VariableIndexExpressionLine.TryRewriteExpression(
                     "items[random()] * 2",
                     "_storyapi_test", out rewritten, out reads, out dynamicIndexes),

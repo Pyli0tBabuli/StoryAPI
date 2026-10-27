@@ -29,6 +29,7 @@ namespace StoryAPI.Tests
             Run("indexed collection conditions", TestIndexedCollectionConditions);
             Run("list and dictionary membership conditions", TestCollectionMembershipConditions);
             Run("list and dictionary length conditions", TestCollectionLengthConditions);
+            Run("list and dictionary clear methods", TestCollectionClearMethods);
             Run("if/elif/else branches", TestConditionalBranches);
             Run("menu choices and nested statements", TestMenuChoices);
             Run("while and loop-control statements", TestWhileAndLoopControl);
@@ -852,6 +853,67 @@ namespace StoryAPI.Tests
                     stringCondition, prefix, "length-test.rpy", 26, out lines, out prepared) &&
                 prepared == stringCondition,
                 "Text containing len(collection) inside a string must not be rewritten.");
+        }
+
+        private static void TestCollectionClearMethods()
+        {
+            const string sourcePath = "collection-clear-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var inventory = new List<object> { "key", "flashlight", "battery" };
+            var settings = new Dictionary<string, object>
+            {
+                { "count", 5f },
+                { "theme", "dark" }
+            };
+            context.SetVariable("inventory",
+                new SimpleExpressionEngine.DataValue((object)inventory));
+            context.SetVariable("settings",
+                new SimpleExpressionEngine.DataValue((object)settings));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateCollectionClearLine(
+                    "inventory.clear()", sourcePath, 3, out line),
+                "inventory.clear() should be recognized.");
+            Check(line.GetType().Name == "CollectionClearLine",
+                "clear() should emit the dedicated collection-clear instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(inventory.Count == 0,
+                "clear() should remove every element from the original list.");
+
+            Check(VariableIndexExpressionLine.TryCreateCollectionClearLine(
+                    "settings.clear()", sourcePath, 4, out line),
+                "settings.clear() should be recognized for dictionaries.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(settings.Count == 0,
+                "clear() should remove every key/value pair from the original dictionary.");
+
+            Check(!VariableIndexExpressionLine.TryCreateCollectionClearLine(
+                    "inventory.clear(\"key\")", sourcePath, 5, out line),
+                "clear() must reject positional arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateCollectionClearLine(
+                    "inventory.clear(value)", sourcePath, 6, out line),
+                "clear() must reject variable arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateCollectionClearLine(
+                    "inventory.append(\"battery\")", sourcePath, 7, out line),
+                "The clear recognizer must not capture append calls.");
+            Check(!VariableIndexExpressionLine.TryCreateCollectionClearLine(
+                    "inventory[0].clear()", sourcePath, 8, out line),
+                "Nested targets are not supported by clear().");
+            Check(!VariableIndexExpressionLine.TryCreateCollectionClearLine(
+                    "inventory.clear(); inventory.append(\"key\")", sourcePath, 9, out line),
+                "Multiple statements must not be accepted as one clear call.");
+
+            var statements = Parse(
+                "label compiler_clear_test:\n" +
+                "    $ inventory.clear()\n" +
+                "    $ settings.clear()\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing clear() calls.");
+            var compiled = new Compiler(new StoryAssets()).Compile(label);
+            Check(compiled.Ok, "A label containing clear() calls should compile.");
+            Check(compiled.Lines.Count(lineItem => lineItem.GetType().Name == "CollectionClearLine") == 2,
+                "The compiler should route both list and dictionary clear() calls into runtime clear instructions.");
         }
 
         private static void TestConditionalBranches()

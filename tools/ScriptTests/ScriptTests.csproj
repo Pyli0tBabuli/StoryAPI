@@ -11,6 +11,8 @@
 
   <ItemGroup>
     <Compile Include="Program.cs" />
+    <Compile Include="RuntimeExpressionStubs.cs" />
+    <Compile Include="..\..\src\StoryAPI\Runtime\VariableIndexExpressionLine.cs" />
     <Compile Include="..\..\src\StoryAPI\Scripting\Ast.cs" />
     <Compile Include="..\..\src\StoryAPI\Scripting\Lexer.cs" />
     <Compile Include="..\..\src\StoryAPI\Scripting\Parser.cs" />

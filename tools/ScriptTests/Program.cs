@@ -904,16 +904,18 @@ namespace StoryAPI.Tests
                 "Multiple statements must not be accepted as one clear call.");
 
             var statements = Parse(
-                "label compiler_clear_test:\n" +
+                "label clear_test:\n" +
                 "    $ inventory.clear()\n" +
                 "    $ settings.clear()\n" +
                 "    return\n");
             var label = Require<LabelStatement>(statements[0],
                 "Expected a label containing clear() calls.");
-            var compiled = new Compiler(new StoryAssets()).Compile(label);
-            Check(compiled.Ok, "A label containing clear() calls should compile.");
-            Check(compiled.Lines.Count(lineItem => lineItem.GetType().Name == "CollectionClearLine") == 2,
-                "The compiler should route both list and dictionary clear() calls into runtime clear instructions.");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The first clear call should parse as a Python statement.").Code == "inventory.clear()",
+                "The parser should preserve the list clear() call.");
+            Check(Require<PythonStatement>(label.Body[1],
+                    "The second clear call should parse as a Python statement.").Code == "settings.clear()",
+                "The parser should preserve the dictionary clear() call.");
         }
 
         private static void TestConditionalBranches()

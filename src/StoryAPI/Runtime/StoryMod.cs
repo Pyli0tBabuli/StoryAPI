@@ -385,10 +385,9 @@ namespace StoryAPI.Runtime
                 {
                     Warnings.Add(Relative(variable.SourcePath) + ":" + variable.Line +
                         ": indexed initializer for '" + variable.Name + "' is not supported: " +
-                        variable.Expression + ". Use literal integer indexes or quoted string keys, " +
-                        "and combine supported index reads only with the scalar arithmetic/logical " +
-                        "operators already supported by StoryAPI. Dynamic indexes, function calls, " +
-                        "slices, and arbitrary Python are not supported.");
+                        variable.Expression + ". Use integer indexes, quoted string keys, or a simple " +
+                        "scalar expression for a dynamic index. Nested indexes inside a key, function " +
+                        "calls, slices, and arbitrary Python are not supported.");
                 }
             }
         }
@@ -415,6 +414,7 @@ namespace StoryAPI.Runtime
                     bool mixedIndexExpression = containsIndex && !pureIndexExpression;
                     string expressionToExecute = variable.Expression;
                     List<KeyValuePair<string, string>> indexReads = null;
+                    List<KeyValuePair<string, string>> dynamicIndexExpressions = null;
 
                     // Indexes are evaluated by StoryAPI first. Only the rewritten scalar
                     // expression (with temporary variable names) is sent to DDLC+'s engine.
@@ -423,7 +423,8 @@ namespace StoryAPI.Runtime
                             variable.Expression,
                             ExpressionGateName(variable),
                             out expressionToExecute,
-                            out indexReads))
+                            out indexReads,
+                            out dynamicIndexExpressions))
                     {
                         continue;
                     }
@@ -448,7 +449,9 @@ namespace StoryAPI.Runtime
                     {
                         string gateName = ExpressionGateName(variable);
                         int blockStart = initLines.Count;
-                        int blockSize = mixedIndexExpression ? indexReads.Count + 5 : 4;
+                        int blockSize = mixedIndexExpression
+                            ? indexReads.Count + dynamicIndexExpressions.Count + 5
+                            : 4;
                         int skipTarget = blockStart + blockSize;
 
                         // The gate and first jump ensure a declaration is run once, and
@@ -495,13 +498,21 @@ namespace StoryAPI.Runtime
                                 continue;
                             }
 
+                            // Dynamic key expressions are evaluated by the game's scalar
+                            // expression engine before StoryAPI reads the collection.
+                            foreach (KeyValuePair<string, string> dynamicIndex in dynamicIndexExpressions)
+                            {
+                                initLines.Add(new RenpyOneLinePython(
+                                    "$ " + dynamicIndex.Key + " = " + dynamicIndex.Value));
+                            }
+
                             initLines.AddRange(temporaryLines);
 
                             // If a read fails, its line turns the gate off. Jump over the
                             // native assignment so a failed read cannot assign a bogus value.
                             initLines.Add(new RenpyGoToLineUnless(
                                 gateName,
-                                blockStart + 4 + indexReads.Count));
+                                blockStart + 4 + dynamicIndexExpressions.Count + indexReads.Count));
                             initLines.Add(new RenpyOneLinePython(
                                 "$ " + variable.Name + " = " + expressionToExecute));
                         }

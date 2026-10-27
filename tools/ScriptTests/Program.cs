@@ -24,6 +24,7 @@ namespace StoryAPI.Tests
             Run("runtime index expression rewriting", TestRuntimeIndexExpressionRewriting);
             Run("dynamic index scalar value extraction", TestDynamicIndexScalarValueExtraction);
             Run("indexed collection assignment", TestIndexedCollectionAssignments);
+            Run("indexed collection conditions", TestIndexedCollectionConditions);
             Run("if/elif/else branches", TestConditionalBranches);
             Run("menu choices and nested statements", TestMenuChoices);
             Run("while and loop-control statements", TestWhileAndLoopControl);
@@ -535,6 +536,39 @@ namespace StoryAPI.Tests
             Check(!VariableIndexExpressionLine.TryCreateAssignmentLines(
                     "inventory[0] += 1", prefix, "assignment-test.rpy", 7, 40, out lines),
                 "Compound assignments remain outside the initial mutation subset.");
+        }
+
+        private static void TestIndexedCollectionConditions()
+        {
+            const string prefix = "_storyapi_condition_test";
+            const string condition =
+                "stage5_probe_list[1] == 99 and stage5_probe_dict[\"count\"] == 5 and " +
+                "stage5_probe_dict[\"meta\"][\"count\"] == 6";
+
+            List<RenPyParser.Line> lines;
+            string preparedCondition;
+            Check(VariableIndexExpressionLine.TryPrepareCondition(
+                    condition, prefix, "condition-test.rpy", 8, out lines, out preparedCondition),
+                "An if condition containing multiple indexed collection reads should be prepared.");
+
+            Check(lines.Count == 4 &&
+                lines[0] is RenpyParser.RenpyOneLinePython &&
+                ((RenpyParser.RenpyOneLinePython)lines[0]).Code == "$ " + prefix + "_gate = True",
+                "Condition preparation should initialize a failure gate before resolving reads.");
+            Check(lines.OfType<VariableIndexExpressionLine>().Count() == 3,
+                "Each indexed value in a conditional expression should be resolved to a temporary.");
+            Check(preparedCondition ==
+                    prefix + "_gate and (" + prefix + "_index_0 == 99 and " +
+                    prefix + "_index_1 == 5 and " + prefix + "_index_2 == 6)",
+                "The native conditional expression should contain temporary names and a failure gate.");
+
+            List<RenPyParser.Line> noIndexLines;
+            string unchangedCondition;
+            Check(!VariableIndexExpressionLine.TryPrepareCondition(
+                    "score > 0", prefix, "condition-test.rpy", 9,
+                    out noIndexLines, out unchangedCondition) &&
+                noIndexLines.Count == 0 && unchangedCondition == "score > 0",
+                "Ordinary scalar conditions should remain untouched.");
         }
 
         private static void TestConditionalBranches()

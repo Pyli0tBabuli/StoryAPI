@@ -369,6 +369,9 @@ namespace StoryAPI.Runtime
             {
                 if (!variable.HasLiteral && !variable.HasRuntimeExpression)
                 {
+                    GameBridge.ReportDataValueCapabilities(
+                        Relative(variable.SourcePath), variable.Line, variable.Expression);
+
                     Warnings.Add(Relative(variable.SourcePath) + ":" + variable.Line +
                         ": " + (variable.IsDefault ? "default" : "define") + " '" + variable.Name +
                         "' uses an initializer not supported by StoryAPI: " + variable.Expression +

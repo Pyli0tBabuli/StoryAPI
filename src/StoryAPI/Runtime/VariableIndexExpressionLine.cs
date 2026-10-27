@@ -709,6 +709,50 @@ namespace StoryAPI.Runtime
         /// Compiles the restricted list methods append(value) and remove(value). Only one
         /// scalar argument is accepted; indexed reads inside that value are resolved first.
         /// </summary>
+        /// <summary>
+        /// Recognizes clear() on a named object-backed list or dictionary. No arguments
+        /// are accepted; the collection is cleared in-place at runtime.
+        /// </summary>
+        public static bool TryCreateCollectionClearLine(string code, string sourcePath,
+            int sourceLine, out Line line)
+        {
+            line = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+
+            int nameStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string rootName = code.Substring(nameStart, cursor - nameStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor] != '.') return false;
+            cursor++;
+            SkipWhitespace(code, ref cursor);
+
+            const string methodName = "clear";
+            if (cursor + methodName.Length > code.Length ||
+                string.Compare(code, cursor, methodName, 0, methodName.Length,
+                    StringComparison.Ordinal) != 0)
+                return false;
+            cursor += methodName.Length;
+
+            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor] != '(') return false;
+            cursor++;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor] != ')') return false;
+            cursor++;
+            SkipWhitespace(code, ref cursor);
+            if (cursor != code.Length) return false;
+
+            line = new CollectionClearLine(rootName, sourcePath, sourceLine);
+            return true;
+        }
+
         public static bool TryCreateListMethodMutationLines(string code, string temporaryPrefix,
             string sourcePath, int sourceLine, int blockStart, out List<Line> lines)
         {
@@ -1037,6 +1081,55 @@ namespace StoryAPI.Runtime
 
             rightExpression = code.Substring(cursor).Trim();
             return !string.IsNullOrWhiteSpace(rightExpression);
+        }
+
+        private sealed class CollectionClearLine : Line, IApply
+        {
+            private readonly string _rootName;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public CollectionClearLine(string rootName, string sourcePath, int sourceLine)
+            {
+                _rootName = rootName;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object collection))
+                        throw new InvalidOperationException("variable '" + _rootName +
+                            "' does not contain an object-backed list or dictionary");
+
+                    if (collection is IList list)
+                    {
+                        list.Clear();
+                    }
+                    else if (collection is IDictionary dictionary)
+                    {
+                        dictionary.Clear();
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException("clear() target is not a list or dictionary");
+                    }
+
+                    Log.Info("Cleared collection '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not clear collection '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
         }
 
         private sealed class ListMethodMutationLine : Line, IApply

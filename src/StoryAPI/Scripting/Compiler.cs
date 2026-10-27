@@ -497,9 +497,10 @@ namespace StoryAPI.Scripting
             // A lone conditional branch: jump over it when the condition is false.
             if (branches.Count == 1)
             {
-                int guard = EmitUnless(branches[0].Condition);
+                string condition = PrepareCondition(branches[0].Condition, statement.Line);
+                int guard = EmitUnless(condition);
                 EmitBody(branches[0].Body);
-                PatchUnless(branches[0].Condition, guard, _out.Count);
+                PatchUnless(condition, guard, _out.Count);
                 _out.Add(new RenpyNOP());
                 return;
             }
@@ -527,8 +528,8 @@ namespace StoryAPI.Scripting
                 // when its condition was false.
                 if (pendingGuard >= 0) PatchUnless(pendingCondition, pendingGuard, _out.Count);
 
-                pendingCondition = branch.Condition;
-                pendingGuard = EmitUnless(branch.Condition);
+                pendingCondition = PrepareCondition(branch.Condition, statement.Line);
+                pendingGuard = EmitUnless(pendingCondition);
 
                 EmitBody(branch.Body);
 
@@ -546,6 +547,22 @@ namespace StoryAPI.Scripting
             _out.Add(new RenpyNOP());
         }
 
+        private string PrepareCondition(string condition, int sourceLine)
+        {
+            string safeLabel = Regex.Replace(_textLabel ?? "label", @"[^A-Za-z0-9_]", "_");
+            string prefix = "_storyapi_condition_" + safeLabel + "_" +
+                sourceLine.ToString(CultureInfo.InvariantCulture) + "_" + _out.Count;
+
+            List<Line> preparatoryLines;
+            string preparedCondition;
+            if (!VariableIndexExpressionLine.TryPrepareCondition(condition, prefix,
+                _textLabel ?? "unknown", sourceLine, out preparatoryLines, out preparedCondition))
+                return condition;
+
+            _out.AddRange(preparatoryLines);
+            return preparedCondition;
+        }
+
         private int EmitUnless(string condition)
         {
             _out.Add(new RenpyGoToLineUnless(condition, -1));
@@ -555,7 +572,8 @@ namespace StoryAPI.Scripting
         private void EmitWhile(WhileStatement statement)
         {
             int start = _out.Count;
-            int guard = EmitUnless(statement.Condition);
+            string condition = PrepareCondition(statement.Condition, statement.Line);
+            int guard = EmitUnless(condition);
             var loop = new LoopContext { Start = start };
             _loops.Push(loop);
             try
@@ -569,7 +587,7 @@ namespace StoryAPI.Scripting
 
             _out.Add(new RenpyGoToLine(start));
             int end = _out.Count;
-            PatchUnless(statement.Condition, guard, end);
+            PatchUnless(condition, guard, end);
             foreach (var jump in loop.Breaks) jump.targetLine = end;
             _out.Add(new RenpyNOP());
         }

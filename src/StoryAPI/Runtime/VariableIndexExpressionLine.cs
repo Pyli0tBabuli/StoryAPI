@@ -18,7 +18,7 @@ namespace StoryAPI.Runtime
     /// Evaluates restricted container index reads without sending subscription syntax
     /// to DDLC+'s scalar expression evaluator. It can also replace index reads inside
     /// scalar expressions with temporary variables before the native evaluator runs.
-    /// Supported examples: items[0], settings["count"], items[2]["nested"], items[0] * 2.
+    /// Supported examples include literal and computed indexes, nested collection reads, and scalar expressions.
     /// </summary>
     internal sealed class VariableIndexExpressionLine : Line, IApply
     {
@@ -189,7 +189,7 @@ namespace StoryAPI.Runtime
                     string rewrittenChain;
                     var candidateDynamicIndexes = new List<KeyValuePair<string, string>>();
                     if (TryFindIndexExpressionEnd(expression, nameStart, cursor, temporaryPrefix,
-                        candidateDynamicIndexes, out chainEnd, out rewrittenChain))
+                        dynamicIndexExpressions.Count, candidateDynamicIndexes, out chainEnd, out rewrittenChain))
                     {
                         string temporaryName = temporaryPrefix + "_index_" + indexReads.Count;
                         indexReads.Add(new KeyValuePair<string, string>(temporaryName, rewrittenChain));
@@ -224,8 +224,8 @@ namespace StoryAPI.Runtime
         }
 
         private static bool TryFindIndexExpressionEnd(string expression, int nameStart, int afterName,
-            string temporaryPrefix, List<KeyValuePair<string, string>> dynamicIndexExpressions,
-            out int end, out string rewrittenChain)
+            string temporaryPrefix, int dynamicIndexOffset,
+            List<KeyValuePair<string, string>> dynamicIndexExpressions, out int end, out string rewrittenChain)
         {
             end = afterName;
             rewrittenChain = null;
@@ -292,7 +292,8 @@ namespace StoryAPI.Runtime
                     if (!IsSupportedDynamicIndexExpression(keyExpression))
                         return false;
 
-                    string keyName = temporaryPrefix + "_key_" + dynamicIndexExpressions.Count;
+                    string keyName = temporaryPrefix + "_key_" +
+                        (dynamicIndexOffset + dynamicIndexExpressions.Count);
                     dynamicIndexExpressions.Add(new KeyValuePair<string, string>(
                         keyName, keyExpression));
                     chainBuilder.Append('[').Append(keyName).Append(']');

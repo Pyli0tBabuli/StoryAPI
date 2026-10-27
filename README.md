@@ -147,13 +147,16 @@ Collection initialization and index reads such as
 `define first_item = starting_points[0]`,
 `define item_count = settings["count"]`, and
 `define nested_item = items[2]["nested"]` use StoryAPI's restricted runtime index reader.
-Index keys must be literal integers for lists or quoted strings for dictionaries. A pure chain
-of reads is supported; expressions that mix indexing with arithmetic or logic (for example
-`items[index_value + 1] * 2`) are not supported yet and are skipped with a mod warning rather
-than being sent to the game's scalar evaluator. Collection mutation, attribute access, function
-calls in initializers, arbitrary Python initializers, Python class instances, tuples, slices,
-and the full Ren'Py initialization phase are not supported. Within a label, `while`, `break`,
-`continue`, and `pass` are supported.
+Index keys must be literal integers for lists or quoted strings for dictionaries. Index reads can
+also be combined with the supported scalar arithmetic, comparison, and logical operators, for
+example `define bonus = inventory[0] * 2`,
+`define total = inventory[0] + inventory[1]`, or
+`default can_enter = settings["count"] >= 2 and has_key`. StoryAPI reads each supported index
+chain first, then lets DDLC+'s scalar evaluator handle the remaining expression. Dynamic indexes
+such as `items[index_value + 1]`, collection mutation, attribute access, function calls in
+initializers, arbitrary Python initializers, Python class instances, tuples, slices, and the full
+Ren'Py initialization phase are not supported. Within a label, `while`, `break`, `continue`,
+and `pass` are supported.
 A loop must eventually change its condition or break; infinite loops can stall the game.
 
 ### The base game's own scenes

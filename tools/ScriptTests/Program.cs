@@ -252,6 +252,9 @@ namespace StoryAPI.Tests
                 "define empty_index = starting_points[]\n" +
                 "define call_index = starting_points[random()]\n" +
                 "define call_value = random()\n" +
+                "default default_first = starting_points[0]\n" +
+                "define unclosed_index = starting_points[0\n" +
+                "define extra_closing_index = starting_points[0]]\n" +
                 "label container_index_test:\n" +
                 "    return\n");
 
@@ -304,6 +307,21 @@ namespace StoryAPI.Tests
                 "Expected function-call declaration.");
             Check(!call.HasLiteral && !call.HasRuntimeExpression,
                 "Function calls should remain unsupported.");
+
+            var defaultFirst = Require<VariableDeclarationStatement>(statements[9],
+                "Expected a default declaration using a list index.");
+            Check(defaultFirst.IsDefault && defaultFirst.HasRuntimeExpression,
+                "Default declarations should support the same restricted index-read expressions.");
+
+            var unclosed = Require<VariableDeclarationStatement>(statements[10],
+                "Expected an unclosed-index declaration.");
+            Check(!unclosed.HasLiteral && !unclosed.HasRuntimeExpression,
+                "Unclosed indexes should remain unsupported.");
+
+            var extraClosing = Require<VariableDeclarationStatement>(statements[11],
+                "Expected a declaration with an unmatched closing bracket.");
+            Check(!extraClosing.HasLiteral && !extraClosing.HasRuntimeExpression,
+                "Unmatched closing brackets should remain unsupported.");
         }
 
         private static void TestConditionalBranches()

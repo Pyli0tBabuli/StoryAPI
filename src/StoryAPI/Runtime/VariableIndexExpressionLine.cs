@@ -443,18 +443,36 @@ namespace StoryAPI.Runtime
             preparatoryLines = new List<Line>();
             preparedCondition = condition;
 
+            List<Line> membershipLines;
+            string membershipExpression;
+            bool hasMembership = TryRewriteMembershipConditions(condition, temporaryPrefix,
+                sourcePath, sourceLine, out membershipLines, out membershipExpression);
+
+            string expressionToRewrite = hasMembership ? membershipExpression : condition;
             string rewrittenExpression;
             List<KeyValuePair<string, string>> indexReads;
             List<KeyValuePair<string, string>> dynamicIndexes;
-            if (!TryRewriteExpression(condition, temporaryPrefix, out rewrittenExpression,
-                out indexReads, out dynamicIndexes))
+            bool hasIndexReads = TryRewriteExpression(expressionToRewrite, temporaryPrefix,
+                out rewrittenExpression, out indexReads, out dynamicIndexes);
+
+            if (!hasMembership && !hasIndexReads)
                 return false;
+
+            if (!hasIndexReads)
+            {
+                rewrittenExpression = expressionToRewrite;
+                indexReads = new List<KeyValuePair<string, string>>();
+                dynamicIndexes = new List<KeyValuePair<string, string>>();
+            }
 
             string gateName = temporaryPrefix + "_gate";
             var result = new List<Line>
             {
                 new RenpyOneLinePython("$ " + gateName + " = True")
             };
+
+            if (hasMembership)
+                result.AddRange(membershipLines);
 
             foreach (KeyValuePair<string, string> dynamicIndex in dynamicIndexes)
             {
@@ -480,6 +498,147 @@ namespace StoryAPI.Runtime
             preparatoryLines = result;
             preparedCondition = gateName + " and (" + rewrittenExpression + ")";
             return true;
+        }
+
+        /// <summary>
+        /// Resolves restricted list/dictionary membership tests before DDLC+'s native
+        /// scalar condition evaluator runs. The right-hand side is a collection variable;
+        /// the left-hand side is a scalar literal or a simple variable name.
+        /// </summary>
+        private static bool TryRewriteMembershipConditions(string condition, string temporaryPrefix,
+            string sourcePath, int sourceLine, out List<Line> preparatoryLines,
+            out string rewrittenCondition)
+        {
+            preparatoryLines = new List<Line>();
+            rewrittenCondition = condition;
+            if (string.IsNullOrWhiteSpace(condition)) return false;
+
+            var pattern = new Regex(
+                @"(?<left>""(?:\\.|[^""\\])*""|'(?:\\.|[^'\\])*'|[A-Za-z_][A-Za-z0-9_]*|[-+]?(?:\d+(?:\.\d*)?|\.\d+))\s+(?<operator>not\s+in|in)\s+(?<collection>[A-Za-z_][A-Za-z0-9_]*)",
+                RegexOptions.Compiled);
+            MatchCollection matches = pattern.Matches(condition);
+            if (matches.Count == 0) return false;
+
+            var replacements = new List<Tuple<int, int, string>>();
+            var lines = new List<Line>();
+            var state = new VariableInitializationState();
+            string gateName = temporaryPrefix + "_gate";
+            int membershipIndex = 0;
+
+            foreach (Match match in matches)
+            {
+                // Do not interpret text inside a string literal as a membership operator.
+                // Match boundaries also keep arbitrary comparison expressions outside
+                // this deliberately small feature.
+                if (!IsOutsideStringAt(condition, match.Index)) continue;
+                if (!IsMembershipBoundaryBefore(condition, match.Index) ||
+                    !IsMembershipBoundaryAfter(condition, match.Index + match.Length))
+                    return false;
+
+                string left = match.Groups["left"].Value;
+                string operatorText = match.Groups["operator"].Value;
+                string collectionName = match.Groups["collection"].Value;
+                if (left == "and" || left == "or" || left == "not" || left == "in" ||
+                    collectionName == "and" || collectionName == "or" ||
+                    collectionName == "not" || collectionName == "in")
+                    return false;
+
+                string valueName = temporaryPrefix + "_membership_value_" +
+                    membershipIndex.ToString(CultureInfo.InvariantCulture);
+                string resultName = temporaryPrefix + "_membership_result_" +
+                    membershipIndex.ToString(CultureInfo.InvariantCulture);
+
+                lines.Add(new RenpyOneLinePython("$ " + valueName + " = " + left));
+                lines.Add(new CollectionMembershipLine(collectionName, valueName, resultName,
+                    gateName, sourcePath, sourceLine, state));
+
+                bool isNotIn = operatorText.TrimStart().StartsWith("not",
+                    StringComparison.Ordinal);
+                replacements.Add(Tuple.Create(match.Index, match.Length,
+                    isNotIn ? "not " + resultName : resultName));
+                membershipIndex++;
+            }
+
+            if (replacements.Count == 0) return false;
+
+            var builder = new StringBuilder();
+            int cursor = 0;
+            foreach (Tuple<int, int, string> item in replacements)
+            {
+                builder.Append(condition, cursor, item.Item1 - cursor);
+                builder.Append(item.Item3);
+                cursor = item.Item1 + item.Item2;
+            }
+            builder.Append(condition, cursor, condition.Length - cursor);
+
+            preparatoryLines = lines;
+            rewrittenCondition = builder.ToString();
+            return true;
+        }
+
+        private static bool IsOutsideStringAt(string expression, int position)
+        {
+            bool inString = false;
+            bool escaped = false;
+            char quote = '\0';
+
+            for (int i = 0; i < position && i < expression.Length; i++)
+            {
+                char c = expression[i];
+                if (!inString)
+                {
+                    if (c == '"' || c == '\'')
+                    {
+                        inString = true;
+                        quote = c;
+                    }
+                    continue;
+                }
+
+                if (escaped)
+                {
+                    escaped = false;
+                    continue;
+                }
+                if (c == '\\')
+                {
+                    escaped = true;
+                    continue;
+                }
+                if (c == quote) inString = false;
+            }
+
+            return !inString;
+        }
+
+        private static bool IsMembershipBoundaryBefore(string expression, int position)
+        {
+            string before = expression.Substring(0, position).TrimEnd();
+            if (before.Length == 0 || before[before.Length - 1] == '(') return true;
+            return EndsWithKeyword(before, "and") || EndsWithKeyword(before, "or") ||
+                EndsWithKeyword(before, "not");
+        }
+
+        private static bool IsMembershipBoundaryAfter(string expression, int position)
+        {
+            string after = expression.Substring(position).TrimStart();
+            if (after.Length == 0 || after[0] == ')') return true;
+            return StartsWithKeyword(after, "and") || StartsWithKeyword(after, "or");
+        }
+
+        private static bool EndsWithKeyword(string text, string keyword)
+        {
+            return text.Length >= keyword.Length &&
+                string.Compare(text, text.Length - keyword.Length, keyword, 0,
+                    keyword.Length, StringComparison.Ordinal) == 0 &&
+                (text.Length == keyword.Length ||
+                 !IsIdentifierPart(text[text.Length - keyword.Length - 1]));
+        }
+
+        private static bool StartsWithKeyword(string text, string keyword)
+        {
+            return text.StartsWith(keyword, StringComparison.Ordinal) &&
+                (text.Length == keyword.Length || !IsIdentifierPart(text[keyword.Length]));
         }
 
         /// <summary>
@@ -892,6 +1051,86 @@ namespace StoryAPI.Runtime
                     if (_state != null) _state.Failed = true;
                     Log.Warn("Could not apply list." + _methodName + " on '" + _rootName +
                         "' at " + _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+        }
+
+        private sealed class CollectionMembershipLine : Line, IApply
+        {
+            private readonly string _collectionName;
+            private readonly string _valueName;
+            private readonly string _resultName;
+            private readonly string _gateName;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+            private readonly VariableInitializationState _state;
+
+            public CollectionMembershipLine(string collectionName, string valueName,
+                string resultName, string gateName, string sourcePath, int sourceLine,
+                VariableInitializationState state)
+            {
+                _collectionName = collectionName;
+                _valueName = valueName;
+                _resultName = resultName;
+                _gateName = gateName;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+                _state = state;
+            }
+
+            public void Apply(IContext context)
+            {
+                if (_state != null && _state.Failed) return;
+
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+
+                    if (!TryGetObjectBackedVariable(_collectionName, context, out object collection))
+                        throw new InvalidOperationException("variable '" + _collectionName +
+                            "' does not contain an object-backed list or dictionary");
+
+                    if (!TryGetDynamicIndexValue(_valueName, context, out object value))
+                        throw new InvalidOperationException("membership operand must be a supported scalar");
+
+                    bool contains = false;
+                    if (collection is IList list)
+                    {
+                        for (int i = 0; i < list.Count; i++)
+                        {
+                            if (ScalarValuesEqual(list[i], value))
+                            {
+                                contains = true;
+                                break;
+                            }
+                        }
+                    }
+                    else if (collection is IDictionary dictionary)
+                    {
+                        // StoryAPI dictionary literals use string keys. A non-string
+                        // operand simply cannot match one of those keys.
+                        contains = value is string && dictionary.Contains(value);
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException("membership target is not a list or dictionary");
+                    }
+
+                    if (!GameBridge.TrySetVariableLiteral(_resultName, contains, false, context))
+                        throw new InvalidOperationException("could not write the membership result");
+
+                    Log.Info("Evaluated membership in '" + _collectionName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    if (_state != null) _state.Failed = true;
+                    GameBridge.TrySetVariableLiteral(_resultName, false, false, context);
+                    GameBridge.TrySetVariableLiteral(_gateName, false, false, context);
+                    Log.Warn("Could not evaluate membership in '" + _collectionName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " +
                         e.GetBaseException().Message);
                 }
             }

@@ -147,16 +147,19 @@ Collection initialization and index reads such as
 `define first_item = starting_points[0]`,
 `define item_count = settings["count"]`, and
 `define nested_item = items[2]["nested"]` use StoryAPI's restricted runtime index reader.
-Index keys must be literal integers for lists or quoted strings for dictionaries. Index reads can
-also be combined with the supported scalar arithmetic, comparison, and logical operators, for
-example `define bonus = inventory[0] * 2`,
-`define total = inventory[0] + inventory[1]`, or
-`default can_enter = settings["count"] >= 2 and has_key`. StoryAPI reads each supported index
-chain first, then lets DDLC+'s scalar evaluator handle the remaining expression. Dynamic indexes
-such as `items[index_value + 1]`, collection mutation, attribute access, function calls in
-initializers, arbitrary Python initializers, Python class instances, tuples, slices, and the full
-Ren'Py initialization phase are not supported. Within a label, `while`, `break`, `continue`,
-and `pass` are supported.
+Literal index keys are integers for lists or quoted strings for dictionaries. Dynamic list
+indexes and variable dictionary keys are also supported when they use a restricted scalar
+expression, for example `define selected = inventory[selected_index]`,
+`define next_item = inventory[selected_index + 1]`, or
+`define selected_setting = settings[key_name]`. StoryAPI evaluates dynamic index expressions
+with DDLC+'s scalar evaluator first, then performs the collection lookup; list indexes must
+evaluate to integers and dynamic dictionary keys must evaluate to strings. Index reads can also
+be combined with scalar arithmetic, comparisons, and logical operators, for example
+`define bonus = inventory[0] * 2`, `define total = inventory[0] + inventory[1]`, or
+`default can_enter = settings["count"] >= 2 and has_key`. Nested indexes inside a dynamic key,
+collection mutation, attribute access, function calls, slices, arbitrary Python initializers,
+Python class instances, tuples, and the full Ren'Py initialization phase remain unsupported.
+Within a label, `while`, `break`, `continue`, and `pass` are supported.
 A loop must eventually change its condition or break; infinite loops can stall the game.
 
 ### The base game's own scenes

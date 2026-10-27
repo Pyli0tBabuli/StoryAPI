@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using StoryAPI.Scripting;
 using StoryAPI.Runtime;
 
@@ -21,6 +22,7 @@ namespace StoryAPI.Tests
             Run("runtime scalar initializer expressions", TestRuntimeExpressionDeclarations);
             Run("container index expressions", TestContainerIndexExpressions);
             Run("runtime index expression rewriting", TestRuntimeIndexExpressionRewriting);
+            Run("dynamic index scalar value extraction", TestDynamicIndexScalarValueExtraction);
             Run("if/elif/else branches", TestConditionalBranches);
             Run("menu choices and nested statements", TestMenuChoices);
             Run("while and loop-control statements", TestWhileAndLoopControl);
@@ -284,7 +286,7 @@ namespace StoryAPI.Tests
                 "Expected an index expression with arithmetic.");
             Check(calculated.HasRuntimeExpression &&
                 calculated.Expression == "starting_points[index_value + 1] * 2",
-                "The parser should preserve indexed expressions so runtime validation can reject dynamic indexes.");
+                "The parser should preserve dynamic index expressions for restricted runtime evaluation.");
 
             var bracketKey = Require<VariableDeclarationStatement>(statements[4],
                 "Expected a dictionary key containing a closing bracket.");
@@ -388,15 +390,84 @@ namespace StoryAPI.Tests
                 reads[1].Value == "settings[\"]\"]",
                 "A closing bracket inside a quoted key must not end the index early.");
 
-            Check(!VariableIndexExpressionLine.TryRewriteExpression(
+            List<KeyValuePair<string, string>> dynamicIndexes;
+            Check(VariableIndexExpressionLine.TryRewriteExpression(
                     "items[index_value + 1] * 2",
-                    "_storyapi_test", out rewritten, out reads),
-                "Dynamic indexes should remain unsupported by the runtime rewriter.");
+                    "_storyapi_test", out rewritten, out reads, out dynamicIndexes),
+                "A scalar arithmetic expression should be supported as a dynamic list index.");
+            Check(rewritten == "_storyapi_test_index_0 * 2" &&
+                reads.Count == 1 &&
+                reads[0].Value == "items[_storyapi_test_key_0]" &&
+                dynamicIndexes.Count == 1 &&
+                dynamicIndexes[0].Key == "_storyapi_test_key_0" &&
+                dynamicIndexes[0].Value == "index_value + 1",
+                "The rewriter should schedule dynamic index calculation before collection lookup.");
+
+            Check(!VariableIndexExpressionLine.CanHandle("items[index_value + 1]"),
+                "Dynamic index expressions must use the rewrite path, not the literal-only reader.");
+
+            VariableIndexExpressionLine dynamicTemporary;
+            Check(VariableIndexExpressionLine.TryCreateTemporary(
+                    reads[0].Key, reads[0].Value, "dynamic-index-test.rpy", 1,
+                    new VariableInitializationState(), "_storyapi_test_gate", "selected_item",
+                    out dynamicTemporary),
+                "A rewritten collection chain with a generated dynamic-key placeholder should be constructible.");
+
+            Check(VariableIndexExpressionLine.TryRewriteExpression(
+                    "settings[key_name]",
+                    "_storyapi_test", out rewritten, out reads, out dynamicIndexes) &&
+                reads[0].Value == "settings[_storyapi_test_key_0]" &&
+                dynamicIndexes.Count == 1 &&
+                dynamicIndexes[0].Value == "key_name",
+                "A variable string key should be represented as a dynamic dictionary index.");
+
+            Check(VariableIndexExpressionLine.TryRewriteExpression(
+                    "items[first_index] + items[second_index + 1]",
+                    "_storyapi_test", out rewritten, out reads, out dynamicIndexes) &&
+                reads.Count == 2 &&
+                reads[0].Value == "items[_storyapi_test_key_0]" &&
+                reads[1].Value == "items[_storyapi_test_key_1]" &&
+                dynamicIndexes.Count == 2 &&
+                dynamicIndexes[0].Key == "_storyapi_test_key_0" &&
+                dynamicIndexes[1].Key == "_storyapi_test_key_1",
+                "Dynamic index temporaries must be unique across multiple collection reads.");
+
+            Check(!VariableIndexExpressionLine.TryRewriteExpression(
+                    "items[random()] * 2",
+                    "_storyapi_test", out rewritten, out reads, out dynamicIndexes),
+                "Function calls inside a dynamic index should remain unsupported.");
 
             Check(!VariableIndexExpressionLine.TryRewriteExpression(
                     "label_text == \"[\"",
                     "_storyapi_test", out rewritten, out reads),
                 "Bracket characters inside strings must not be treated as index reads.");
+        }
+
+        private static void TestDynamicIndexScalarValueExtraction()
+        {
+            MethodInfo reader = typeof(VariableIndexExpressionLine).GetMethod(
+                "TryGetDynamicIndexValue", BindingFlags.NonPublic | BindingFlags.Static);
+            Check(reader != null, "The dynamic scalar reader should exist.");
+
+            var context = new RenpyParser.DynamicIndexTestContext();
+            context.SetVariable("one", new SimpleExpressionEngine.DataValue(1f));
+            context.SetVariable("zero", new SimpleExpressionEngine.DataValue(0f));
+            context.SetVariable("key", new SimpleExpressionEngine.DataValue("answer"));
+
+            object[] arguments = { "one", context, null };
+            bool success = (bool)reader.Invoke(null, arguments);
+            Check(success && arguments[2] is float && (float)arguments[2] == 1f,
+                "A numeric DataValue must read floatVal even when its inactive stringVal is empty.");
+
+            arguments = new object[] { "zero", context, null };
+            success = (bool)reader.Invoke(null, arguments);
+            Check(success && arguments[2] is float && (float)arguments[2] == 0f,
+                "Numeric zero must not be mistaken for an empty string.");
+
+            arguments = new object[] { "key", context, null };
+            success = (bool)reader.Invoke(null, arguments);
+            Check(success && arguments[2] is string && (string)arguments[2] == "answer",
+                "A string DataValue should read stringVal using the discriminator.");
         }
 
         private static void TestConditionalBranches()

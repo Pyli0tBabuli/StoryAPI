@@ -172,8 +172,11 @@ namespace StoryAPI.Tests
                 "define calculated = (base_points + 2) * 3\n" +
                 "default available = has_key and points >= 3\n" +
                 "default optional = None\n" +
-                "define list_value = [1, 2]\n" +
-                "define dictionary_value = {\"answer\": 42}\n" +
+                "define list_value = [1, 2, {\"nested\": True}]\n" +
+                "define dictionary_value = {\"answer\": 42, \"flags\": [True, False]}\n" +
+                "define empty_list = []\n" +
+                "define empty_dictionary = {}\n" +
+                "define tuple_value = (1, 2)\n" +
                 "define call_value = random()\n" +
                 "label expression_variables:\n" +
                 "    return\n");
@@ -198,17 +201,41 @@ namespace StoryAPI.Tests
 
             var list = Require<VariableDeclarationStatement>(statements[3],
                 "Expected list declaration.");
-            Check(!list.HasLiteral && !list.HasRuntimeExpression,
-                "List literals should stay unsupported until the game's container-value support is confirmed.");
+            Check(list.HasLiteral && list.LiteralValue is List<object>,
+                "List literal should be parsed as an object-backed literal value.");
+            var listItems = (List<object>)list.LiteralValue;
+            Check(listItems.Count == 3 && (int)listItems[0] == 1 &&
+                listItems[2] is Dictionary<string, object>,
+                "List values and nested dictionary literals should be retained.");
 
             var dictionary = Require<VariableDeclarationStatement>(statements[4],
                 "Expected dictionary declaration.");
-            Check(!dictionary.HasLiteral && !dictionary.HasRuntimeExpression,
-                "Dictionary literals should stay unsupported until the game's container-value support is confirmed.");
+            Check(dictionary.HasLiteral && dictionary.LiteralValue is Dictionary<string, object>,
+                "Dictionary literal should be parsed as an object-backed literal value.");
+            var dictionaryItems = (Dictionary<string, object>)dictionary.LiteralValue;
+            Check(dictionaryItems.Count == 2 && (int)dictionaryItems["answer"] == 42 &&
+                dictionaryItems["flags"] is List<object>,
+                "Dictionary values and nested list literals should be retained.");
 
-            var function = Require<VariableDeclarationStatement>(statements[5],
+            var emptyList = Require<VariableDeclarationStatement>(statements[5],
+                "Expected empty list declaration.");
+            Check(emptyList.HasLiteral && ((List<object>)emptyList.LiteralValue).Count == 0,
+                "Empty list literals should be supported.");
+
+            var emptyDictionary = Require<VariableDeclarationStatement>(statements[6],
+                "Expected empty dictionary declaration.");
+            Check(emptyDictionary.HasLiteral &&
+                ((Dictionary<string, object>)emptyDictionary.LiteralValue).Count == 0,
+                "Empty dictionary literals should be supported.");
+
+            var tuple = Require<VariableDeclarationStatement>(statements[7],
+                "Expected tuple declaration.");
+            Check(!tuple.HasLiteral && !tuple.HasRuntimeExpression,
+                "Tuple literals should remain unsupported.");
+
+            var function = Require<VariableDeclarationStatement>(statements[8],
                 "Expected function-call declaration.");
-            Check(!function.HasRuntimeExpression,
+            Check(!function.HasLiteral && !function.HasRuntimeExpression,
                 "Function calls should not be automatically accepted as scalar expressions.");
         }
 

@@ -23,6 +23,7 @@ namespace StoryAPI.Tests
             Run("container index expressions", TestContainerIndexExpressions);
             Run("runtime index expression rewriting", TestRuntimeIndexExpressionRewriting);
             Run("dynamic index scalar value extraction", TestDynamicIndexScalarValueExtraction);
+            Run("indexed collection assignment", TestIndexedCollectionAssignments);
             Run("if/elif/else branches", TestConditionalBranches);
             Run("menu choices and nested statements", TestMenuChoices);
             Run("while and loop-control statements", TestWhileAndLoopControl);
@@ -468,6 +469,72 @@ namespace StoryAPI.Tests
             success = (bool)reader.Invoke(null, arguments);
             Check(success && arguments[2] is string && (string)arguments[2] == "answer",
                 "A string DataValue should read stringVal using the discriminator.");
+        }
+
+        private static void TestIndexedCollectionAssignments()
+        {
+            const string prefix = "_storyapi_assignment_test";
+            List<RenPyParser.Line> lines;
+
+            Check(VariableIndexExpressionLine.TryCreateAssignmentLines(
+                    "inventory[1] = 99", prefix, "assignment-test.rpy", 2, 4, out lines),
+                "A literal list element assignment should be recognized.");
+            Check(lines.Count == 4 + 1 &&
+                lines.Last().GetType().Name == "CollectionMutationLine",
+                "The assignment should emit a guarded block ending in a collection mutation line.");
+            Check(lines.OfType<RenpyParser.RenpyGoToLineUnless>().Single().Target == 9,
+                "The guard jump should target the instruction after the assignment block.");
+
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var inventory = new List<object> { 10f, 20f, 30f };
+            context.SetVariable("inventory", new SimpleExpressionEngine.DataValue((object)inventory));
+            context.SetVariable(prefix + "_value", new SimpleExpressionEngine.DataValue(99f));
+            ((RenpyParser.Images.IApply)lines.Last()).Apply(context);
+            Check(Convert.ToSingle(inventory[1]) == 99f,
+                "The mutation line should replace the existing list element.");
+
+            const string dynamicPrefix = "_storyapi_dynamic_assignment_test";
+            Check(VariableIndexExpressionLine.TryCreateAssignmentLines(
+                    "inventory[target_index + 1] = 55", dynamicPrefix,
+                    "assignment-test.rpy", 3, 10, out lines),
+                "A list assignment with a computed target index should be recognized.");
+            context.SetVariable(dynamicPrefix + "_value", new SimpleExpressionEngine.DataValue(55f));
+            context.SetVariable(dynamicPrefix + "_target_key_0", new SimpleExpressionEngine.DataValue(1f));
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
+            Check(Convert.ToSingle(inventory[1]) == 55f,
+                "A computed index should mutate the selected list element.");
+
+            const string dictionaryPrefix = "_storyapi_dictionary_assignment_test";
+            Check(VariableIndexExpressionLine.TryCreateAssignmentLines(
+                    "settings[\\"count\\"] = 7", dictionaryPrefix,
+                    "assignment-test.rpy", 4, 20, out lines),
+                "A dictionary string-key assignment should be recognized.");
+            var settings = new Dictionary<string, object> { { "count", 2f } };
+            context.SetVariable("settings", new SimpleExpressionEngine.DataValue((object)settings));
+            context.SetVariable(dictionaryPrefix + "_value", new SimpleExpressionEngine.DataValue(7f));
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
+            Check(Convert.ToSingle(settings["count"]) == 7f,
+                "A dictionary assignment should replace the value at a string key.");
+
+            const string nestedPrefix = "_storyapi_nested_assignment_test";
+            Check(VariableIndexExpressionLine.TryCreateAssignmentLines(
+                    "settings[\\"meta\\"][\\"count\\"] = settings[\\"count\\"] + 1",
+                    nestedPrefix, "assignment-test.rpy", 5, 30, out lines),
+                "A nested target and RHS collection read should be recognized.");
+            Check(lines.OfType<VariableIndexExpressionLine>().Any(),
+                "A collection read in the RHS should become a runtime index-reader line.");
+            Check(lines.OfType<RenpyParser.RenpyOneLinePython>().Any(
+                    line => line.Code.Contains(nestedPrefix + "_value = " + nestedPrefix + "_rhs_index_0 + 1")),
+                "The RHS collection value should be rewritten before the final assignment.");
+            Check(lines.Last().GetType().Name == "CollectionMutationLine",
+                "A nested assignment should end with the collection mutation line.");
+
+            Check(!VariableIndexExpressionLine.TryCreateAssignmentLines(
+                    "inventory[0] == 99", prefix, "assignment-test.rpy", 6, 40, out lines),
+                "Comparison expressions must not be mistaken for collection assignments.");
+            Check(!VariableIndexExpressionLine.TryCreateAssignmentLines(
+                    "inventory[0] += 1", prefix, "assignment-test.rpy", 7, 40, out lines),
+                "Compound assignments remain outside the initial mutation subset.");
         }
 
         private static void TestConditionalBranches()

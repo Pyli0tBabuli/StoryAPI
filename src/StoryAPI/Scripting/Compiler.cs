@@ -155,6 +155,23 @@ namespace StoryAPI.Scripting
                 return;
             }
 
+            List<Line> listOperationLines;
+            if (VariableIndexExpressionLine.TryCreateListInsertLines(
+                python.Code, prefix, _textLabel ?? "unknown", python.Line, _out.Count,
+                out listOperationLines))
+            {
+                _out.AddRange(listOperationLines);
+                return;
+            }
+
+            if (VariableIndexExpressionLine.TryCreateListPopLines(
+                python.Code, prefix, _textLabel ?? "unknown", python.Line,
+                out listOperationLines))
+            {
+                _out.AddRange(listOperationLines);
+                return;
+            }
+
             List<Line> mutationLines;
             if (VariableIndexExpressionLine.TryCreateListMethodMutationLines(
                 python.Code, prefix, _textLabel ?? "unknown", python.Line, _out.Count,

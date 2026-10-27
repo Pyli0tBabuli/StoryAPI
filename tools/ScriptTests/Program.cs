@@ -489,7 +489,7 @@ namespace StoryAPI.Tests
             var inventory = new List<object> { 10f, 20f, 30f };
             context.SetVariable("inventory", new SimpleExpressionEngine.DataValue((object)inventory));
             context.SetVariable(prefix + "_value", new SimpleExpressionEngine.DataValue(99f));
-            ((RenpyParser.Images.IApply)lines.Last()).Apply(context);
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
             Check(Convert.ToSingle(inventory[1]) == 99f,
                 "The mutation line should replace the existing list element.");
 

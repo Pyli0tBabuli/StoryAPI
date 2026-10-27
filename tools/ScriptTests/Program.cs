@@ -284,7 +284,7 @@ namespace StoryAPI.Tests
                 "Expected an index expression with arithmetic.");
             Check(calculated.HasRuntimeExpression &&
                 calculated.Expression == "starting_points[index_value + 1] * 2",
-                "The parser should preserve indexed expressions so runtime validation can reject dynamic indexes.");
+                "The parser should preserve dynamic index expressions for restricted runtime evaluation.");
 
             var bracketKey = Require<VariableDeclarationStatement>(statements[4],
                 "Expected a dictionary key containing a closing bracket.");
@@ -388,10 +388,31 @@ namespace StoryAPI.Tests
                 reads[1].Value == "settings[\"]\"]",
                 "A closing bracket inside a quoted key must not end the index early.");
 
-            Check(!VariableIndexExpressionLine.TryRewriteExpression(
+            List<KeyValuePair<string, string>> dynamicIndexes;
+            Check(VariableIndexExpressionLine.TryRewriteExpression(
                     "items[index_value + 1] * 2",
-                    "_storyapi_test", out rewritten, out reads),
-                "Dynamic indexes should remain unsupported by the runtime rewriter.");
+                    "_storyapi_test", out rewritten, out reads, out dynamicIndexes),
+                "A scalar arithmetic expression should be supported as a dynamic list index.");
+            Check(rewritten == "_storyapi_test_index_0 * 2" &&
+                reads.Count == 1 &&
+                reads[0].Value == "items[_storyapi_test_key_0]" &&
+                dynamicIndexes.Count == 1 &&
+                dynamicIndexes[0].Key == "_storyapi_test_key_0" &&
+                dynamicIndexes[0].Value == "index_value + 1",
+                "The rewriter should schedule dynamic index calculation before collection lookup.");
+
+            Check(VariableIndexExpressionLine.TryRewriteExpression(
+                    "settings[key_name]",
+                    "_storyapi_test", out rewritten, out reads, out dynamicIndexes) &&
+                reads[0].Value == "settings[_storyapi_test_key_0]" &&
+                dynamicIndexes.Count == 1 &&
+                dynamicIndexes[0].Value == "key_name",
+                "A variable string key should be represented as a dynamic dictionary index.");
+
+            Check(!VariableIndexExpressionLine.TryRewriteExpression(
+                    "items[random()] * 2",
+                    "_storyapi_test", out rewritten, out reads, out dynamicIndexes),
+                "Function calls inside a dynamic index should remain unsupported.");
 
             Check(!VariableIndexExpressionLine.TryRewriteExpression(
                     "label_text == \"[\"",

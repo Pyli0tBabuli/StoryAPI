@@ -432,6 +432,57 @@ namespace StoryAPI.Runtime
         }
 
         /// <summary>
+        /// Prepares a scalar condition that contains collection reads by resolving the reads
+        /// into temporary variables before the native conditional evaluator sees the expression.
+        /// The returned condition is guarded so a failed collection read makes the branch false.
+        /// </summary>
+        public static bool TryPrepareCondition(string condition, string temporaryPrefix,
+            string sourcePath, int sourceLine, out List<Line> preparatoryLines,
+            out string preparedCondition)
+        {
+            preparatoryLines = new List<Line>();
+            preparedCondition = condition;
+
+            string rewrittenExpression;
+            List<KeyValuePair<string, string>> indexReads;
+            List<KeyValuePair<string, string>> dynamicIndexes;
+            if (!TryRewriteExpression(condition, temporaryPrefix, out rewrittenExpression,
+                out indexReads, out dynamicIndexes))
+                return false;
+
+            string gateName = temporaryPrefix + "_gate";
+            var result = new List<Line>
+            {
+                new RenpyOneLinePython("$ " + gateName + " = True")
+            };
+
+            foreach (KeyValuePair<string, string> dynamicIndex in dynamicIndexes)
+            {
+                result.Add(new RenpyOneLinePython(
+                    "$ " + dynamicIndex.Key + " = " + dynamicIndex.Value));
+            }
+
+            var state = new VariableInitializationState();
+            foreach (KeyValuePair<string, string> read in indexReads)
+            {
+                VariableIndexExpressionLine readLine;
+                if (!TryCreateTemporary(read.Key, read.Value, sourcePath, sourceLine,
+                    state, gateName, read.Value, out readLine))
+                {
+                    preparatoryLines.Clear();
+                    preparedCondition = condition;
+                    return false;
+                }
+
+                result.Add(readLine);
+            }
+
+            preparatoryLines = result;
+            preparedCondition = gateName + " and (" + rewrittenExpression + ")";
+            return true;
+        }
+
+        /// <summary>
         /// Converts a restricted indexed assignment (for example, items[index + 1] = score + 2)
         /// into native scalar-evaluation instructions and one guarded collection mutation line.
         /// </summary>

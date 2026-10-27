@@ -176,6 +176,12 @@ it checks whether a quoted string key exists. Membership checks can be combined 
 and with indexed reads. The left operand is currently a scalar literal or simple variable name,
 and the right operand must be a named object-backed list or dictionary.
 
+Runtime `if`, `elif`, and `while` conditions also support the restricted form
+`len(collection)` for a named list or dictionary, for example `if len(inventory) >= 3:`.
+The call is resolved before the native condition is evaluated, and several length calls can
+be used in one condition or combined with indexed reads. Other function calls and nested
+forms such as `len(inventory[0])` remain unsupported.
+
 Within a label, `while`, `break`, `continue`, and `pass` are supported.
 A loop must eventually change its condition or break; infinite loops can stall the game.
 

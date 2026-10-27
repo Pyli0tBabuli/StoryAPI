@@ -135,6 +135,22 @@ namespace StoryAPI.Scripting
 
         // ------------------------------------------------------------- emission
 
+        private void EmitPython(PythonStatement python)
+        {
+            string safeLabel = Regex.Replace(_textLabel ?? "label", @"[^A-Za-z0-9_]", "_");
+            string prefix = "_storyapi_set_" + safeLabel + "_" + python.Line;
+            List<Line> mutationLines;
+            if (VariableIndexExpressionLine.TryCreateAssignmentLines(
+                python.Code, prefix, _textLabel ?? "unknown", python.Line, _out.Count,
+                out mutationLines))
+            {
+                _out.AddRange(mutationLines);
+                return;
+            }
+
+            _out.Add(new RenpyOneLinePython("$ " + python.Code));
+        }
+
         private void EmitBody(List<Statement> body)
         {
             foreach (var statement in body) Emit(statement);
@@ -161,7 +177,7 @@ namespace StoryAPI.Scripting
                 case TurnStatement turn: EmitTurn(turn); break;
                 case PoseStatement pose: EmitPose(pose); break;
                 case LayerStatement layer: EmitLayer(layer); break;
-                case PythonStatement python: _out.Add(new RenpyOneLinePython("$ " + python.Code)); break;
+                case PythonStatement python: EmitPython(python); break;
                 case IfStatement branch: EmitIf(branch); break;
                 case WhileStatement loop: EmitWhile(loop); break;
                 case LoopControlStatement control: EmitLoopControl(control); break;

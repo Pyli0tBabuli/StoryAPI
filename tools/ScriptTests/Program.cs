@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using StoryAPI.Scripting;
 using StoryAPI.Runtime;
 
@@ -21,6 +22,7 @@ namespace StoryAPI.Tests
             Run("runtime scalar initializer expressions", TestRuntimeExpressionDeclarations);
             Run("container index expressions", TestContainerIndexExpressions);
             Run("runtime index expression rewriting", TestRuntimeIndexExpressionRewriting);
+            Run("dynamic index scalar value extraction", TestDynamicIndexScalarValueExtraction);
             Run("if/elif/else branches", TestConditionalBranches);
             Run("menu choices and nested statements", TestMenuChoices);
             Run("while and loop-control statements", TestWhileAndLoopControl);
@@ -439,6 +441,33 @@ namespace StoryAPI.Tests
                     "label_text == \"[\"",
                     "_storyapi_test", out rewritten, out reads),
                 "Bracket characters inside strings must not be treated as index reads.");
+        }
+
+        private static void TestDynamicIndexScalarValueExtraction()
+        {
+            MethodInfo reader = typeof(VariableIndexExpressionLine).GetMethod(
+                "TryGetDynamicIndexValue", BindingFlags.NonPublic | BindingFlags.Static);
+            Check(reader != null, "The dynamic scalar reader should exist.");
+
+            var context = new RenpyParser.DynamicIndexTestContext();
+            context.SetVariable("one", new SimpleExpressionEngine.DataValue(1f));
+            context.SetVariable("zero", new SimpleExpressionEngine.DataValue(0f));
+            context.SetVariable("key", new SimpleExpressionEngine.DataValue("answer"));
+
+            object[] arguments = { "one", context, null };
+            bool success = (bool)reader.Invoke(null, arguments);
+            Check(success && arguments[2] is float && (float)arguments[2] == 1f,
+                "A numeric DataValue must read floatVal even when its inactive stringVal is empty.");
+
+            arguments = new object[] { "zero", context, null };
+            success = (bool)reader.Invoke(null, arguments);
+            Check(success && arguments[2] is float && (float)arguments[2] == 0f,
+                "Numeric zero must not be mistaken for an empty string.");
+
+            arguments = new object[] { "key", context, null };
+            success = (bool)reader.Invoke(null, arguments);
+            Check(success && arguments[2] is string && (string)arguments[2] == "answer",
+                "A string DataValue should read stringVal using the discriminator.");
         }
 
         private static void TestConditionalBranches()

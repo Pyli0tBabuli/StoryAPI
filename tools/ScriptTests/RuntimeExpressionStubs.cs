@@ -121,10 +121,19 @@ namespace StoryAPI.Game
 {
     internal static class GameBridge
     {
+        private static readonly System.Collections.Generic.Dictionary<string, object>
+            LastLiteralValues = new System.Collections.Generic.Dictionary<string, object>();
+
         public static bool TrySetVariableLiteral(
             string name, object value, bool defaultOnly, RenpyParser.IContext context)
         {
+            LastLiteralValues[name] = value;
             return true;
+        }
+
+        public static bool TryGetLastTestLiteral(string name, out object value)
+        {
+            return LastLiteralValues.TryGetValue(name, out value);
         }
     }
 }

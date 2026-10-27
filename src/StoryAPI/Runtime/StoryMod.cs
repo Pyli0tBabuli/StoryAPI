@@ -376,7 +376,17 @@ namespace StoryAPI.Runtime
                         ": " + (variable.IsDefault ? "default" : "define") + " '" + variable.Name +
                         "' uses an initializer not supported by StoryAPI: " + variable.Expression +
                         ". Use a scalar literal, a list/dictionary literal, or a scalar arithmetic/logical expression. " +
-                        "Tuples, indexing, function calls, and arbitrary Python are not supported.");
+                        "Tuples, function calls, and arbitrary Python are not supported.");
+                }
+                else if (variable.HasRuntimeExpression &&
+                         VariableIndexExpressionLine.ContainsIndexSyntax(variable.Expression) &&
+                         !VariableIndexExpressionLine.CanHandle(variable.Expression))
+                {
+                    Warnings.Add(Relative(variable.SourcePath) + ":" + variable.Line +
+                        ": indexed initializer for '" + variable.Name + "' is not supported: " +
+                        variable.Expression + ". Indexing is currently supported only for a variable " +
+                        "followed by one or more literal integer/string indexes, such as items[0] or " +
+                        "items[2][\"nested\"]. Do not combine an index read with arithmetic or logic yet.");
                 }
             }
         }
@@ -395,6 +405,13 @@ namespace StoryAPI.Runtime
                 foreach (var variable in _variables)
                 {
                     if (!variable.HasLiteral && !variable.HasRuntimeExpression) continue;
+
+                    // Do not inject unsupported subscription syntax into the game's native
+                    // scalar evaluator: it stops the label before the first dialogue line.
+                    if (!variable.HasLiteral &&
+                        VariableIndexExpressionLine.ContainsIndexSyntax(variable.Expression) &&
+                        !VariableIndexExpressionLine.CanHandle(variable.Expression))
+                        continue;
 
                     if (!_variableInitializationStates.TryGetValue(variable, out var state))
                     {
@@ -428,7 +445,23 @@ namespace StoryAPI.Runtime
                             variable.Line,
                             state));
                         initLines.Add(new RenpyGoToLineUnless(gateName, skipTarget));
-                        initLines.Add(new RenpyOneLinePython("$ " + variable.Name + " = " + variable.Expression));
+                        VariableIndexExpressionLine indexedLine;
+                        if (VariableIndexExpressionLine.TryCreate(
+                            variable.Name,
+                            variable.Expression,
+                            variable.IsDefault,
+                            variable.SourcePath,
+                            variable.Line,
+                            state,
+                            out indexedLine))
+                        {
+                            initLines.Add(indexedLine);
+                        }
+                        else
+                        {
+                            initLines.Add(new RenpyOneLinePython("$ " + variable.Name + " = " + variable.Expression));
+                        }
+
                         initLines.Add(new VariableExpressionCompleteLine(
                             variable.Name,
                             variable.IsDefault,

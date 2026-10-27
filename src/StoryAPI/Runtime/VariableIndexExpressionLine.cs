@@ -803,6 +803,109 @@ namespace StoryAPI.Runtime
             return true;
         }
 
+        /// <summary>
+        /// Compiles a restricted list.insert(index, value) call. Index expressions must be
+        /// scalar expressions without collection reads; value expressions may use supported
+        /// collection reads, which are resolved before the mutation.
+        /// </summary>
+        public static bool TryCreateListInsertLines(string code, string temporaryPrefix,
+            string sourcePath, int sourceLine, int blockStart, out List<Line> lines)
+        {
+            lines = null;
+            if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(temporaryPrefix))
+                return false;
+
+            string rootName;
+            string indexExpression;
+            string valueExpression;
+            if (!TryParseListInsertCall(code, out rootName, out indexExpression, out valueExpression))
+                return false;
+
+            // A collection lookup in the index would need its own preparation phase. Keep the
+            // index syntax scalar-only for this first implementation.
+            if (ContainsIndexSyntax(indexExpression))
+                return false;
+
+            string rewrittenValue = valueExpression;
+            List<KeyValuePair<string, string>> valueIndexReads =
+                new List<KeyValuePair<string, string>>();
+            List<KeyValuePair<string, string>> valueDynamicIndexes =
+                new List<KeyValuePair<string, string>>();
+
+            if (ContainsIndexSyntax(valueExpression) &&
+                !TryRewriteExpression(valueExpression, temporaryPrefix + "_insert_arg",
+                    out rewrittenValue, out valueIndexReads, out valueDynamicIndexes))
+                return false;
+
+            var state = new VariableInitializationState();
+            string gateName = temporaryPrefix + "_insert_gate";
+            string indexName = temporaryPrefix + "_insert_index";
+            string valueName = temporaryPrefix + "_insert_value";
+            var valueReadLines = new List<Line>();
+
+            foreach (KeyValuePair<string, string> read in valueIndexReads)
+            {
+                VariableIndexExpressionLine readLine;
+                if (!TryCreateTemporary(read.Key, read.Value, sourcePath, sourceLine,
+                    state, gateName, rootName, out readLine))
+                    return false;
+                valueReadLines.Add(readLine);
+            }
+
+            int blockSize = 5 + valueDynamicIndexes.Count + valueReadLines.Count;
+            int skipTarget = blockStart + blockSize;
+            var result = new List<Line>(blockSize);
+            result.Add(new RenpyOneLinePython("$ " + gateName + " = True"));
+            result.Add(new RenpyOneLinePython("$ " + indexName + " = " + indexExpression));
+
+            foreach (KeyValuePair<string, string> dynamicIndex in valueDynamicIndexes)
+                result.Add(new RenpyOneLinePython(
+                    "$ " + dynamicIndex.Key + " = " + dynamicIndex.Value));
+
+            result.AddRange(valueReadLines);
+            result.Add(new RenpyGoToLineUnless(gateName, skipTarget));
+            result.Add(new RenpyOneLinePython("$ " + valueName + " = " + rewrittenValue));
+            result.Add(new ListInsertLine(rootName, indexName, valueName,
+                sourcePath, sourceLine, state));
+
+            lines = result;
+            return true;
+        }
+
+        /// <summary>
+        /// Compiles list.pop() or list.pop(index), optionally assigning the removed scalar
+        /// to a simple variable, as in "last_item = inventory.pop()".
+        /// </summary>
+        public static bool TryCreateListPopLines(string code, string temporaryPrefix,
+            string sourcePath, int sourceLine, out List<Line> lines)
+        {
+            lines = null;
+            if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(temporaryPrefix))
+                return false;
+
+            string rootName;
+            string destinationName;
+            string indexExpression;
+            if (!TryParseListPopCall(code, out rootName, out destinationName, out indexExpression))
+                return false;
+
+            if (indexExpression != null && ContainsIndexSyntax(indexExpression))
+                return false;
+
+            string indexName = null;
+            var result = new List<Line>();
+            if (indexExpression != null)
+            {
+                indexName = temporaryPrefix + "_pop_index";
+                result.Add(new RenpyOneLinePython("$ " + indexName + " = " + indexExpression));
+            }
+
+            result.Add(new ListPopLine(rootName, destinationName, indexName,
+                sourcePath, sourceLine));
+            lines = result;
+            return true;
+        }
+
         public static bool TryCreateListMethodMutationLines(string code, string temporaryPrefix,
             string sourcePath, int sourceLine, int blockStart, out List<Line> lines)
         {
@@ -1043,6 +1146,227 @@ namespace StoryAPI.Runtime
             return true;
         }
 
+        private static bool TryParseListInsertCall(string code, out string rootName,
+            out string indexExpression, out string valueExpression)
+        {
+            rootName = null;
+            indexExpression = null;
+            valueExpression = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int nameStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            rootName = code.Substring(nameStart, cursor - nameStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor] != '.') return false;
+            cursor++;
+            SkipWhitespace(code, ref cursor);
+            const string methodName = "insert";
+            if (cursor + methodName.Length > code.Length ||
+                string.Compare(code, cursor, methodName, 0, methodName.Length,
+                    StringComparison.Ordinal) != 0)
+                return false;
+            cursor += methodName.Length;
+            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor] != '(') return false;
+            int argumentsStart = ++cursor;
+            int nestedParentheses = 0;
+            int nestedBrackets = 0;
+            bool inString = false;
+            bool escaped = false;
+            char quote = '\0';
+            int comma = -1;
+            int close = -1;
+
+            while (cursor < code.Length)
+            {
+                char c = code[cursor];
+                if (inString)
+                {
+                    if (escaped) escaped = false;
+                    else if (c == '\\') escaped = true;
+                    else if (c == quote) inString = false;
+                    cursor++;
+                    continue;
+                }
+
+                if (c == '"' || c == '\'')
+                {
+                    inString = true;
+                    quote = c;
+                    cursor++;
+                    continue;
+                }
+
+                if (c == '(') { nestedParentheses++; cursor++; continue; }
+                if (c == ')')
+                {
+                    if (nestedParentheses == 0 && nestedBrackets == 0)
+                    {
+                        close = cursor;
+                        break;
+                    }
+                    if (nestedParentheses == 0) return false;
+                    nestedParentheses--;
+                    cursor++;
+                    continue;
+                }
+
+                if (c == '[') { nestedBrackets++; cursor++; continue; }
+                if (c == ']')
+                {
+                    if (nestedBrackets == 0) return false;
+                    nestedBrackets--;
+                    cursor++;
+                    continue;
+                }
+
+                if (c == ',' && nestedParentheses == 0 && nestedBrackets == 0)
+                {
+                    if (comma >= 0) return false;
+                    comma = cursor;
+                }
+                cursor++;
+            }
+
+            if (close < 0 || inString || nestedParentheses != 0 || nestedBrackets != 0 ||
+                comma < 0)
+                return false;
+
+            indexExpression = code.Substring(argumentsStart, comma - argumentsStart).Trim();
+            valueExpression = code.Substring(comma + 1, close - comma - 1).Trim();
+            if (string.IsNullOrWhiteSpace(indexExpression) ||
+                string.IsNullOrWhiteSpace(valueExpression))
+                return false;
+
+            cursor = close + 1;
+            SkipWhitespace(code, ref cursor);
+            return cursor == code.Length;
+        }
+
+        private static bool TryParseListPopCall(string code, out string rootName,
+            out string destinationName, out string indexExpression)
+        {
+            rootName = null;
+            destinationName = null;
+            indexExpression = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+
+            int firstStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string firstName = code.Substring(firstStart, cursor - firstStart);
+            int afterFirstName = cursor;
+            SkipWhitespace(code, ref cursor);
+
+            if (cursor < code.Length && code[cursor] == '=' &&
+                (cursor + 1 >= code.Length || code[cursor + 1] != '='))
+            {
+                destinationName = firstName;
+                cursor++;
+                SkipWhitespace(code, ref cursor);
+                if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+                int rootStart = cursor++;
+                while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+                rootName = code.Substring(rootStart, cursor - rootStart);
+            }
+            else
+            {
+                rootName = firstName;
+                cursor = afterFirstName;
+            }
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor] != '.') return false;
+            cursor++;
+            SkipWhitespace(code, ref cursor);
+            const string methodName = "pop";
+            if (cursor + methodName.Length > code.Length ||
+                string.Compare(code, cursor, methodName, 0, methodName.Length,
+                    StringComparison.Ordinal) != 0)
+                return false;
+            cursor += methodName.Length;
+            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor] != '(') return false;
+            int argumentStart = ++cursor;
+            int nestedParentheses = 0;
+            int nestedBrackets = 0;
+            bool inString = false;
+            bool escaped = false;
+            char quote = '\0';
+            int close = -1;
+            bool hasArgument = false;
+
+            while (cursor < code.Length)
+            {
+                char c = code[cursor];
+                if (inString)
+                {
+                    if (escaped) escaped = false;
+                    else if (c == '\\') escaped = true;
+                    else if (c == quote) inString = false;
+                    cursor++;
+                    continue;
+                }
+                if (c == '"' || c == '\'')
+                {
+                    inString = true;
+                    quote = c;
+                    cursor++;
+                    continue;
+                }
+                if (c == '(') { nestedParentheses++; cursor++; continue; }
+                if (c == ')')
+                {
+                    if (nestedParentheses == 0 && nestedBrackets == 0)
+                    {
+                        close = cursor;
+                        break;
+                    }
+                    if (nestedParentheses == 0) return false;
+                    nestedParentheses--;
+                    cursor++;
+                    continue;
+                }
+                if (c == '[') { nestedBrackets++; cursor++; continue; }
+                if (c == ']')
+                {
+                    if (nestedBrackets == 0) return false;
+                    nestedBrackets--;
+                    cursor++;
+                    continue;
+                }
+                if (c == ',' && nestedParentheses == 0 && nestedBrackets == 0)
+                    return false; // pop accepts zero or one positional index in this subset.
+                if (!char.IsWhiteSpace(c)) hasArgument = true;
+                cursor++;
+            }
+
+            if (close < 0 || inString || nestedParentheses != 0 || nestedBrackets != 0)
+                return false;
+
+            if (hasArgument)
+            {
+                indexExpression = code.Substring(argumentStart, close - argumentStart).Trim();
+                if (string.IsNullOrWhiteSpace(indexExpression)) return false;
+            }
+
+            cursor = close + 1;
+            SkipWhitespace(code, ref cursor);
+            return cursor == code.Length;
+        }
+
         private static bool TryParseCollectionAssignment(string code, string temporaryPrefix,
             out string rootName, out List<object> indices,
             out List<KeyValuePair<string, string>> dynamicIndexes, out string rightExpression)
@@ -1234,6 +1558,129 @@ namespace StoryAPI.Runtime
                     Log.Warn("Could not apply list.extend on '" + _rootName + "' using '" +
                         _sourceName + "' at " + _sourcePath + ":" + _sourceLine + ": " +
                         e.GetBaseException().Message);
+                }
+            }
+        }
+
+        private sealed class ListInsertLine : Line, IApply
+        {
+            private readonly string _rootName;
+            private readonly string _indexName;
+            private readonly string _valueName;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+            private readonly VariableInitializationState _state;
+
+            public ListInsertLine(string rootName, string indexName, string valueName,
+                string sourcePath, int sourceLine, VariableInitializationState state)
+            {
+                _rootName = rootName;
+                _indexName = indexName;
+                _valueName = valueName;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+                _state = state;
+            }
+
+            public void Apply(IContext context)
+            {
+                if (_state != null && _state.Failed) return;
+
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object target) ||
+                        !(target is IList list))
+                        throw new InvalidOperationException("list.insert() requires a list target");
+                    if (list.IsReadOnly || list.IsFixedSize)
+                        throw new InvalidOperationException("list.insert() target is not mutable");
+
+                    if (!TryGetDynamicIndexValue(_indexName, context, out object rawIndex) ||
+                        !TryConvertIntegerIndex(rawIndex, out int index))
+                        throw new InvalidOperationException("insert() index must evaluate to an integer");
+                    if (!TryGetDynamicIndexValue(_valueName, context, out object value))
+                        throw new InvalidOperationException("insert() value must be a supported value");
+
+                    // Match Python list.insert(): negative indexes count from the end and
+                    // indexes outside the collection are clamped to the nearest valid position.
+                    long normalized = index;
+                    if (normalized < 0)
+                        normalized = Math.Max(0L, (long)list.Count + normalized);
+                    else
+                        normalized = Math.Min(normalized, list.Count);
+
+                    list.Insert((int)normalized, value);
+                    Log.Info("Applied list.insert on '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    if (_state != null) _state.Failed = true;
+                    Log.Warn("Could not apply list.insert on '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " + e.GetBaseException().Message);
+                }
+            }
+        }
+
+        private sealed class ListPopLine : Line, IApply
+        {
+            private readonly string _rootName;
+            private readonly string _destinationName;
+            private readonly string _indexName;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public ListPopLine(string rootName, string destinationName, string indexName,
+                string sourcePath, int sourceLine)
+            {
+                _rootName = rootName;
+                _destinationName = destinationName;
+                _indexName = indexName;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object target) ||
+                        !(target is IList list))
+                        throw new InvalidOperationException("list.pop() requires a list target");
+                    if (list.IsReadOnly || list.IsFixedSize)
+                        throw new InvalidOperationException("list.pop() target is not mutable");
+                    if (list.Count == 0)
+                        throw new InvalidOperationException("pop from an empty list");
+
+                    int index = list.Count - 1;
+                    if (_indexName != null)
+                    {
+                        if (!TryGetDynamicIndexValue(_indexName, context, out object rawIndex) ||
+                            !TryConvertIntegerIndex(rawIndex, out index))
+                            throw new InvalidOperationException("pop() index must evaluate to an integer");
+
+                        if (index < 0) index = list.Count + index;
+                        if (index < 0 || index >= list.Count)
+                            throw new InvalidOperationException("pop() index out of range");
+                    }
+
+                    object removed = list[index];
+                    if (_destinationName != null &&
+                        !GameBridge.TrySetVariableLiteral(_destinationName, removed, false, context))
+                        throw new InvalidOperationException(
+                            "could not assign the popped value to '" + _destinationName + "'");
+
+                    list.RemoveAt(index);
+                    Log.Info("Applied list.pop on '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not apply list.pop on '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " + e.GetBaseException().Message);
                 }
             }
         }
@@ -1823,6 +2270,27 @@ namespace StoryAPI.Runtime
             catch
             {
                 value = null;
+                return false;
+            }
+        }
+
+        private static bool TryConvertIntegerIndex(object value, out int index)
+        {
+            index = 0;
+            if (value == null || value is bool) return false;
+
+            try
+            {
+                decimal numeric = Convert.ToDecimal(value, CultureInfo.InvariantCulture);
+                if (numeric != decimal.Truncate(numeric) ||
+                    numeric < int.MinValue || numeric > int.MaxValue)
+                    return false;
+
+                index = decimal.ToInt32(numeric);
+                return true;
+            }
+            catch
+            {
                 return false;
             }
         }

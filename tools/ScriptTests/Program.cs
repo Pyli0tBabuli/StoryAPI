@@ -24,6 +24,7 @@ namespace StoryAPI.Tests
             Run("runtime index expression rewriting", TestRuntimeIndexExpressionRewriting);
             Run("dynamic index scalar value extraction", TestDynamicIndexScalarValueExtraction);
             Run("indexed collection assignment", TestIndexedCollectionAssignments);
+            Run("list append and remove methods", TestListMethodMutations);
             Run("indexed collection conditions", TestIndexedCollectionConditions);
             Run("if/elif/else branches", TestConditionalBranches);
             Run("menu choices and nested statements", TestMenuChoices);
@@ -569,6 +570,72 @@ namespace StoryAPI.Tests
                     out noIndexLines, out unchangedCondition) &&
                 noIndexLines.Count == 0 && unchangedCondition == "score > 0",
                 "Ordinary scalar conditions should remain untouched.");
+        }
+
+        private static void TestListMethodMutations()
+        {
+            const string appendPrefix = "_storyapi_append_test";
+            var inventory = new List<object> { "key", "flashlight" };
+            var context = new RenpyParser.DynamicIndexTestContext();
+            context.SetVariable("inventory",
+                new SimpleExpressionEngine.DataValue((object)inventory));
+
+            List<RenPyParser.Line> lines;
+            Check(VariableIndexExpressionLine.TryCreateListMethodMutationLines(
+                    @"inventory.append(""battery"")", appendPrefix,
+                    "list-method-test.rpy", 2, 10, out lines),
+                "A single-string-argument append call should be recognized.");
+            Check(lines.Count == 4 &&
+                lines.OfType<RenpyParser.RenpyGoToLineUnless>().Single().Target == 14,
+                "Append should emit a guarded scalar-evaluation block with the correct jump target.");
+            Check(lines.OfType<RenpyParser.RenpyOneLinePython>().Any(
+                    line => line.Code.Contains(appendPrefix + "_value = ")),
+                "Append's scalar argument should be evaluated by the game's native expression runner.");
+
+            context.SetVariable(appendPrefix + "_value",
+                new SimpleExpressionEngine.DataValue("battery"));
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
+            Check(inventory.Count == 3 && (string)inventory[2] == "battery",
+                "append(value) should add one scalar value to the list.");
+
+            const string removePrefix = "_storyapi_remove_test";
+            inventory = new List<object> { "key", "key", "flashlight" };
+            context.SetVariable("inventory",
+                new SimpleExpressionEngine.DataValue((object)inventory));
+            Check(VariableIndexExpressionLine.TryCreateListMethodMutationLines(
+                    @"inventory.remove(""key"")", removePrefix,
+                    "list-method-test.rpy", 3, 20, out lines),
+                "A single-string-argument remove call should be recognized.");
+            context.SetVariable(removePrefix + "_value",
+                new SimpleExpressionEngine.DataValue("key"));
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
+            Check(inventory.Count == 2 &&
+                (string)inventory[0] == "key" && (string)inventory[1] == "flashlight",
+                "remove(value) should remove only the first matching list item.");
+
+            const string numericPrefix = "_storyapi_numeric_remove_test";
+            inventory = new List<object> { 1f, 2f, 1f };
+            context.SetVariable("inventory",
+                new SimpleExpressionEngine.DataValue((object)inventory));
+            Check(VariableIndexExpressionLine.TryCreateListMethodMutationLines(
+                    "inventory.remove(1)", numericPrefix,
+                    "list-method-test.rpy", 4, 30, out lines),
+                "A numeric remove argument should be recognized.");
+            context.SetVariable(numericPrefix + "_value",
+                new SimpleExpressionEngine.DataValue(1f));
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
+            Check(inventory.Count == 2 && Convert.ToSingle(inventory[0]) == 2f &&
+                Convert.ToSingle(inventory[1]) == 1f,
+                "remove(value) should remove the first matching numeric item.");
+
+            Check(!VariableIndexExpressionLine.TryCreateListMethodMutationLines(
+                    "inventory.append(1, 2)", "_storyapi_invalid_method_test",
+                    "list-method-test.rpy", 5, 40, out lines),
+                "Calls with multiple positional arguments should remain unsupported.");
+            Check(!VariableIndexExpressionLine.TryCreateListMethodMutationLines(
+                    "inventory.extend(1)", "_storyapi_invalid_method_test",
+                    "list-method-test.rpy", 6, 40, out lines),
+                "Methods other than append and remove should remain unsupported.");
         }
 
         private static void TestConditionalBranches()

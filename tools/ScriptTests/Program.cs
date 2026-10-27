@@ -28,6 +28,7 @@ namespace StoryAPI.Tests
             Run("list append and remove methods", TestListMethodMutations);
             Run("indexed collection conditions", TestIndexedCollectionConditions);
             Run("list and dictionary membership conditions", TestCollectionMembershipConditions);
+            Run("list and dictionary length conditions", TestCollectionLengthConditions);
             Run("if/elif/else branches", TestConditionalBranches);
             Run("menu choices and nested statements", TestMenuChoices);
             Run("while and loop-control statements", TestWhileAndLoopControl);
@@ -749,6 +750,108 @@ namespace StoryAPI.Tests
                     literalCondition, prefix, "membership-test.rpy", 16,
                     out lines, out prepared) && prepared == literalCondition,
                 "Text containing the words in and not in must not be rewritten as an operator.");
+        }
+
+        private static void TestCollectionLengthConditions()
+        {
+            const string prefix = "_storyapi_length_test";
+            var inventory = new List<object> { "key", "flashlight", "battery" };
+            var settings = new Dictionary<string, object>
+            {
+                { "count", 5f },
+                { "theme", "dark" }
+            };
+
+            var context = new RenpyParser.DynamicIndexTestContext();
+            context.SetVariable("inventory",
+                new SimpleExpressionEngine.DataValue((object)inventory));
+            context.SetVariable("settings",
+                new SimpleExpressionEngine.DataValue((object)settings));
+
+            List<RenPyParser.Line> lines;
+            string prepared;
+            Check(VariableIndexExpressionLine.TryPrepareCondition(
+                    "len(inventory) >= 3", prefix, "length-test.rpy", 20,
+                    out lines, out prepared),
+                "len(list) should be prepared as a runtime scalar in a condition.");
+            Check(prepared == prefix + "_gate and (" +
+                    prefix + "_length_result_0 >= 3)",
+                "The len call should be rewritten to a scalar temporary.");
+            Check(lines.OfType<RenPyParser.Line>().Count(line =>
+                    line.GetType().Name == "CollectionLengthLine") == 1,
+                "A single len call should emit one collection-length reader.");
+
+            var lengthLine = lines.Single(line => line.GetType().Name == "CollectionLengthLine");
+            ((RenPyParser.Images.IApply)lengthLine).Apply(context);
+            object result;
+            Check(GameBridge.TryGetLastTestLiteral(prefix + "_length_result_0", out result) &&
+                Convert.ToInt32(result) == 3,
+                "len(list) should return the number of list items.");
+
+            const string dictPrefix = "_storyapi_dictionary_length_test";
+            Check(VariableIndexExpressionLine.TryPrepareCondition(
+                    "len(settings) == 2", dictPrefix, "length-test.rpy", 21,
+                    out lines, out prepared),
+                "len(dictionary) should be prepared as a runtime scalar in a condition.");
+            ((RenPyParser.Images.IApply)lines.Single(
+                line => line.GetType().Name == "CollectionLengthLine")).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(dictPrefix + "_length_result_0", out result) &&
+                Convert.ToInt32(result) == 2,
+                "len(dictionary) should return the number of dictionary keys.");
+
+            const string multiPrefix = "_storyapi_multiple_length_test";
+            Check(VariableIndexExpressionLine.TryPrepareCondition(
+                    "len(inventory) == 3 and len(settings) == 2", multiPrefix,
+                    "length-test.rpy", 22, out lines, out prepared),
+                "Multiple len calls in one condition should be prepared.");
+            Check(lines.Count(line => line.GetType().Name == "CollectionLengthLine") == 2 &&
+                prepared.Contains(multiPrefix + "_length_result_0") &&
+                prepared.Contains(multiPrefix + "_length_result_1"),
+                "Multiple len calls should receive distinct temporary values.");
+            foreach (RenPyParser.Line line in lines.Where(
+                line => line.GetType().Name == "CollectionLengthLine"))
+                ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(multiPrefix + "_length_result_0", out result) &&
+                    Convert.ToInt32(result) == 3 &&
+                GameBridge.TryGetLastTestLiteral(multiPrefix + "_length_result_1", out result) &&
+                    Convert.ToInt32(result) == 2,
+                "Each len call should resolve to its own collection count.");
+
+            const string mixedPrefix = "_storyapi_mixed_length_index_test";
+            Check(VariableIndexExpressionLine.TryPrepareCondition(
+                    "len(inventory) >= 3 and inventory[0] == \"key\"", mixedPrefix,
+                    "length-test.rpy", 23, out lines, out prepared),
+                "len calls should coexist with indexed collection reads.");
+            Check(lines.OfType<VariableIndexExpressionLine>().Count() == 1 &&
+                lines.Count(line => line.GetType().Name == "CollectionLengthLine") == 1 &&
+                prepared.Contains(mixedPrefix + "_length_result_0") &&
+                prepared.Contains(mixedPrefix + "_index_0"),
+                "A mixed condition should rewrite length calls and indexed reads.");
+
+            const string emptyPrefix = "_storyapi_empty_length_test";
+            context.SetVariable("empty_inventory",
+                new SimpleExpressionEngine.DataValue((object)new List<object>()));
+            Check(VariableIndexExpressionLine.TryPrepareCondition(
+                    "len(empty_inventory) == 0", emptyPrefix, "length-test.rpy", 24,
+                    out lines, out prepared),
+                "len(empty_list) should be supported.");
+            ((RenPyParser.Images.IApply)lines.Single(
+                line => line.GetType().Name == "CollectionLengthLine")).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(emptyPrefix + "_length_result_0", out result) &&
+                Convert.ToInt32(result) == 0,
+                "The length of an empty list should be zero.");
+
+            const string ordinary = "score > 0";
+            Check(!VariableIndexExpressionLine.TryPrepareCondition(
+                    ordinary, prefix, "length-test.rpy", 25, out lines, out prepared) &&
+                prepared == ordinary,
+                "Ordinary scalar conditions should remain untouched.");
+
+            const string stringCondition = "\"The text len(inventory) is literal\"";
+            Check(!VariableIndexExpressionLine.TryPrepareCondition(
+                    stringCondition, prefix, "length-test.rpy", 26, out lines, out prepared) &&
+                prepared == stringCondition,
+                "Text containing len(collection) inside a string must not be rewritten.");
         }
 
         private static void TestConditionalBranches()

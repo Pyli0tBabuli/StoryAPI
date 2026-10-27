@@ -449,14 +449,20 @@ namespace StoryAPI.Runtime
             bool hasMembership = TryRewriteMembershipConditions(condition, temporaryPrefix,
                 sourcePath, sourceLine, out membershipLines, out membershipExpression);
 
-            string expressionToRewrite = hasMembership ? membershipExpression : condition;
+            string expressionAfterMembership = hasMembership ? membershipExpression : condition;
+            List<Line> lengthLines;
+            string lengthExpression;
+            bool hasLength = TryRewriteLengthConditions(expressionAfterMembership, temporaryPrefix,
+                sourcePath, sourceLine, out lengthLines, out lengthExpression);
+
+            string expressionToRewrite = hasLength ? lengthExpression : expressionAfterMembership;
             string rewrittenExpression;
             List<KeyValuePair<string, string>> indexReads;
             List<KeyValuePair<string, string>> dynamicIndexes;
             bool hasIndexReads = TryRewriteExpression(expressionToRewrite, temporaryPrefix,
                 out rewrittenExpression, out indexReads, out dynamicIndexes);
 
-            if (!hasMembership && !hasIndexReads)
+            if (!hasMembership && !hasLength && !hasIndexReads)
                 return false;
 
             if (!hasIndexReads)
@@ -474,6 +480,8 @@ namespace StoryAPI.Runtime
 
             if (hasMembership)
                 result.AddRange(membershipLines);
+            if (hasLength)
+                result.AddRange(lengthLines);
 
             foreach (KeyValuePair<string, string> dynamicIndex in dynamicIndexes)
             {
@@ -498,6 +506,61 @@ namespace StoryAPI.Runtime
 
             preparatoryLines = result;
             preparedCondition = gateName + " and (" + rewrittenExpression + ")";
+            return true;
+        }
+
+        /// <summary>
+        /// Rewrites len(collection) calls for named list/dictionary variables into
+        /// temporary scalar values that the native condition evaluator can compare.
+        /// </summary>
+        private static bool TryRewriteLengthConditions(string condition, string temporaryPrefix,
+            string sourcePath, int sourceLine, out List<Line> preparatoryLines,
+            out string rewrittenCondition)
+        {
+            preparatoryLines = new List<Line>();
+            rewrittenCondition = condition;
+            if (string.IsNullOrWhiteSpace(condition)) return false;
+
+            var pattern = new Regex(
+                @"(?<![\w.])len\s*\(\s*(?<collection>[A-Za-z_][A-Za-z0-9_]*)\s*\)",
+                RegexOptions.Compiled);
+            MatchCollection matches = pattern.Matches(condition);
+            if (matches.Count == 0) return false;
+
+            var replacements = new List<Tuple<int, int, string>>();
+            var lines = new List<Line>();
+            var state = new VariableInitializationState();
+            string gateName = temporaryPrefix + "_gate";
+            int lengthIndex = 0;
+
+            foreach (Match match in matches)
+            {
+                if (!IsOutsideStringAt(condition, match.Index)) continue;
+
+                string collectionName = match.Groups["collection"].Value;
+                string resultName = temporaryPrefix + "_length_result_" +
+                    lengthIndex.ToString(CultureInfo.InvariantCulture);
+
+                lines.Add(new CollectionLengthLine(collectionName, resultName, gateName,
+                    sourcePath, sourceLine, state));
+                replacements.Add(Tuple.Create(match.Index, match.Length, resultName));
+                lengthIndex++;
+            }
+
+            if (replacements.Count == 0) return false;
+
+            var builder = new StringBuilder();
+            int cursor = 0;
+            foreach (Tuple<int, int, string> item in replacements)
+            {
+                builder.Append(condition, cursor, item.Item1 - cursor);
+                builder.Append(item.Item3);
+                cursor = item.Item1 + item.Item2;
+            }
+            builder.Append(condition, cursor, condition.Length - cursor);
+
+            preparatoryLines = lines;
+            rewrittenCondition = builder.ToString();
             return true;
         }
 
@@ -1052,6 +1115,72 @@ namespace StoryAPI.Runtime
                     if (_state != null) _state.Failed = true;
                     Log.Warn("Could not apply list." + _methodName + " on '" + _rootName +
                         "' at " + _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+        }
+
+        private sealed class CollectionLengthLine : Line, IApply
+        {
+            private readonly string _collectionName;
+            private readonly string _resultName;
+            private readonly string _gateName;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+            private readonly VariableInitializationState _state;
+
+            public CollectionLengthLine(string collectionName, string resultName,
+                string gateName, string sourcePath, int sourceLine,
+                VariableInitializationState state)
+            {
+                _collectionName = collectionName;
+                _resultName = resultName;
+                _gateName = gateName;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+                _state = state;
+            }
+
+            public void Apply(IContext context)
+            {
+                if (_state != null && _state.Failed) return;
+
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+
+                    if (!TryGetObjectBackedVariable(_collectionName, context, out object collection))
+                        throw new InvalidOperationException("variable '" + _collectionName +
+                            "' does not contain an object-backed list or dictionary");
+
+                    int count;
+                    if (collection is IList list)
+                    {
+                        count = list.Count;
+                    }
+                    else if (collection is IDictionary dictionary)
+                    {
+                        count = dictionary.Count;
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException("len() target is not a list or dictionary");
+                    }
+
+                    if (!GameBridge.TrySetVariableLiteral(_resultName, count, false, context))
+                        throw new InvalidOperationException("could not write the collection length");
+
+                    Log.Info("Evaluated len(" + _collectionName + ") at " +
+                        _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    if (_state != null) _state.Failed = true;
+                    GameBridge.TrySetVariableLiteral(_resultName, 0, false, context);
+                    GameBridge.TrySetVariableLiteral(_gateName, false, false, context);
+                    Log.Warn("Could not evaluate len(" + _collectionName + ") at " +
+                        _sourcePath + ":" + _sourceLine + ": " +
                         e.GetBaseException().Message);
                 }
             }

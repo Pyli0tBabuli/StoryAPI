@@ -255,6 +255,9 @@ namespace StoryAPI.Tests
                 "default default_first = starting_points[0]\n" +
                 "define unclosed_index = starting_points[0\n" +
                 "define extra_closing_index = starting_points[0]]\n" +
+                "define multiplied_item = starting_points[0] * 2\n" +
+                "define summed_items = starting_points[0] + starting_points[1]\n" +
+                "default combined_condition = starting_points[0] >= 1 and has_key\n" +
                 "label container_index_test:\n" +
                 "    return\n");
 
@@ -322,6 +325,24 @@ namespace StoryAPI.Tests
                 "Expected a declaration with an unmatched closing bracket.");
             Check(!extraClosing.HasLiteral && !extraClosing.HasRuntimeExpression,
                 "Unmatched closing brackets should remain unsupported.");
+
+            var multiplied = Require<VariableDeclarationStatement>(statements[12],
+                "Expected arithmetic applied to an indexed list value.");
+            Check(multiplied.HasRuntimeExpression &&
+                multiplied.Expression == "starting_points[0] * 2",
+                "Index reads should be valid operands in scalar multiplication.");
+
+            var summed = Require<VariableDeclarationStatement>(statements[13],
+                "Expected an expression adding two indexed values.");
+            Check(summed.HasRuntimeExpression &&
+                summed.Expression == "starting_points[0] + starting_points[1]",
+                "Multiple index reads should be retained in one scalar expression.");
+
+            var combinedCondition = Require<VariableDeclarationStatement>(statements[14],
+                "Expected a logical expression with an indexed comparison.");
+            Check(combinedCondition.IsDefault && combinedCondition.HasRuntimeExpression &&
+                combinedCondition.Expression == "starting_points[0] >= 1 and has_key",
+                "Index reads should be valid operands in scalar comparisons and logical expressions.");
         }
 
         private static void TestConditionalBranches()

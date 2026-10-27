@@ -282,7 +282,7 @@ namespace StoryAPI.Tests
                 "Expected an index expression with arithmetic.");
             Check(calculated.HasRuntimeExpression &&
                 calculated.Expression == "starting_points[index_value + 1] * 2",
-                "Index expressions should allow scalar arithmetic.");
+                "The parser should preserve indexed expressions so runtime validation can reject dynamic indexes.");
 
             var bracketKey = Require<VariableDeclarationStatement>(statements[4],
                 "Expected a dictionary key containing a closing bracket.");

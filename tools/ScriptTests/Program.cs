@@ -247,6 +247,8 @@ namespace StoryAPI.Tests
                 "define dictionary_item = starting_points[\"count\"]\n" +
                 "define nested_item = starting_points[2][\"nested\"]\n" +
                 "define calculated_item = starting_points[index_value + 1] * 2\n" +
+                "define bracket_key = dictionary_value[\"]\"]\n" +
+                "define bracket_string = label_text == \"[\"\n" +
                 "define empty_index = starting_points[]\n" +
                 "define call_index = starting_points[random()]\n" +
                 "define call_value = random()\n" +
@@ -276,17 +278,29 @@ namespace StoryAPI.Tests
                 calculated.Expression == "starting_points[index_value + 1] * 2",
                 "Index expressions should allow scalar arithmetic.");
 
-            var empty = Require<VariableDeclarationStatement>(statements[4],
+            var bracketKey = Require<VariableDeclarationStatement>(statements[4],
+                "Expected a dictionary key containing a closing bracket.");
+            Check(bracketKey.HasRuntimeExpression &&
+                bracketKey.Expression == "dictionary_value[\"]\"]",
+                "Bracket characters inside quoted dictionary keys must remain string content.");
+
+            var bracketString = Require<VariableDeclarationStatement>(statements[5],
+                "Expected a string comparison containing an opening bracket.");
+            Check(bracketString.HasRuntimeExpression &&
+                bracketString.Expression == "label_text == \"[\"",
+                "Bracket characters inside string literals must not affect subscription parsing.");
+
+            var empty = Require<VariableDeclarationStatement>(statements[6],
                 "Expected empty-index declaration.");
             Check(!empty.HasLiteral && !empty.HasRuntimeExpression,
                 "Empty indexes should not be accepted as valid runtime expressions.");
 
-            var callIndex = Require<VariableDeclarationStatement>(statements[5],
+            var callIndex = Require<VariableDeclarationStatement>(statements[7],
                 "Expected call-index declaration.");
             Check(!callIndex.HasLiteral && !callIndex.HasRuntimeExpression,
                 "Function calls inside indexes should remain unsupported.");
 
-            var call = Require<VariableDeclarationStatement>(statements[6],
+            var call = Require<VariableDeclarationStatement>(statements[8],
                 "Expected function-call declaration.");
             Check(!call.HasLiteral && !call.HasRuntimeExpression,
                 "Function calls should remain unsupported.");

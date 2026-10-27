@@ -401,6 +401,16 @@ namespace StoryAPI.Tests
                 dynamicIndexes[0].Value == "index_value + 1",
                 "The rewriter should schedule dynamic index calculation before collection lookup.");
 
+            Check(!VariableIndexExpressionLine.CanHandle("items[index_value + 1]"),
+                "Dynamic index expressions must use the rewrite path, not the literal-only reader.");
+
+            VariableIndexExpressionLine dynamicTemporary;
+            Check(VariableIndexExpressionLine.TryCreateTemporary(
+                    reads[0].Key, reads[0].Value, "dynamic-index-test.rpy", 1,
+                    new VariableInitializationState(), "_storyapi_test_gate", "selected_item",
+                    out dynamicTemporary),
+                "A rewritten collection chain with a generated dynamic-key placeholder should be constructible.");
+
             Check(VariableIndexExpressionLine.TryRewriteExpression(
                     "settings[key_name]",
                     "_storyapi_test", out rewritten, out reads, out dynamicIndexes) &&

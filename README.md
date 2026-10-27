@@ -159,6 +159,14 @@ be combined with scalar arithmetic, comparisons, and logical operators, for exam
 `default can_enter = settings["count"] >= 2 and has_key`. Nested indexes inside a dynamic key,
 collection mutation, attribute access, function calls, slices, arbitrary Python initializers,
 Python class instances, tuples, and the full Ren'Py initialization phase remain unsupported.
+Collection element assignment is supported for existing list indexes and dictionary keys, for
+example `$ inventory[0] = 10`, `$ settings["count"] = 5`, or
+`$ settings["meta"]["count"] = settings["count"] + 1`. The target may use literal indexes or
+the same restricted dynamic scalar indexes supported by reads. Assignment values may use scalar
+expressions; collection reads on the right-hand side are resolved before the assignment. The
+initial implementation does not support compound assignments such as `+=`, slices, append/remove
+operations, or assigning a new value beyond the end of a list.
+
 Within a label, `while`, `break`, `continue`, and `pass` are supported.
 A loop must eventually change its condition or break; infinite loops can stall the game.
 

@@ -380,13 +380,15 @@ namespace StoryAPI.Runtime
                 }
                 else if (variable.HasRuntimeExpression &&
                          VariableIndexExpressionLine.ContainsIndexSyntax(variable.Expression) &&
-                         !VariableIndexExpressionLine.CanHandle(variable.Expression))
+                         !VariableIndexExpressionLine.CanHandle(variable.Expression) &&
+                         !VariableIndexExpressionLine.CanRewriteExpression(variable.Expression))
                 {
                     Warnings.Add(Relative(variable.SourcePath) + ":" + variable.Line +
                         ": indexed initializer for '" + variable.Name + "' is not supported: " +
-                        variable.Expression + ". Indexing is currently supported only for a variable " +
-                        "followed by one or more literal integer/string indexes, such as items[0] or " +
-                        "items[2][\"nested\"]. Do not combine an index read with arithmetic or logic yet.");
+                        variable.Expression + ". Use literal integer indexes or quoted string keys, " +
+                        "and combine supported index reads only with the scalar arithmetic/logical " +
+                        "operators already supported by StoryAPI. Dynamic indexes, function calls, " +
+                        "slices, and arbitrary Python are not supported.");
                 }
             }
         }
@@ -406,12 +408,25 @@ namespace StoryAPI.Runtime
                 {
                     if (!variable.HasLiteral && !variable.HasRuntimeExpression) continue;
 
-                    // Do not inject unsupported subscription syntax into the game's native
-                    // scalar evaluator: it stops the label before the first dialogue line.
-                    if (!variable.HasLiteral &&
-                        VariableIndexExpressionLine.ContainsIndexSyntax(variable.Expression) &&
-                        !VariableIndexExpressionLine.CanHandle(variable.Expression))
+                    bool containsIndex = !variable.HasLiteral &&
+                        VariableIndexExpressionLine.ContainsIndexSyntax(variable.Expression);
+                    bool pureIndexExpression = containsIndex &&
+                        VariableIndexExpressionLine.CanHandle(variable.Expression);
+                    bool mixedIndexExpression = containsIndex && !pureIndexExpression;
+                    string expressionToExecute = variable.Expression;
+                    List<KeyValuePair<string, string>> indexReads = null;
+
+                    // Indexes are evaluated by StoryAPI first. Only the rewritten scalar
+                    // expression (with temporary variable names) is sent to DDLC+'s engine.
+                    if (mixedIndexExpression &&
+                        !VariableIndexExpressionLine.TryRewriteExpression(
+                            variable.Expression,
+                            ExpressionGateName(variable),
+                            out expressionToExecute,
+                            out indexReads))
+                    {
                         continue;
+                    }
 
                     if (!_variableInitializationStates.TryGetValue(variable, out var state))
                     {
@@ -432,11 +447,12 @@ namespace StoryAPI.Runtime
                     else
                     {
                         string gateName = ExpressionGateName(variable);
-                        // Four instructions: choose whether to run, skip when false, assign,
-                        // and mark initialized. The jump target is an absolute index because
-                        // this initializer block is inserted at the beginning of the label.
-                        int skipTarget = initLines.Count + 4;
+                        int blockStart = initLines.Count;
+                        int blockSize = mixedIndexExpression ? indexReads.Count + 5 : 4;
+                        int skipTarget = blockStart + blockSize;
 
+                        // The gate and first jump ensure a declaration is run once, and
+                        // skip the complete block for an already-initialized declaration.
                         initLines.Add(new VariableInitializationLine(
                             variable.Name,
                             variable.IsDefault,
@@ -445,21 +461,69 @@ namespace StoryAPI.Runtime
                             variable.Line,
                             state));
                         initLines.Add(new RenpyGoToLineUnless(gateName, skipTarget));
-                        VariableIndexExpressionLine indexedLine;
-                        if (VariableIndexExpressionLine.TryCreate(
-                            variable.Name,
-                            variable.Expression,
-                            variable.IsDefault,
-                            variable.SourcePath,
-                            variable.Line,
-                            state,
-                            out indexedLine))
+
+                        if (mixedIndexExpression)
                         {
-                            initLines.Add(indexedLine);
+                            var temporaryLines = new List<VariableIndexExpressionLine>();
+                            bool allIndexesSupported = true;
+
+                            foreach (KeyValuePair<string, string> read in indexReads)
+                            {
+                                VariableIndexExpressionLine temporaryLine;
+                                if (!VariableIndexExpressionLine.TryCreateTemporary(
+                                    read.Key,
+                                    read.Value,
+                                    variable.SourcePath,
+                                    variable.Line,
+                                    state,
+                                    gateName,
+                                    variable.Name,
+                                    out temporaryLine))
+                                {
+                                    allIndexesSupported = false;
+                                    break;
+                                }
+
+                                temporaryLines.Add(temporaryLine);
+                            }
+
+                            // TryRewriteExpression validates every chain first; this guard
+                            // keeps the label unchanged if construction ever disagrees.
+                            if (!allIndexesSupported)
+                            {
+                                initLines.RemoveRange(blockStart, initLines.Count - blockStart);
+                                continue;
+                            }
+
+                            initLines.AddRange(temporaryLines);
+
+                            // If a read fails, its line turns the gate off. Jump over the
+                            // native assignment so a failed read cannot assign a bogus value.
+                            initLines.Add(new RenpyGoToLineUnless(
+                                gateName,
+                                blockStart + 4 + indexReads.Count));
+                            initLines.Add(new RenpyOneLinePython(
+                                "$ " + variable.Name + " = " + expressionToExecute));
                         }
                         else
                         {
-                            initLines.Add(new RenpyOneLinePython("$ " + variable.Name + " = " + variable.Expression));
+                            VariableIndexExpressionLine indexedLine;
+                            if (VariableIndexExpressionLine.TryCreate(
+                                variable.Name,
+                                variable.Expression,
+                                variable.IsDefault,
+                                variable.SourcePath,
+                                variable.Line,
+                                state,
+                                out indexedLine))
+                            {
+                                initLines.Add(indexedLine);
+                            }
+                            else
+                            {
+                                initLines.Add(new RenpyOneLinePython(
+                                    "$ " + variable.Name + " = " + variable.Expression));
+                            }
                         }
 
                         initLines.Add(new VariableExpressionCompleteLine(

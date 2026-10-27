@@ -169,6 +169,13 @@ or assigning a new value beyond the end of a list. Lists also support one-argume
 method calls `$ inventory.append("battery")` and `$ inventory.remove("key")`; `remove`
 deletes the first matching item. Multiple arguments and other list methods remain unsupported.
 
+Runtime `if`, `elif`, and `while` conditions also support restricted membership checks such as
+`"key" in inventory`, `selected_item in inventory`, `"count" in settings`, and
+`"battery" not in inventory`. For lists, `in` searches for a matching scalar item; for dictionaries,
+it checks whether a quoted string key exists. Membership checks can be combined with `and`/`or`
+and with indexed reads. The left operand is currently a scalar literal or simple variable name,
+and the right operand must be a named object-backed list or dictionary.
+
 Within a label, `while`, `break`, `continue`, and `pass` are supported.
 A loop must eventually change its condition or break; infinite loops can stall the game.
 

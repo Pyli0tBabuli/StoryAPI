@@ -30,6 +30,7 @@ namespace StoryAPI.Tests
             Run("list and dictionary membership conditions", TestCollectionMembershipConditions);
             Run("list and dictionary length conditions", TestCollectionLengthConditions);
             Run("list and dictionary clear methods", TestCollectionClearMethods);
+            Run("list extend method", TestListExtendMethod);
             Run("if/elif/else branches", TestConditionalBranches);
             Run("menu choices and nested statements", TestMenuChoices);
             Run("while and loop-control statements", TestWhileAndLoopControl);
@@ -916,6 +917,80 @@ namespace StoryAPI.Tests
             Check(Require<PythonStatement>(label.Body[1],
                     "The second clear call should parse as a Python statement.").Code == "settings.clear()",
                 "The parser should preserve the dictionary clear() call.");
+        }
+
+        private static void TestListExtendMethod()
+        {
+            const string sourcePath = "list-extend-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var inventory = new List<object> { "key", "flashlight" };
+            var rewards = new List<object> { "battery", "medkit" };
+            context.SetVariable("inventory",
+                new SimpleExpressionEngine.DataValue((object)inventory));
+            context.SetVariable("rewards",
+                new SimpleExpressionEngine.DataValue((object)rewards));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateListExtendLine(
+                    "inventory.extend(rewards)", sourcePath, 10, out line),
+                "inventory.extend(rewards) should be recognized.");
+            Check(line.GetType().Name == "ListExtendLine",
+                "extend() should emit the dedicated list-extend instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+
+            Check(inventory.Count == 4,
+                "extend() should append all source items to the target list.");
+            Check((string)inventory[0] == "key" &&
+                    (string)inventory[1] == "flashlight" &&
+                    (string)inventory[2] == "battery" &&
+                    (string)inventory[3] == "medkit",
+                "extend() should preserve the order of the original and appended items.");
+            Check(rewards.Count == 2 && (string)rewards[0] == "battery" &&
+                    (string)rewards[1] == "medkit",
+                "extend() must not change the source list.");
+
+            var selfExtending = new List<object> { "a", "b" };
+            context.SetVariable("self_extending",
+                new SimpleExpressionEngine.DataValue((object)selfExtending));
+            Check(VariableIndexExpressionLine.TryCreateListExtendLine(
+                    "self_extending.extend(self_extending)", sourcePath, 20, out line),
+                "A list should be allowed to extend itself.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(selfExtending.Count == 4 &&
+                    (string)selfExtending[0] == "a" &&
+                    (string)selfExtending[1] == "b" &&
+                    (string)selfExtending[2] == "a" &&
+                    (string)selfExtending[3] == "b",
+                "Self-extension should append a snapshot of the original items exactly once.");
+
+            Check(!VariableIndexExpressionLine.TryCreateListExtendLine(
+                    "inventory.extend(\\"battery\\")", sourcePath, 30, out line),
+                "extend() should reject literal arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateListExtendLine(
+                    "inventory.extend(rewards[0])", sourcePath, 31, out line),
+                "extend() should reject indexed arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateListExtendLine(
+                    "inventory[0].extend(rewards)", sourcePath, 32, out line),
+                "extend() should reject indexed targets.");
+            Check(!VariableIndexExpressionLine.TryCreateListExtendLine(
+                    "inventory.extend(rewards, self_extending)", sourcePath, 33, out line),
+                "extend() should reject multiple arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateListExtendLine(
+                    "inventory.extend(rewards); inventory.clear()", sourcePath, 34, out line),
+                "extend() should reject multiple statements.");
+            Check(!VariableIndexExpressionLine.TryCreateListExtendLine(
+                    "inventory.append(\\"battery\\")", sourcePath, 35, out line),
+                "The extend recognizer must not capture append calls.");
+
+            var statements = Parse(
+                "label extend_test:\\n" +
+                "    $ inventory.extend(rewards)\\n" +
+                "    return\\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing an extend() call.");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The extend call should parse as a Python statement.").Code == "inventory.extend(rewards)",
+                "The parser should preserve the list extend() call.");
         }
 
         private static void TestConditionalBranches()

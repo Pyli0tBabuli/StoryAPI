@@ -831,23 +831,29 @@ namespace StoryAPI.Scripting
 
                 // Permit only subscription reads rooted in a variable or another subscription.
                 // An empty index, unmatched bracket, or standalone list-like bracket is rejected.
-                if (token.Text == "[")
+                if (token.Type == TokenType.Identifier && token.Text == "[")
                 {
-                    if (i == start || i + 1 >= end || _tokens[i + 1].Text == "]")
+                    if (i == start || i + 1 >= end ||
+                        (_tokens[i + 1].Type == TokenType.Identifier && _tokens[i + 1].Text == "]"))
                         return false;
 
-                    string previous = _tokens[i - 1].Text;
-                    if (_tokens[i - 1].Type != TokenType.Identifier &&
-                        previous != "]")
+                    Token previous = _tokens[i - 1];
+                    bool hasVariableBase = previous.Type == TokenType.Identifier &&
+                        previous.Text.Length > 0 &&
+                        (char.IsLetter(previous.Text[0]) || previous.Text[0] == '_');
+                    bool hasSubscriptionBase = previous.Type == TokenType.Identifier &&
+                        previous.Text == "]";
+                    if (!hasVariableBase && !hasSubscriptionBase)
                         return false;
 
                     indexDepth++;
                     continue;
                 }
 
-                if (token.Text == "]")
+                if (token.Type == TokenType.Identifier && token.Text == "]")
                 {
-                    if (indexDepth == 0 || i == start || _tokens[i - 1].Text == "[")
+                    if (indexDepth == 0 || i == start ||
+                        (_tokens[i - 1].Type == TokenType.Identifier && _tokens[i - 1].Text == "["))
                         return false;
 
                     indexDepth--;

@@ -122,9 +122,9 @@ namespace StoryAPI.Scripting
     }
 
     /// <summary>
-    /// A top-level define/default declaration. Scalar literals are initialized directly;
-    /// conservative arithmetic/logical scalar expressions can be evaluated by the live
-    /// game's own expression runner. Container literals and arbitrary calls remain unsupported.
+    /// A top-level define/default declaration. Scalar and supported container literals are
+    /// initialized directly; conservative arithmetic/logical scalar expressions can be
+    /// evaluated by the live game's own expression runner.
     /// </summary>
     public sealed class VariableDeclarationStatement : Statement
     {

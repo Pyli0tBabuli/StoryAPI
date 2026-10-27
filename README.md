@@ -143,16 +143,17 @@ there is no live script execution context at that point. A shared per-declaratio
 `define` values being reset on later label entries, while `default` leaves an existing game
 variable unchanged.
 
-Collection initialization and parsing of conservative index-read expressions are covered
-by parser tests. A declaration may read an entry using forms such as
+Collection initialization and index reads such as
 `define first_item = starting_points[0]`,
-`define item_count = settings["count"]`, or
-`define nested_item = items[2]["nested"]`. These reads are delegated to DDLC+'s native
-`$` expression instruction, so they still require an in-game check against the installed
-expression engine before being considered runtime-verified. Collection mutation, attribute
-access, function calls in initializers, arbitrary Python initializers, Python class instances,
-tuples, slices, and the full Ren'Py initialization phase are not supported. Within a label,
-`while`, `break`, `continue`, and `pass` are supported.
+`define item_count = settings["count"]`, and
+`define nested_item = items[2]["nested"]` use StoryAPI's restricted runtime index reader.
+Index keys must be literal integers for lists or quoted strings for dictionaries. A pure chain
+of reads is supported; expressions that mix indexing with arithmetic or logic (for example
+`items[index_value + 1] * 2`) are not supported yet and are skipped with a mod warning rather
+than being sent to the game's scalar evaluator. Collection mutation, attribute access, function
+calls in initializers, arbitrary Python initializers, Python class instances, tuples, slices,
+and the full Ren'Py initialization phase are not supported. Within a label, `while`, `break`,
+`continue`, and `pass` are supported.
 A loop must eventually change its condition or break; infinite loops can stall the game.
 
 ### The base game's own scenes

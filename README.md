@@ -170,9 +170,14 @@ method calls `$ inventory.append("battery")` and `$ inventory.remove("key")`; `r
 deletes the first matching item. Lists also support `$ inventory.extend(rewards)`, which
 appends the items from another named list in order without changing the source list. The
 `extend()` argument must be a simple variable name referring to a list; literals, indexed
-arguments, and multiple arguments are unsupported. Both lists and dictionaries support the
-no-argument method `$ inventory.clear()` or `$ settings.clear()`, which empties the existing
-collection in-place. Other list/dictionary methods and arbitrary Python calls remain unsupported.
+arguments, and multiple arguments are unsupported. Lists support `$ inventory.insert(1, "battery")`
+to insert a scalar or supported value at an index; indexes are integers, and negative/out-of-range
+indexes are clamped like Python's `list.insert()`. Lists also support `$ item = inventory.pop()`
+and `$ item = inventory.pop(0)`; `pop()` removes the final item by default or the item at the
+provided integer index, and can assign the removed scalar to a variable. Invalid/empty pops log
+a warning without changing the list. Both lists and dictionaries support the no-argument method
+`$ inventory.clear()` or `$ settings.clear()`, which empties the existing collection in-place.
+Other list/dictionary methods and arbitrary Python calls remain unsupported.
 
 Runtime `if`, `elif`, and `while` conditions also support restricted membership checks such as
 `"key" in inventory`, `selected_item in inventory`, `"count" in settings`, and

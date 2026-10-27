@@ -815,8 +815,8 @@ namespace StoryAPI.Scripting
 
         /// <summary>
         /// Only delegate expression forms that look like scalar expressions to the game's
-        /// own $ evaluator. Container/index syntax, comma-separated values and function calls
-        /// remain unsupported until the runtime's value model can be verified.
+        /// own $ evaluator. Container literals are handled separately as inert values; indexing,
+        /// comma-separated expressions and function calls are not accepted by this scalar path.
         /// </summary>
         private bool IsSupportedRuntimeScalarExpression(int start, int end)
         {

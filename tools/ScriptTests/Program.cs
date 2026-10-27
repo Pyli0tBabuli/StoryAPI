@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using StoryAPI.Scripting;
+using StoryAPI.Runtime;
 
 namespace StoryAPI.Tests
 {
@@ -19,6 +20,7 @@ namespace StoryAPI.Tests
             Run("define/default scalar declarations", TestVariableDeclarations);
             Run("runtime scalar initializer expressions", TestRuntimeExpressionDeclarations);
             Run("container index expressions", TestContainerIndexExpressions);
+            Run("runtime index expression rewriting", TestRuntimeIndexExpressionRewriting);
             Run("if/elif/else branches", TestConditionalBranches);
             Run("menu choices and nested statements", TestMenuChoices);
             Run("while and loop-control statements", TestWhileAndLoopControl);
@@ -343,6 +345,58 @@ namespace StoryAPI.Tests
             Check(combinedCondition.IsDefault && combinedCondition.HasRuntimeExpression &&
                 combinedCondition.Expression == "starting_points[0] >= 1 and has_key",
                 "Index reads should be valid operands in scalar comparisons and logical expressions.");
+        }
+
+        private static void TestRuntimeIndexExpressionRewriting()
+        {
+            Check(VariableIndexExpressionLine.CanHandle("starting_points[0]"),
+                "A pure list index chain should use the direct runtime reader.");
+
+            string rewritten;
+            List<KeyValuePair<string, string>> reads;
+            Check(VariableIndexExpressionLine.TryRewriteExpression(
+                    "starting_points[0] * 2", "_storyapi_test",
+                    out rewritten, out reads),
+                "An indexed value multiplied by a scalar should be rewriteable.");
+            Check(rewritten == "_storyapi_test_index_0 * 2",
+                "The index read should be replaced with a temporary variable.");
+            Check(reads.Count == 1 &&
+                reads[0].Key == "_storyapi_test_index_0" &&
+                reads[0].Value == "starting_points[0]",
+                "The rewriter should preserve the exact source chain for runtime reading.");
+
+            Check(VariableIndexExpressionLine.TryRewriteExpression(
+                    "starting_points[0] + settings[\"count\"]",
+                    "_storyapi_test", out rewritten, out reads),
+                "Two index reads in one expression should both be rewriteable.");
+            Check(rewritten ==
+                    "_storyapi_test_index_0 + _storyapi_test_index_1" &&
+                reads.Count == 2 &&
+                reads[1].Value == "settings[\"count\"]",
+                "Multiple index reads should create distinct temporary variables.");
+
+            Check(VariableIndexExpressionLine.TryRewriteExpression(
+                    "settings[\"count\"] >= 2 and has_key",
+                    "_storyapi_test", out rewritten, out reads) &&
+                rewritten == "_storyapi_test_index_0 >= 2 and has_key",
+                "Index reads should be rewriteable inside comparisons and logical expressions.");
+
+            Check(VariableIndexExpressionLine.TryRewriteExpression(
+                    "starting_points[0] + settings[\"]\"]",
+                    "_storyapi_test", out rewritten, out reads) &&
+                reads.Count == 2 &&
+                reads[1].Value == "settings[\"]\"]",
+                "A closing bracket inside a quoted key must not end the index early.");
+
+            Check(!VariableIndexExpressionLine.TryRewriteExpression(
+                    "items[index_value + 1] * 2",
+                    "_storyapi_test", out rewritten, out reads),
+                "Dynamic indexes should remain unsupported by the runtime rewriter.");
+
+            Check(!VariableIndexExpressionLine.TryRewriteExpression(
+                    "label_text == \"[\"",
+                    "_storyapi_test", out rewritten, out reads),
+                "Bracket characters inside strings must not be treated as index reads.");
         }
 
         private static void TestConditionalBranches()

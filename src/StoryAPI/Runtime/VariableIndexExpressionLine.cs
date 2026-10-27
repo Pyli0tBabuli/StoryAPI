@@ -125,7 +125,7 @@ namespace StoryAPI.Runtime
             var builder = new StringBuilder(expression.Length + 32);
             bool inString = false;
             bool escaped = false;
-            char quote = '\\0';
+            char quote = '\0';
             int cursor = 0;
 
             while (cursor < expression.Length)
@@ -137,7 +137,7 @@ namespace StoryAPI.Runtime
                     builder.Append(c);
                     cursor++;
                     if (escaped) escaped = false;
-                    else if (c == '\\\\') escaped = true;
+                    else if (c == '\\') escaped = true;
                     else if (c == quote) inString = false;
                     continue;
                 }
@@ -215,7 +215,7 @@ namespace StoryAPI.Runtime
                 int scan = bracketStart + 1;
                 bool inKeyString = false;
                 bool escaped = false;
-                char quote = '\\0';
+                char quote = '\0';
                 bool foundClose = false;
 
                 while (scan < expression.Length)
@@ -224,7 +224,7 @@ namespace StoryAPI.Runtime
                     if (inKeyString)
                     {
                         if (escaped) escaped = false;
-                        else if (c == '\\\\') escaped = true;
+                        else if (c == '\\') escaped = true;
                         else if (c == quote) inKeyString = false;
                         scan++;
                         continue;

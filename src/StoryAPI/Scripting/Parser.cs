@@ -797,7 +797,17 @@ namespace StoryAPI.Scripting
 
             if (!declaration.HasLiteral)
             {
-                declaration.HasRuntimeExpression = IsSupportedRuntimeScalarExpression(expressionStart, expressionEnd);
+                object containerLiteral;
+                if (TryReadContainerLiteral(expressionStart, expressionEnd, out containerLiteral))
+                {
+                    declaration.HasLiteral = true;
+                    declaration.LiteralValue = containerLiteral;
+                }
+                else
+                {
+                    declaration.HasRuntimeExpression =
+                        IsSupportedRuntimeScalarExpression(expressionStart, expressionEnd);
+                }
             }
 
             return declaration;
@@ -805,8 +815,8 @@ namespace StoryAPI.Scripting
 
         /// <summary>
         /// Only delegate expression forms that look like scalar expressions to the game's
-        /// own $ evaluator. Container/index syntax, comma-separated values and function calls
-        /// remain unsupported until the runtime's value model can be verified.
+        /// own $ evaluator. Container literals are handled separately as inert values; indexing,
+        /// comma-separated expressions and function calls are not accepted by this scalar path.
         /// </summary>
         private bool IsSupportedRuntimeScalarExpression(int start, int end)
         {
@@ -870,6 +880,169 @@ namespace StoryAPI.Scripting
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// Read a deliberately small, side-effect-free subset of container literals.
+        /// Values are kept as ordinary CLR objects so GameBridge can pass the completed
+        /// collection through DDLC+'s DataValue(System.Object) constructor.
+        /// </summary>
+        private bool TryReadContainerLiteral(int start, int end, out object value)
+        {
+            value = null;
+            if (start >= end || (_tokens[start].Text != "[" && _tokens[start].Text != "{"))
+                return false;
+
+            int cursor = start;
+            if (!TryReadLiteralValue(ref cursor, end, out value) || cursor != end)
+            {
+                value = null;
+                return false;
+            }
+
+            return value is List<object> || value is Dictionary<string, object>;
+        }
+
+        private bool TryReadLiteralValue(ref int cursor, int end, out object value)
+        {
+            value = null;
+            if (cursor >= end) return false;
+
+            Token token = _tokens[cursor];
+            if (token.Type == TokenType.String)
+            {
+                value = token.Text;
+                cursor++;
+                return true;
+            }
+
+            if (token.Type == TokenType.Number)
+            {
+                int integer;
+                double number;
+                if (int.TryParse(token.Text, NumberStyles.Integer,
+                    CultureInfo.InvariantCulture, out integer))
+                {
+                    value = integer;
+                    cursor++;
+                    return true;
+                }
+
+                if (double.TryParse(token.Text, NumberStyles.Float,
+                    CultureInfo.InvariantCulture, out number))
+                {
+                    value = number;
+                    cursor++;
+                    return true;
+                }
+
+                return false;
+            }
+
+            if (token.Type == TokenType.Keyword)
+            {
+                if (token.Text == "True") value = true;
+                else if (token.Text == "False") value = false;
+                else if (token.Text == "None") value = null;
+                else return false;
+
+                cursor++;
+                return true;
+            }
+
+            if (token.Text == "[")
+            {
+                cursor++;
+                var items = new List<object>();
+                if (cursor < end && _tokens[cursor].Text == "]")
+                {
+                    cursor++;
+                    value = items;
+                    return true;
+                }
+
+                while (cursor < end)
+                {
+                    object item;
+                    if (!TryReadLiteralValue(ref cursor, end, out item)) return false;
+                    items.Add(item);
+
+                    if (cursor < end && _tokens[cursor].Text == ",")
+                    {
+                        cursor++;
+                        if (cursor < end && _tokens[cursor].Text == "]")
+                        {
+                            cursor++;
+                            value = items;
+                            return true;
+                        }
+                        continue;
+                    }
+
+                    if (cursor < end && _tokens[cursor].Text == "]")
+                    {
+                        cursor++;
+                        value = items;
+                        return true;
+                    }
+
+                    return false;
+                }
+
+                return false;
+            }
+
+            if (token.Text == "{")
+            {
+                cursor++;
+                var items = new Dictionary<string, object>(StringComparer.Ordinal);
+                if (cursor < end && _tokens[cursor].Text == "}")
+                {
+                    cursor++;
+                    value = items;
+                    return true;
+                }
+
+                while (cursor < end)
+                {
+                    if (_tokens[cursor].Type != TokenType.String) return false;
+                    string key = _tokens[cursor].Text;
+                    cursor++;
+
+                    if (cursor >= end || _tokens[cursor].Type != TokenType.Colon)
+                        return false;
+                    cursor++;
+
+                    object item;
+                    if (!TryReadLiteralValue(ref cursor, end, out item)) return false;
+                    items[key] = item;
+
+                    if (cursor < end && _tokens[cursor].Text == ",")
+                    {
+                        cursor++;
+                        if (cursor < end && _tokens[cursor].Text == "}")
+                        {
+                            cursor++;
+                            value = items;
+                            return true;
+                        }
+                        continue;
+                    }
+
+                    if (cursor < end && _tokens[cursor].Text == "}")
+                    {
+                        cursor++;
+                        value = items;
+                        return true;
+                    }
+
+                    return false;
+                }
+
+                return false;
+            }
+
+            return false;
         }
 
         private bool TryReadCharacterDefinition(int start, int end, string tag, int line,

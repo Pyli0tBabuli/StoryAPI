@@ -375,8 +375,8 @@ namespace StoryAPI.Runtime
                     Warnings.Add(Relative(variable.SourcePath) + ":" + variable.Line +
                         ": " + (variable.IsDefault ? "default" : "define") + " '" + variable.Name +
                         "' uses an initializer not supported by StoryAPI: " + variable.Expression +
-                        ". Use a scalar literal or a scalar arithmetic/logical expression. " +
-                        "Lists, dictionaries, indexing, function calls, and arbitrary Python are not supported.");
+                        ". Use a scalar literal, a list/dictionary literal, or a scalar arithmetic/logical expression. " +
+                        "Tuples, indexing, function calls, and arbitrary Python are not supported.");
                 }
             }
         }

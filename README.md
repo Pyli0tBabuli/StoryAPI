@@ -131,19 +131,24 @@ label example:
     return
 ```
 
-Supported literal initializers are quoted strings, numbers, `True`, and `False`. Conservative
-scalar expressions involving arithmetic, comparisons, and boolean operators are also delegated
-to DDLC+'s own `$` expression instruction when a mod label first executes; `None` is delegated
-there as well. The common `define name = Character("Display name")` form registers a StoryAPI
-speaker. Initializers are not evaluated during mod registration because there is no live script
-execution context at that point. A shared per-declaration guard prevents `define` values being
-reset on later label entries, while `default` leaves an existing game variable unchanged.
+Supported literal initializers are quoted strings, numbers, `True`, and `False`.
+List literals (for example `[1, 2]`) and dictionaries with quoted-string keys (for example
+`{"count": 2}`) can also be initialized, including nested lists/dictionaries and empty
+containers, by wrapping the resulting CLR collection in DDLC+'s object-valued `DataValue`.
+Conservative scalar expressions involving arithmetic, comparisons, and boolean operators are
+delegated to DDLC+'s own `$` expression instruction when a mod label first executes; `None`
+is delegated there as well. The common `define name = Character("Display name")` form
+registers a StoryAPI speaker. Initializers are not evaluated during mod registration because
+there is no live script execution context at that point. A shared per-declaration guard prevents
+`define` values being reset on later label entries, while `default` leaves an existing game
+variable unchanged.
 
-This expression support is deliberately limited: lists, dictionaries, tuples, indexing,
-attribute access, function calls, arbitrary Python initializers, Python class instances, and
-the full Ren'Py initialization phase are not implemented. Within a label, `while`, `break`,
-`continue`, and `pass` are supported. A loop must eventually change its condition or
-break; infinite loops can stall the game.
+Collection initialization is an early compatibility step: the parser and object-wrapping path
+are covered by tests, but collection indexing and mutation have not yet been verified against
+the installed DDLC+ expression engine. Do not treat indexing, attribute access, function calls,
+arbitrary Python initializers, Python class instances, tuples, or the full Ren'Py initialization
+phase as supported. Within a label, `while`, `break`, `continue`, and `pass` are supported.
+A loop must eventually change its condition or break; infinite loops can stall the game.
 
 ### The base game's own scenes
 

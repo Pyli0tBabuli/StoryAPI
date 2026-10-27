@@ -36,6 +36,23 @@ namespace RenPyParser.Transforms
 
 namespace RenpyParser
 {
+    public sealed class RenpyOneLinePython : RenPyParser.Line
+    {
+        public string Code { get; }
+        public RenpyOneLinePython(string code) { Code = code; }
+    }
+
+    public sealed class RenpyGoToLineUnless : RenPyParser.Line
+    {
+        public string VariableName { get; }
+        public int Target { get; }
+        public RenpyGoToLineUnless(string variableName, int target)
+        {
+            VariableName = variableName;
+            Target = target;
+        }
+    }
+
     public interface IContext
     {
         bool ResolveVariable(string name, out SimpleExpressionEngine.DataValue value);

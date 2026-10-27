@@ -431,6 +431,336 @@ namespace StoryAPI.Runtime
                 out reads, out dynamicIndexes);
         }
 
+        /// <summary>
+        /// Prepares a scalar condition that contains collection reads by resolving the reads
+        /// into temporary variables before the native conditional evaluator sees the expression.
+        /// The returned condition is guarded so a failed collection read makes the branch false.
+        /// </summary>
+        public static bool TryPrepareCondition(string condition, string temporaryPrefix,
+            string sourcePath, int sourceLine, out List<Line> preparatoryLines,
+            out string preparedCondition)
+        {
+            preparatoryLines = new List<Line>();
+            preparedCondition = condition;
+
+            string rewrittenExpression;
+            List<KeyValuePair<string, string>> indexReads;
+            List<KeyValuePair<string, string>> dynamicIndexes;
+            if (!TryRewriteExpression(condition, temporaryPrefix, out rewrittenExpression,
+                out indexReads, out dynamicIndexes))
+                return false;
+
+            string gateName = temporaryPrefix + "_gate";
+            var result = new List<Line>
+            {
+                new RenpyOneLinePython("$ " + gateName + " = True")
+            };
+
+            foreach (KeyValuePair<string, string> dynamicIndex in dynamicIndexes)
+            {
+                result.Add(new RenpyOneLinePython(
+                    "$ " + dynamicIndex.Key + " = " + dynamicIndex.Value));
+            }
+
+            var state = new VariableInitializationState();
+            foreach (KeyValuePair<string, string> read in indexReads)
+            {
+                VariableIndexExpressionLine readLine;
+                if (!TryCreateTemporary(read.Key, read.Value, sourcePath, sourceLine,
+                    state, gateName, read.Value, out readLine))
+                {
+                    preparatoryLines.Clear();
+                    preparedCondition = condition;
+                    return false;
+                }
+
+                result.Add(readLine);
+            }
+
+            preparatoryLines = result;
+            preparedCondition = gateName + " and (" + rewrittenExpression + ")";
+            return true;
+        }
+
+        /// <summary>
+        /// Converts a restricted indexed assignment (for example, items[index + 1] = score + 2)
+        /// into native scalar-evaluation instructions and one guarded collection mutation line.
+        /// </summary>
+        public static bool TryCreateAssignmentLines(string code, string temporaryPrefix,
+            string sourcePath, int sourceLine, int blockStart, out List<Line> lines)
+        {
+            lines = null;
+            if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(temporaryPrefix))
+                return false;
+
+            string rootName;
+            List<object> targetIndices;
+            List<KeyValuePair<string, string>> targetDynamicIndexes;
+            string rightExpression;
+            if (!TryParseCollectionAssignment(code, temporaryPrefix, out rootName,
+                out targetIndices, out targetDynamicIndexes, out rightExpression))
+                return false;
+
+            string valueExpression = rightExpression;
+            List<KeyValuePair<string, string>> rightIndexReads =
+                new List<KeyValuePair<string, string>>();
+            List<KeyValuePair<string, string>> rightDynamicIndexes =
+                new List<KeyValuePair<string, string>>();
+
+            if (ContainsIndexSyntax(rightExpression) &&
+                !TryRewriteExpression(rightExpression, temporaryPrefix + "_rhs",
+                    out valueExpression, out rightIndexReads, out rightDynamicIndexes))
+                return false;
+
+            var state = new VariableInitializationState();
+            string gateName = temporaryPrefix + "_gate";
+            string valueName = temporaryPrefix + "_value";
+            var rightReadLines = new List<Line>();
+
+            foreach (KeyValuePair<string, string> read in rightIndexReads)
+            {
+                VariableIndexExpressionLine readLine;
+                if (!TryCreateTemporary(read.Key, read.Value, sourcePath, sourceLine,
+                    state, gateName, rootName, out readLine))
+                    return false;
+                rightReadLines.Add(readLine);
+            }
+
+            // Fixed layout: gate + RHS dynamic keys + RHS collection reads + guard jump +
+            // RHS assignment + target dynamic keys + mutation. The guard jumps to the first
+            // instruction after this assignment if any RHS collection read failed.
+            int blockSize = 4 + rightDynamicIndexes.Count + rightReadLines.Count +
+                targetDynamicIndexes.Count;
+            int skipTarget = blockStart + blockSize;
+            var result = new List<Line>(blockSize);
+            result.Add(new RenpyOneLinePython("$ " + gateName + " = True"));
+
+            foreach (KeyValuePair<string, string> dynamicIndex in rightDynamicIndexes)
+                result.Add(new RenpyOneLinePython(
+                    "$ " + dynamicIndex.Key + " = " + dynamicIndex.Value));
+
+            result.AddRange(rightReadLines);
+            result.Add(new RenpyGoToLineUnless(gateName, skipTarget));
+            result.Add(new RenpyOneLinePython("$ " + valueName + " = " + valueExpression));
+
+            foreach (KeyValuePair<string, string> dynamicIndex in targetDynamicIndexes)
+                result.Add(new RenpyOneLinePython(
+                    "$ " + dynamicIndex.Key + " = " + dynamicIndex.Value));
+
+            result.Add(new CollectionMutationLine(
+                rootName, targetIndices, valueName, sourcePath, sourceLine, state));
+
+            lines = result;
+            return true;
+        }
+
+        private static bool TryParseCollectionAssignment(string code, string temporaryPrefix,
+            out string rootName, out List<object> indices,
+            out List<KeyValuePair<string, string>> dynamicIndexes, out string rightExpression)
+        {
+            rootName = null;
+            indices = new List<object>();
+            dynamicIndexes = new List<KeyValuePair<string, string>>();
+            rightExpression = null;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+
+            int nameStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            rootName = code.Substring(nameStart, cursor - nameStart);
+
+            while (true)
+            {
+                int bracketStart = cursor;
+                SkipWhitespace(code, ref bracketStart);
+                if (bracketStart >= code.Length || code[bracketStart] != '[') break;
+
+                int keyStart = bracketStart + 1;
+                int scan = keyStart;
+                bool inString = false;
+                bool escaped = false;
+                char quote = '\0';
+                int close = -1;
+
+                while (scan < code.Length)
+                {
+                    char c = code[scan];
+                    if (inString)
+                    {
+                        if (escaped) escaped = false;
+                        else if (c == '\\') escaped = true;
+                        else if (c == quote) inString = false;
+                        scan++;
+                        continue;
+                    }
+
+                    if (c == '"' || c == '\'')
+                    {
+                        inString = true;
+                        quote = c;
+                        scan++;
+                        continue;
+                    }
+
+                    // Nested subscription syntax inside an index is not part of Stage 5.
+                    if (c == '[') return false;
+                    if (c == ']')
+                    {
+                        close = scan;
+                        break;
+                    }
+
+                    scan++;
+                }
+
+                if (close < 0 || inString) return false;
+                string keyExpression = code.Substring(keyStart, close - keyStart).Trim();
+                object literalKey;
+                if (TryParseIndexKey(keyExpression, false, out literalKey))
+                {
+                    indices.Add(literalKey);
+                }
+                else
+                {
+                    if (!IsSupportedDynamicIndexExpression(keyExpression)) return false;
+                    string keyName = temporaryPrefix + "_target_key_" + dynamicIndexes.Count;
+                    dynamicIndexes.Add(new KeyValuePair<string, string>(keyName, keyExpression));
+                    indices.Add(new DynamicIndex(keyName));
+                }
+
+                cursor = close + 1;
+            }
+
+            if (indices.Count == 0) return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor] != '=') return false;
+            if (cursor + 1 < code.Length && code[cursor + 1] == '=') return false;
+            cursor++;
+
+            rightExpression = code.Substring(cursor).Trim();
+            return !string.IsNullOrWhiteSpace(rightExpression);
+        }
+
+        private sealed class CollectionMutationLine : Line, IApply
+        {
+            private readonly string _rootName;
+            private readonly List<object> _indices;
+            private readonly string _valueName;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+            private readonly VariableInitializationState _state;
+
+            public CollectionMutationLine(string rootName, List<object> indices,
+                string valueName, string sourcePath, int sourceLine,
+                VariableInitializationState state)
+            {
+                _rootName = rootName;
+                _indices = indices;
+                _valueName = valueName;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+                _state = state;
+            }
+
+            public void Apply(IContext context)
+            {
+                if (_state != null && _state.Failed) return;
+
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object current))
+                        throw new InvalidOperationException("base variable '" + _rootName +
+                            "' does not contain an object-backed list or dictionary");
+
+                    if (!TryGetDynamicIndexValue(_valueName, context, out object value))
+                        throw new InvalidOperationException("assigned value must be a supported scalar");
+
+                    for (int i = 0; i < _indices.Count - 1; i++)
+                    {
+                        object key = ResolveMutationKey(_indices[i], context);
+                        current = ReadContainerItem(current, key);
+                    }
+
+                    object finalKey = ResolveMutationKey(_indices[_indices.Count - 1], context);
+                    if (current is IList list)
+                    {
+                        if (!TryConvertListIndex(finalKey, out int index))
+                            throw new InvalidOperationException(
+                                "a list assignment index must evaluate to an integer");
+                        if (index < 0) index += list.Count;
+                        if (index < 0 || index >= list.Count)
+                            throw new IndexOutOfRangeException("list assignment index " + index +
+                                " is outside the valid range");
+                        list[index] = value;
+                    }
+                    else if (current is IDictionary dictionary)
+                    {
+                        if (!(finalKey is string))
+                            throw new InvalidOperationException(
+                                "a dictionary assignment key must evaluate to a string");
+                        dictionary[finalKey] = value;
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException(
+                            "assignment target is not a list or dictionary");
+                    }
+
+                    Log.Info("Updated indexed collection '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    if (_state != null) _state.Failed = true;
+                    Log.Warn("Could not update indexed collection '" + _rootName +
+                        "' at " + _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+        }
+
+        private static object ResolveMutationKey(object key, IContext context)
+        {
+            DynamicIndex dynamicIndex = key as DynamicIndex;
+            if (dynamicIndex == null) return key;
+
+            if (!TryGetDynamicIndexValue(dynamicIndex.Name, context, out object value))
+                throw new InvalidOperationException("dynamic index '" + dynamicIndex.Name +
+                    "' was not a supported scalar value");
+
+            return value;
+        }
+
+        private static object ReadContainerItem(object current, object key)
+        {
+            if (current is IDictionary dictionary)
+            {
+                if (!(key is string) || !dictionary.Contains(key))
+                    throw new InvalidOperationException("dictionary key '" + key +
+                        "' was not found or did not evaluate to a string key");
+                return dictionary[key];
+            }
+
+            if (current is IList list)
+            {
+                if (!TryConvertListIndex(key, out int index))
+                    throw new InvalidOperationException("a list index must evaluate to an integer");
+                if (index < 0) index += list.Count;
+                if (index < 0 || index >= list.Count)
+                    throw new IndexOutOfRangeException("list index " + index +
+                        " is outside the valid range");
+                return list[index];
+            }
+
+            throw new InvalidOperationException("value is not a list or dictionary");
+        }
+
         public static bool TryCreateTemporary(string temporaryName, string chainExpression,
             string sourcePath, int sourceLine, VariableInitializationState declarationState,
             string gateName, string declarationName, out VariableIndexExpressionLine line)
@@ -658,6 +988,7 @@ namespace StoryAPI.Runtime
                 string typeName = typeValue == null ? string.Empty :
                     Convert.ToString(typeValue, CultureInfo.InvariantCulture);
                 bool isString = typeName.IndexOf("string", StringComparison.OrdinalIgnoreCase) >= 0;
+                bool isBoolean = typeName.IndexOf("bool", StringComparison.OrdinalIgnoreCase) >= 0;
                 bool isNumeric = typeName.IndexOf("float", StringComparison.OrdinalIgnoreCase) >= 0 ||
                     typeName.IndexOf("number", StringComparison.OrdinalIgnoreCase) >= 0 ||
                     typeName.IndexOf("numeric", StringComparison.OrdinalIgnoreCase) >= 0 ||
@@ -685,6 +1016,12 @@ namespace StoryAPI.Runtime
                     return true;
                 }
 
+                if (objectValue is bool)
+                {
+                    value = objectValue;
+                    return true;
+                }
+
                 if (objectValue is string || objectValue is byte || objectValue is sbyte ||
                     objectValue is short || objectValue is ushort || objectValue is int ||
                     objectValue is uint || objectValue is long || objectValue is ulong ||
@@ -692,6 +1029,29 @@ namespace StoryAPI.Runtime
                 {
                     value = objectValue;
                     return true;
+                }
+
+                if (isBoolean)
+                {
+                    FieldInfo boolField = dataValueType.GetField(
+                        "boolVal", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                    object boolValue = boolField == null ? null : boolField.GetValue(dataValue);
+                    if (boolValue is bool)
+                    {
+                        value = (bool)boolValue;
+                        return true;
+                    }
+
+                    FieldInfo boolNumberField = dataValueType.GetField(
+                        "floatVal", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                    object boolNumber = boolNumberField == null ? null : boolNumberField.GetValue(dataValue);
+                    if (boolNumber is float)
+                    {
+                        value = (float)boolNumber != 0f;
+                        return true;
+                    }
+
+                    return false;
                 }
 
                 if (isNumeric)

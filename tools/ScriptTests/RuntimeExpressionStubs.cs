@@ -40,13 +40,63 @@ namespace RenpyParser
     {
         bool ResolveVariable(string name, out SimpleExpressionEngine.DataValue value);
     }
+
+    internal sealed class DynamicIndexTestContext : IContext
+    {
+        private readonly System.Collections.Generic.Dictionary<string, SimpleExpressionEngine.DataValue>
+            _variables = new System.Collections.Generic.Dictionary<string, SimpleExpressionEngine.DataValue>();
+
+        public void SetVariable(string name, SimpleExpressionEngine.DataValue value)
+        {
+            _variables[name] = value;
+        }
+
+        public bool ResolveVariable(string name, out SimpleExpressionEngine.DataValue value)
+        {
+            return _variables.TryGetValue(name, out value);
+        }
+    }
 }
 
 namespace SimpleExpressionEngine
 {
+    public enum TestDataValueType
+    {
+        Float,
+        String,
+        Object
+    }
+
     public struct DataValue
     {
+        private TestDataValueType type;
         private object objectRef;
+        private float floatVal;
+        private string stringVal;
+
+        public DataValue(float value)
+        {
+            type = TestDataValueType.Float;
+            objectRef = null;
+            floatVal = value;
+            stringVal = string.Empty; // Inactive field is deliberately non-null like the game wrapper.
+        }
+
+        public DataValue(string value)
+        {
+            type = TestDataValueType.String;
+            objectRef = null;
+            floatVal = 0;
+            stringVal = value;
+        }
+
+        public DataValue(object value)
+        {
+            type = TestDataValueType.Object;
+            objectRef = value;
+            floatVal = 0;
+            stringVal = string.Empty;
+        }
     }
 }
 

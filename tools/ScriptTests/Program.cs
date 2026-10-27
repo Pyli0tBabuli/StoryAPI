@@ -5,6 +5,7 @@ using System.Linq;
 using System.Reflection;
 using StoryAPI.Scripting;
 using StoryAPI.Runtime;
+using StoryAPI.Game;
 
 namespace StoryAPI.Tests
 {
@@ -26,6 +27,7 @@ namespace StoryAPI.Tests
             Run("indexed collection assignment", TestIndexedCollectionAssignments);
             Run("list append and remove methods", TestListMethodMutations);
             Run("indexed collection conditions", TestIndexedCollectionConditions);
+            Run("list and dictionary membership conditions", TestCollectionMembershipConditions);
             Run("if/elif/else branches", TestConditionalBranches);
             Run("menu choices and nested statements", TestMenuChoices);
             Run("while and loop-control statements", TestWhileAndLoopControl);
@@ -636,6 +638,117 @@ namespace StoryAPI.Tests
                     "inventory.extend(1)", "_storyapi_invalid_method_test",
                     "list-method-test.rpy", 6, 40, out lines),
                 "Methods other than append and remove should remain unsupported.");
+        }
+
+        private static void TestCollectionMembershipConditions()
+        {
+            const string prefix = "_storyapi_membership_test";
+            var inventory = new List<object> { "key", "flashlight", 2f };
+            var context = new RenpyParser.DynamicIndexTestContext();
+            context.SetVariable("inventory",
+                new SimpleExpressionEngine.DataValue((object)inventory));
+
+            List<RenPyParser.Line> lines;
+            string prepared;
+            Check(VariableIndexExpressionLine.TryPrepareCondition(
+                    "\"key\" in inventory", prefix, "membership-test.rpy", 10,
+                    out lines, out prepared),
+                "A string literal membership check against a list should be prepared.");
+            Check(prepared == prefix + "_gate and (" + prefix + "_membership_result_0)",
+                "The membership result should replace the native in expression.");
+            context.SetVariable(prefix + "_membership_value_0",
+                new SimpleExpressionEngine.DataValue("key"));
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
+            object result;
+            Check(GameBridge.TryGetLastTestLiteral(prefix + "_membership_result_0", out result) &&
+                result is bool && (bool)result,
+                "A list membership check should find an existing string item.");
+
+            const string notPrefix = "_storyapi_not_membership_test";
+            Check(VariableIndexExpressionLine.TryPrepareCondition(
+                    "\"battery\" not in inventory", notPrefix, "membership-test.rpy", 11,
+                    out lines, out prepared),
+                "A not-in check against a list should be prepared.");
+            Check(prepared == notPrefix + "_gate and (not " +
+                    notPrefix + "_membership_result_0)",
+                "not in should negate the computed membership result.");
+            context.SetVariable(notPrefix + "_membership_value_0",
+                new SimpleExpressionEngine.DataValue("battery"));
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(notPrefix + "_membership_result_0", out result) &&
+                result is bool && !(bool)result,
+                "An absent list item should produce a false membership result.");
+
+            const string dictionaryPrefix = "_storyapi_dictionary_membership_test";
+            var settings = new Dictionary<string, object>
+            {
+                { "count", 5f },
+                { "theme", "dark" }
+            };
+            context.SetVariable("settings",
+                new SimpleExpressionEngine.DataValue((object)settings));
+            Check(VariableIndexExpressionLine.TryPrepareCondition(
+                    "\"count\" in settings", dictionaryPrefix, "membership-test.rpy", 12,
+                    out lines, out prepared),
+                "A string key membership check against a dictionary should be prepared.");
+            context.SetVariable(dictionaryPrefix + "_membership_value_0",
+                new SimpleExpressionEngine.DataValue("count"));
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(dictionaryPrefix + "_membership_result_0", out result) &&
+                result is bool && (bool)result,
+                "Dictionary membership should test keys, not values.");
+
+            context.SetVariable("selected_item", new SimpleExpressionEngine.DataValue("flashlight"));
+            const string variablePrefix = "_storyapi_variable_membership_test";
+            Check(VariableIndexExpressionLine.TryPrepareCondition(
+                    "selected_item in inventory", variablePrefix, "membership-test.rpy", 13,
+                    out lines, out prepared),
+                "A scalar variable should be accepted as the left membership operand.");
+            context.SetVariable(variablePrefix + "_membership_value_0",
+                new SimpleExpressionEngine.DataValue("flashlight"));
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(variablePrefix + "_membership_result_0", out result) &&
+                result is bool && (bool)result,
+                "A variable left operand should be compared against list items.");
+
+            const string combinedPrefix = "_storyapi_combined_membership_test";
+            Check(VariableIndexExpressionLine.TryPrepareCondition(
+                    "\"key\" in inventory and \"battery\" not in inventory",
+                    combinedPrefix, "membership-test.rpy", 14, out lines, out prepared),
+                "Multiple membership checks joined by and should be prepared.");
+            Check(prepared == combinedPrefix + "_gate and (" +
+                    combinedPrefix + "_membership_result_0 and not " +
+                    combinedPrefix + "_membership_result_1)",
+                "Multiple in/not-in checks should retain their boolean structure.");
+            context.SetVariable(combinedPrefix + "_membership_value_0",
+                new SimpleExpressionEngine.DataValue("key"));
+            context.SetVariable(combinedPrefix + "_membership_value_1",
+                new SimpleExpressionEngine.DataValue("battery"));
+            foreach (RenPyParser.Line line in lines.Where(
+                line => line.GetType().Name == "CollectionMembershipLine"))
+                ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(combinedPrefix + "_membership_result_0", out result) &&
+                result is bool && (bool)result,
+                "The first check in a combined membership condition should be true.");
+            Check(GameBridge.TryGetLastTestLiteral(combinedPrefix + "_membership_result_1", out result) &&
+                result is bool && !(bool)result,
+                "The not-in check in a combined condition should report the absent item.");
+
+            const string mixedPrefix = "_storyapi_mixed_membership_test";
+            Check(VariableIndexExpressionLine.TryPrepareCondition(
+                    "\"key\" in inventory and inventory[0] == \"key\"",
+                    mixedPrefix, "membership-test.rpy", 15, out lines, out prepared),
+                "Membership tests should coexist with indexed reads in the same condition.");
+            Check(lines.OfType<VariableIndexExpressionLine>().Count() == 1 &&
+                prepared.Contains(mixedPrefix + "_membership_result_0") &&
+                prepared.Contains(mixedPrefix + "_index_0"),
+                "A mixed condition should rewrite both membership and collection-index expressions.");
+
+            string literalCondition = "\"The phrase 'key' in inventory is just text\"";
+            Check(!VariableIndexExpressionLine.TryPrepareCondition(
+                    literalCondition, prefix, "membership-test.rpy", 16,
+                    out lines, out prepared) && prepared == literalCondition,
+                "Text containing the words in and not in must not be rewritten as an operator.");
         }
 
         private static void TestConditionalBranches()

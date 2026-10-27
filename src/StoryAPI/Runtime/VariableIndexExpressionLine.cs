@@ -753,6 +753,56 @@ namespace StoryAPI.Runtime
             return true;
         }
 
+        /// <summary>
+        /// Recognizes extend(otherList) on a named object-backed list. The argument must
+        /// be another simple variable name; expressions and indexed/nested targets are unsupported.
+        /// </summary>
+        public static bool TryCreateListExtendLine(string code, string sourcePath,
+            int sourceLine, out Line line)
+        {
+            line = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+
+            int nameStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string rootName = code.Substring(nameStart, cursor - nameStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor] != '.') return false;
+            cursor++;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+
+            int methodStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            if (!string.Equals(code.Substring(methodStart, cursor - methodStart),
+                "extend", StringComparison.Ordinal))
+                return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor] != '(') return false;
+            cursor++;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+
+            int sourceStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string sourceName = code.Substring(sourceStart, cursor - sourceStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor] != ')') return false;
+            cursor++;
+            SkipWhitespace(code, ref cursor);
+            if (cursor != code.Length) return false;
+
+            line = new ListExtendLine(rootName, sourceName, sourcePath, sourceLine);
+            return true;
+        }
+
         public static bool TryCreateListMethodMutationLines(string code, string temporaryPrefix,
             string sourcePath, int sourceLine, int blockStart, out List<Line> lines)
         {
@@ -1127,6 +1177,62 @@ namespace StoryAPI.Runtime
                 {
                     Log.Warn("Could not clear collection '" + _rootName + "' at " +
                         _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+        }
+
+        private sealed class ListExtendLine : Line, IApply
+        {
+            private readonly string _rootName;
+            private readonly string _sourceName;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public ListExtendLine(string rootName, string sourceName, string sourcePath, int sourceLine)
+            {
+                _rootName = rootName;
+                _sourceName = sourceName;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object target))
+                        throw new InvalidOperationException("target variable '" + _rootName +
+                            "' does not contain an object-backed list");
+
+                    if (!(target is IList targetList))
+                        throw new InvalidOperationException("list.extend() requires a list target");
+
+                    if (!TryGetObjectBackedVariable(_sourceName, context, out object source))
+                        throw new InvalidOperationException("source variable '" + _sourceName +
+                            "' does not contain an object-backed list");
+
+                    if (!(source is IList sourceList))
+                        throw new InvalidOperationException("list.extend() argument must be a list");
+
+                    // Copy before mutation so extending a list with itself is deterministic.
+                    var itemsToAppend = new List<object>(sourceList.Count);
+                    for (int i = 0; i < sourceList.Count; i++)
+                        itemsToAppend.Add(sourceList[i]);
+
+                    foreach (object item in itemsToAppend)
+                        targetList.Add(item);
+
+                    Log.Info("Applied list.extend on '" + _rootName + "' using '" +
+                        _sourceName + "' at " + _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not apply list.extend on '" + _rootName + "' using '" +
+                        _sourceName + "' at " + _sourcePath + ":" + _sourceLine + ": " +
                         e.GetBaseException().Message);
                 }
             }

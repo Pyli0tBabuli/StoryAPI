@@ -167,9 +167,12 @@ expressions; collection reads on the right-hand side are resolved before the ass
 initial implementation does not support compound assignments such as `+=`, slices,
 or assigning a new value beyond the end of a list. Lists support one-argument scalar
 method calls `$ inventory.append("battery")` and `$ inventory.remove("key")`; `remove`
-deletes the first matching item. Both lists and dictionaries support the no-argument method
-`$ inventory.clear()` or `$ settings.clear()`, which empties the existing collection in-place.
-Other list/dictionary methods, arguments to `clear()`, and arbitrary Python calls remain unsupported.
+deletes the first matching item. Lists also support `$ inventory.extend(rewards)`, which
+appends the items from another named list in order without changing the source list. The
+`extend()` argument must be a simple variable name referring to a list; literals, indexed
+arguments, and multiple arguments are unsupported. Both lists and dictionaries support the
+no-argument method `$ inventory.clear()` or `$ settings.clear()`, which empties the existing
+collection in-place. Other list/dictionary methods and arbitrary Python calls remain unsupported.
 
 Runtime `if`, `elif`, and `while` conditions also support restricted membership checks such as
 `"key" in inventory`, `selected_item in inventory`, `"count" in settings`, and

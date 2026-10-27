@@ -147,6 +147,14 @@ namespace StoryAPI.Scripting
                 return;
             }
 
+            Line extendLine;
+            if (VariableIndexExpressionLine.TryCreateListExtendLine(
+                python.Code, _textLabel ?? "unknown", python.Line, out extendLine))
+            {
+                _out.Add(extendLine);
+                return;
+            }
+
             List<Line> mutationLines;
             if (VariableIndexExpressionLine.TryCreateListMethodMutationLines(
                 python.Code, prefix, _textLabel ?? "unknown", python.Line, _out.Count,

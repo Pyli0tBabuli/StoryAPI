@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Reflection;
 using System.Text;
 using RenPyParser;
 using RenpyParser;
@@ -193,6 +194,29 @@ namespace StoryAPI.Runtime
         private static bool IsIdentifierStart(char c) => char.IsLetter(c) || c == '_';
         private static bool IsIdentifierPart(char c) => char.IsLetterOrDigit(c) || c == '_';
 
+        private static bool TryGetObjectBackedVariable(string name, IContext context, out object value)
+        {
+            value = null;
+            if (context == null || string.IsNullOrEmpty(name)) return false;
+
+            try
+            {
+                if (!context.ResolveVariable(name, out DataValue dataValue)) return false;
+
+                FieldInfo field = typeof(DataValue).GetField(
+                    "objectRef", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                if (field == null) return false;
+
+                value = field.GetValue(dataValue);
+                return value is IList || value is IDictionary;
+            }
+            catch
+            {
+                value = null;
+                return false;
+            }
+        }
+
         public void Apply(IContext context)
         {
             if (_state == null || _state.Initialized || _state.Failed) return;
@@ -202,7 +226,7 @@ namespace StoryAPI.Runtime
                 if (context == null)
                     throw new InvalidOperationException("no live script context was available");
 
-                if (!GameBridge.TryGetObjectBackedVariable(_rootName, context, out object current))
+                if (!TryGetObjectBackedVariable(_rootName, context, out object current))
                     throw new InvalidOperationException("base variable '" + _rootName +
                         "' does not contain an object-backed list or dictionary");
 

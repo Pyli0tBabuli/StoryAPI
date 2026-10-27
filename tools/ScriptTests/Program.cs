@@ -964,7 +964,7 @@ namespace StoryAPI.Tests
                 "Self-extension should append a snapshot of the original items exactly once.");
 
             Check(!VariableIndexExpressionLine.TryCreateListExtendLine(
-                    "inventory.extend(\\"battery\\")", sourcePath, 30, out line),
+                    "inventory.extend(\"battery\")", sourcePath, 30, out line),
                 "extend() should reject literal arguments.");
             Check(!VariableIndexExpressionLine.TryCreateListExtendLine(
                     "inventory.extend(rewards[0])", sourcePath, 31, out line),
@@ -979,13 +979,13 @@ namespace StoryAPI.Tests
                     "inventory.extend(rewards); inventory.clear()", sourcePath, 34, out line),
                 "extend() should reject multiple statements.");
             Check(!VariableIndexExpressionLine.TryCreateListExtendLine(
-                    "inventory.append(\\"battery\\")", sourcePath, 35, out line),
+                    "inventory.append(\"battery\")", sourcePath, 35, out line),
                 "The extend recognizer must not capture append calls.");
 
             var statements = Parse(
-                "label extend_test:\\n" +
-                "    $ inventory.extend(rewards)\\n" +
-                "    return\\n");
+                "label extend_test:\n" +
+                "    $ inventory.extend(rewards)\n" +
+                "    return\n");
             var label = Require<LabelStatement>(statements[0],
                 "Expected a label containing an extend() call.");
             Check(Require<PythonStatement>(label.Body[0],

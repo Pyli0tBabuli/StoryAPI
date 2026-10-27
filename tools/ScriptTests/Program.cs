@@ -18,6 +18,7 @@ namespace StoryAPI.Tests
             Run("sprite alias and position", TestSpriteAliasAndPosition);
             Run("define/default scalar declarations", TestVariableDeclarations);
             Run("runtime scalar initializer expressions", TestRuntimeExpressionDeclarations);
+            Run("container index expressions", TestContainerIndexExpressions);
             Run("if/elif/else branches", TestConditionalBranches);
             Run("menu choices and nested statements", TestMenuChoices);
             Run("while and loop-control statements", TestWhileAndLoopControl);
@@ -237,6 +238,58 @@ namespace StoryAPI.Tests
                 "Expected function-call declaration.");
             Check(!function.HasLiteral && !function.HasRuntimeExpression,
                 "Function calls should not be automatically accepted as scalar expressions.");
+        }
+
+        private static void TestContainerIndexExpressions()
+        {
+            var statements = Parse(
+                "define first_item = starting_points[0]\n" +
+                "define dictionary_item = starting_points[\"count\"]\n" +
+                "define nested_item = starting_points[2][\"nested\"]\n" +
+                "define calculated_item = starting_points[index_value + 1] * 2\n" +
+                "define empty_index = starting_points[]\n" +
+                "define call_index = starting_points[random()]\n" +
+                "define call_value = random()\n" +
+                "label container_index_test:\n" +
+                "    return\n");
+
+            var first = Require<VariableDeclarationStatement>(statements[0],
+                "Expected a list index initializer.");
+            Check(first.HasRuntimeExpression && first.Expression == "starting_points[0]",
+                "List index reads should be delegated to the runtime evaluator.");
+
+            var dictionary = Require<VariableDeclarationStatement>(statements[1],
+                "Expected a dictionary index initializer.");
+            Check(dictionary.HasRuntimeExpression &&
+                dictionary.Expression == "starting_points[\"count\"]",
+                "Dictionary string-key reads should be delegated to the runtime evaluator.");
+
+            var nested = Require<VariableDeclarationStatement>(statements[2],
+                "Expected a nested container index initializer.");
+            Check(nested.HasRuntimeExpression &&
+                nested.Expression == "starting_points[2][\"nested\"]",
+                "Chained list/dictionary index reads should be supported.");
+
+            var calculated = Require<VariableDeclarationStatement>(statements[3],
+                "Expected an index expression with arithmetic.");
+            Check(calculated.HasRuntimeExpression &&
+                calculated.Expression == "starting_points[index_value + 1] * 2",
+                "Index expressions should allow scalar arithmetic.");
+
+            var empty = Require<VariableDeclarationStatement>(statements[4],
+                "Expected empty-index declaration.");
+            Check(!empty.HasLiteral && !empty.HasRuntimeExpression,
+                "Empty indexes should not be accepted as valid runtime expressions.");
+
+            var callIndex = Require<VariableDeclarationStatement>(statements[5],
+                "Expected call-index declaration.");
+            Check(!callIndex.HasLiteral && !callIndex.HasRuntimeExpression,
+                "Function calls inside indexes should remain unsupported.");
+
+            var call = Require<VariableDeclarationStatement>(statements[6],
+                "Expected function-call declaration.");
+            Check(!call.HasLiteral && !call.HasRuntimeExpression,
+                "Function calls should remain unsupported.");
         }
 
         private static void TestConditionalBranches()

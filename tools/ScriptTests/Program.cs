@@ -1050,9 +1050,6 @@ namespace StoryAPI.Tests
                 "insert() should reject collection reads in the index expression.");
 
             // pop() both removes the final item and can assign its scalar result.
-            string popped;
-            context.SetVariable("inventory",
-                new SimpleExpressionEngine.DataValue((object)new List<object> { "key", "battery" }));
             var popInventory = new List<object> { "key", "battery" };
             context.SetVariable("inventory", new SimpleExpressionEngine.DataValue((object)popInventory));
 

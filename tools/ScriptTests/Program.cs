@@ -506,7 +506,7 @@ namespace StoryAPI.Tests
 
             const string dictionaryPrefix = "_storyapi_dictionary_assignment_test";
             Check(VariableIndexExpressionLine.TryCreateAssignmentLines(
-                    "settings[\\"count\\"] = 7", dictionaryPrefix,
+                    "settings[\"count\"] = 7", dictionaryPrefix,
                     "assignment-test.rpy", 4, 20, out lines),
                 "A dictionary string-key assignment should be recognized.");
             var settings = new Dictionary<string, object> { { "count", 2f } };
@@ -518,7 +518,7 @@ namespace StoryAPI.Tests
 
             const string nestedPrefix = "_storyapi_nested_assignment_test";
             Check(VariableIndexExpressionLine.TryCreateAssignmentLines(
-                    "settings[\\"meta\\"][\\"count\\"] = settings[\\"count\\"] + 1",
+                    "settings[\"meta\"][\"count\"] = settings[\"count\"] + 1",
                     nestedPrefix, "assignment-test.rpy", 5, 30, out lines),
                 "A nested target and RHS collection read should be recognized.");
             Check(lines.OfType<VariableIndexExpressionLine>().Any(),

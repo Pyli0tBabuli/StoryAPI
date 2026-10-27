@@ -164,8 +164,10 @@ example `$ inventory[0] = 10`, `$ settings["count"] = 5`, or
 `$ settings["meta"]["count"] = settings["count"] + 1`. The target may use literal indexes or
 the same restricted dynamic scalar indexes supported by reads. Assignment values may use scalar
 expressions; collection reads on the right-hand side are resolved before the assignment. The
-initial implementation does not support compound assignments such as `+=`, slices, append/remove
-operations, or assigning a new value beyond the end of a list.
+initial implementation does not support compound assignments such as `+=`, slices,
+or assigning a new value beyond the end of a list. Lists also support one-argument scalar
+method calls `$ inventory.append("battery")` and `$ inventory.remove("key")`; `remove`
+deletes the first matching item. Multiple arguments and other list methods remain unsupported.
 
 Within a label, `while`, `break`, `continue`, and `pass` are supported.
 A loop must eventually change its condition or break; infinite loops can stall the game.

@@ -483,6 +483,178 @@ namespace StoryAPI.Runtime
         }
 
         /// <summary>
+        /// Compiles the restricted list methods append(value) and remove(value). Only one
+        /// scalar argument is accepted; indexed reads inside that value are resolved first.
+        /// </summary>
+        public static bool TryCreateListMethodMutationLines(string code, string temporaryPrefix,
+            string sourcePath, int sourceLine, int blockStart, out List<Line> lines)
+        {
+            lines = null;
+            if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(temporaryPrefix))
+                return false;
+
+            string rootName;
+            string methodName;
+            string argumentExpression;
+            if (!TryParseListMethodCall(code, out rootName, out methodName, out argumentExpression))
+                return false;
+
+            string valueExpression = argumentExpression;
+            List<KeyValuePair<string, string>> rightIndexReads =
+                new List<KeyValuePair<string, string>>();
+            List<KeyValuePair<string, string>> rightDynamicIndexes =
+                new List<KeyValuePair<string, string>>();
+
+            if (ContainsIndexSyntax(argumentExpression) &&
+                !TryRewriteExpression(argumentExpression, temporaryPrefix + "_arg",
+                    out valueExpression, out rightIndexReads, out rightDynamicIndexes))
+                return false;
+
+            var state = new VariableInitializationState();
+            string gateName = temporaryPrefix + "_gate";
+            string valueName = temporaryPrefix + "_value";
+            var rightReadLines = new List<Line>();
+
+            foreach (KeyValuePair<string, string> read in rightIndexReads)
+            {
+                VariableIndexExpressionLine readLine;
+                if (!TryCreateTemporary(read.Key, read.Value, sourcePath, sourceLine,
+                    state, gateName, rootName, out readLine))
+                    return false;
+                rightReadLines.Add(readLine);
+            }
+
+            // Layout: gate + dynamic argument keys + argument collection reads + guard +
+            // scalar argument evaluation + list method. The guard skips mutation if an
+            // indexed argument cannot be resolved.
+            int blockSize = 4 + rightDynamicIndexes.Count + rightReadLines.Count;
+            int skipTarget = blockStart + blockSize;
+            var result = new List<Line>(blockSize);
+            result.Add(new RenpyOneLinePython("$ " + gateName + " = True"));
+
+            foreach (KeyValuePair<string, string> dynamicIndex in rightDynamicIndexes)
+                result.Add(new RenpyOneLinePython(
+                    "$ " + dynamicIndex.Key + " = " + dynamicIndex.Value));
+
+            result.AddRange(rightReadLines);
+            result.Add(new RenpyGoToLineUnless(gateName, skipTarget));
+            result.Add(new RenpyOneLinePython("$ " + valueName + " = " + valueExpression));
+            result.Add(new ListMethodMutationLine(
+                rootName, methodName, valueName, sourcePath, sourceLine, state));
+
+            lines = result;
+            return true;
+        }
+
+        private static bool TryParseListMethodCall(string code, out string rootName,
+            out string methodName, out string argumentExpression)
+        {
+            rootName = null;
+            methodName = null;
+            argumentExpression = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+
+            int nameStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            rootName = code.Substring(nameStart, cursor - nameStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor] != '.') return false;
+            cursor++;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+
+            int methodStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            methodName = code.Substring(methodStart, cursor - methodStart);
+            if (methodName != "append" && methodName != "remove") return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor] != '(') return false;
+            int argumentStart = ++cursor;
+            int nestedParentheses = 0;
+            int nestedBrackets = 0;
+            bool inString = false;
+            bool escaped = false;
+            char quote = '\0';
+            int close = -1;
+
+            while (cursor < code.Length)
+            {
+                char c = code[cursor];
+                if (inString)
+                {
+                    if (escaped) escaped = false;
+                    else if (c == '\\') escaped = true;
+                    else if (c == quote) inString = false;
+                    cursor++;
+                    continue;
+                }
+
+                if (c == '"' || c == '\'')
+                {
+                    inString = true;
+                    quote = c;
+                    cursor++;
+                    continue;
+                }
+
+                if (c == '(')
+                {
+                    nestedParentheses++;
+                    cursor++;
+                    continue;
+                }
+
+                if (c == ')')
+                {
+                    if (nestedParentheses == 0)
+                    {
+                        close = cursor;
+                        break;
+                    }
+                    nestedParentheses--;
+                    cursor++;
+                    continue;
+                }
+
+                if (c == '[')
+                {
+                    nestedBrackets++;
+                    cursor++;
+                    continue;
+                }
+
+                if (c == ']')
+                {
+                    if (nestedBrackets == 0) return false;
+                    nestedBrackets--;
+                    cursor++;
+                    continue;
+                }
+
+                if (c == ',' && nestedParentheses == 0 && nestedBrackets == 0)
+                    return false; // Deliberately support one positional argument only.
+
+                cursor++;
+            }
+
+            if (close < 0 || inString || nestedParentheses != 0 || nestedBrackets != 0)
+                return false;
+
+            argumentExpression = code.Substring(argumentStart, close - argumentStart).Trim();
+            if (string.IsNullOrWhiteSpace(argumentExpression)) return false;
+
+            cursor = close + 1;
+            SkipWhitespace(code, ref cursor);
+            return cursor == code.Length;
+        }
+
+        /// <summary>
         /// Converts a restricted indexed assignment (for example, items[index + 1] = score + 2)
         /// into native scalar-evaluation instructions and one guarded collection mutation line.
         /// </summary>
@@ -642,6 +814,121 @@ namespace StoryAPI.Runtime
 
             rightExpression = code.Substring(cursor).Trim();
             return !string.IsNullOrWhiteSpace(rightExpression);
+        }
+
+        private sealed class ListMethodMutationLine : Line, IApply
+        {
+            private readonly string _rootName;
+            private readonly string _methodName;
+            private readonly string _valueName;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+            private readonly VariableInitializationState _state;
+
+            public ListMethodMutationLine(string rootName, string methodName, string valueName,
+                string sourcePath, int sourceLine, VariableInitializationState state)
+            {
+                _rootName = rootName;
+                _methodName = methodName;
+                _valueName = valueName;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+                _state = state;
+            }
+
+            public void Apply(IContext context)
+            {
+                if (_state != null && _state.Failed) return;
+
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object current))
+                        throw new InvalidOperationException("base variable '" + _rootName +
+                            "' does not contain an object-backed list");
+
+                    if (!(current is IList list))
+                        throw new InvalidOperationException("list." + _methodName +
+                            " requires a list target");
+
+                    if (!TryGetDynamicIndexValue(_valueName, context, out object value))
+                        throw new InvalidOperationException("method argument must be a supported scalar");
+
+                    if (_methodName == "append")
+                    {
+                        list.Add(value);
+                    }
+                    else if (_methodName == "remove")
+                    {
+                        int foundIndex = -1;
+                        for (int i = 0; i < list.Count; i++)
+                        {
+                            if (ScalarValuesEqual(list[i], value))
+                            {
+                                foundIndex = i;
+                                break;
+                            }
+                        }
+
+                        if (foundIndex < 0)
+                            throw new InvalidOperationException(
+                                "remove(value) could not find a matching list item");
+
+                        list.RemoveAt(foundIndex);
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException("unsupported list method '" +
+                            _methodName + "'");
+                    }
+
+                    Log.Info("Applied list." + _methodName + " on '" + _rootName +
+                        "' at " + _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    if (_state != null) _state.Failed = true;
+                    Log.Warn("Could not apply list." + _methodName + " on '" + _rootName +
+                        "' at " + _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+        }
+
+        private static bool ScalarValuesEqual(object left, object right)
+        {
+            if (left == null || right == null) return left == right;
+
+            if (left is string || right is string)
+                return left is string && right is string &&
+                    string.Equals((string)left, (string)right, StringComparison.Ordinal);
+
+            if (left is bool || right is bool)
+                return left is bool && right is bool && (bool)left == (bool)right;
+
+            if (IsNumericScalar(left) && IsNumericScalar(right))
+            {
+                try
+                {
+                    return Convert.ToDouble(left, CultureInfo.InvariantCulture) ==
+                        Convert.ToDouble(right, CultureInfo.InvariantCulture);
+                }
+                catch
+                {
+                    return false;
+                }
+            }
+
+            return object.Equals(left, right);
+        }
+
+        private static bool IsNumericScalar(object value)
+        {
+            return value is byte || value is sbyte || value is short || value is ushort ||
+                value is int || value is uint || value is long || value is ulong ||
+                value is float || value is double || value is decimal;
         }
 
         private sealed class CollectionMutationLine : Line, IApply

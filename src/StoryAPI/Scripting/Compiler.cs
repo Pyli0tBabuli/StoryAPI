@@ -140,6 +140,14 @@ namespace StoryAPI.Scripting
             string safeLabel = Regex.Replace(_textLabel ?? "label", @"[^A-Za-z0-9_]", "_");
             string prefix = "_storyapi_set_" + safeLabel + "_" + python.Line;
             List<Line> mutationLines;
+            if (VariableIndexExpressionLine.TryCreateListMethodMutationLines(
+                python.Code, prefix, _textLabel ?? "unknown", python.Line, _out.Count,
+                out mutationLines))
+            {
+                _out.AddRange(mutationLines);
+                return;
+            }
+
             if (VariableIndexExpressionLine.TryCreateAssignmentLines(
                 python.Code, prefix, _textLabel ?? "unknown", python.Line, _out.Count,
                 out mutationLines))

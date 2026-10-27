@@ -22,6 +22,18 @@ namespace StoryAPI.Runtime
     /// </summary>
     internal sealed class VariableIndexExpressionLine : Line, IApply
     {
+        private sealed class DynamicIndex
+        {
+            public string Name { get; }
+
+            public DynamicIndex(string name)
+            {
+                Name = name;
+            }
+
+            public override string ToString() => Name;
+        }
+
         private readonly string _name;
         private readonly string _rootName;
         private readonly List<object> _indices;
@@ -118,8 +130,22 @@ namespace StoryAPI.Runtime
         public static bool TryRewriteExpression(string expression, string temporaryPrefix,
             out string rewrittenExpression, out List<KeyValuePair<string, string>> indexReads)
         {
+            List<KeyValuePair<string, string>> ignoredDynamicIndexes;
+            return TryRewriteExpression(expression, temporaryPrefix, out rewrittenExpression,
+                out indexReads, out ignoredDynamicIndexes);
+        }
+
+        /// <summary>
+        /// Replaces supported container reads in a scalar expression with temporary variables.
+        /// Dynamic index expressions are assigned to their own temporary variables first.
+        /// </summary>
+        public static bool TryRewriteExpression(string expression, string temporaryPrefix,
+            out string rewrittenExpression, out List<KeyValuePair<string, string>> indexReads,
+            out List<KeyValuePair<string, string>> dynamicIndexExpressions)
+        {
             rewrittenExpression = null;
             indexReads = new List<KeyValuePair<string, string>>();
+            dynamicIndexExpressions = new List<KeyValuePair<string, string>>();
             if (string.IsNullOrWhiteSpace(expression) || string.IsNullOrWhiteSpace(temporaryPrefix))
                 return false;
 
@@ -160,23 +186,21 @@ namespace StoryAPI.Runtime
                         cursor++;
 
                     int chainEnd;
-                    if (TryFindIndexExpressionEnd(expression, cursor, out chainEnd))
+                    string rewrittenChain;
+                    var candidateDynamicIndexes = new List<KeyValuePair<string, string>>();
+                    if (TryFindIndexExpressionEnd(expression, nameStart, cursor, temporaryPrefix,
+                        candidateDynamicIndexes, out chainEnd, out rewrittenChain))
                     {
-                        string chain = expression.Substring(nameStart, chainEnd - nameStart).Trim();
-                        string rootName;
-                        List<object> ignoredIndices;
-                        if (!TryParse(chain, out rootName, out ignoredIndices))
-                            return false;
-
                         string temporaryName = temporaryPrefix + "_index_" + indexReads.Count;
-                        indexReads.Add(new KeyValuePair<string, string>(temporaryName, chain));
+                        indexReads.Add(new KeyValuePair<string, string>(temporaryName, rewrittenChain));
+                        dynamicIndexExpressions.AddRange(candidateDynamicIndexes);
                         builder.Append(temporaryName);
                         cursor = chainEnd;
                     }
                     else
                     {
                         // A '[' after an identifier that cannot be parsed as a supported
-                        // literal index chain makes the whole expression unsupported.
+                        // literal/dynamic index chain makes the whole expression unsupported.
                         int lookahead = cursor;
                         SkipWhitespace(expression, ref lookahead);
                         if (lookahead < expression.Length && expression[lookahead] == '[')
@@ -199,11 +223,15 @@ namespace StoryAPI.Runtime
             return true;
         }
 
-        private static bool TryFindIndexExpressionEnd(string expression, int afterName, out int end)
+        private static bool TryFindIndexExpressionEnd(string expression, int nameStart, int afterName,
+            string temporaryPrefix, List<KeyValuePair<string, string>> dynamicIndexExpressions,
+            out int end, out string rewrittenChain)
         {
             end = afterName;
+            rewrittenChain = null;
             int cursor = afterName;
             int bracketCount = 0;
+            var chainBuilder = new StringBuilder(expression.Substring(nameStart, afterName - nameStart));
 
             while (true)
             {
@@ -212,7 +240,6 @@ namespace StoryAPI.Runtime
                 if (bracketStart >= expression.Length || expression[bracketStart] != '[')
                     break;
 
-                bracketCount++;
                 int scan = bracketStart + 1;
                 bool inKeyString = false;
                 bool escaped = false;
@@ -221,30 +248,29 @@ namespace StoryAPI.Runtime
 
                 while (scan < expression.Length)
                 {
-                    char c = expression[scan];
+                    char current = expression[scan];
                     if (inKeyString)
                     {
                         if (escaped) escaped = false;
-                        else if (c == '\\') escaped = true;
-                        else if (c == quote) inKeyString = false;
+                        else if (current == '\\') escaped = true;
+                        else if (current == quote) inKeyString = false;
                         scan++;
                         continue;
                     }
 
-                    if (c == '"' || c == '\'')
+                    if (current == '"' || current == '\'')
                     {
                         inKeyString = true;
-                        quote = c;
+                        quote = current;
                         scan++;
                         continue;
                     }
 
-                    if (c == '[')
-                        return false; // No dynamic/nested expressions inside an index.
+                    if (current == '[')
+                        return false; // Nested subscriptions inside a key are intentionally unsupported.
 
-                    if (c == ']')
+                    if (current == ']')
                     {
-                        scan++;
                         foundClose = true;
                         break;
                     }
@@ -252,20 +278,156 @@ namespace StoryAPI.Runtime
                     scan++;
                 }
 
-                if (!foundClose || inKeyString) return false;
-                cursor = scan;
+                if (!foundClose || inKeyString)
+                    return false;
+
+                string keyExpression = expression.Substring(
+                    bracketStart + 1, scan - bracketStart - 1).Trim();
+                if (IsLiteralIndexExpression(keyExpression))
+                {
+                    chainBuilder.Append(expression, bracketStart, scan - bracketStart + 1);
+                }
+                else
+                {
+                    if (!IsSupportedDynamicIndexExpression(keyExpression))
+                        return false;
+
+                    string keyName = temporaryPrefix + "_key_" + dynamicIndexExpressions.Count;
+                    dynamicIndexExpressions.Add(new KeyValuePair<string, string>(
+                        keyName, keyExpression));
+                    chainBuilder.Append('[').Append(keyName).Append(']');
+                }
+
+                cursor = scan + 1;
+                bracketCount++;
             }
 
-            if (bracketCount == 0) return false;
+            if (bracketCount == 0)
+                return false;
+
             end = cursor;
+            rewrittenChain = chainBuilder.ToString();
             return true;
+        }
+
+        private static bool IsLiteralIndexExpression(string expression)
+        {
+            if (string.IsNullOrWhiteSpace(expression))
+                return false;
+
+            string trimmed = expression.Trim();
+            if (trimmed[0] == '"' || trimmed[0] == '\'')
+            {
+                int cursor = 0;
+                string ignored;
+                if (!TryReadString(trimmed, ref cursor, out ignored))
+                    return false;
+                SkipWhitespace(trimmed, ref cursor);
+                return cursor == trimmed.Length;
+            }
+
+            int number;
+            return int.TryParse(trimmed, NumberStyles.Integer,
+                CultureInfo.InvariantCulture, out number);
+        }
+
+        /// <summary>
+        /// Dynamic indexes are deliberately limited to variable/scalar arithmetic syntax.
+        /// Calls, attribute access, nested indexes, slices and arbitrary Python are rejected.
+        /// </summary>
+        private static bool IsSupportedDynamicIndexExpression(string expression)
+        {
+            if (string.IsNullOrWhiteSpace(expression))
+                return false;
+
+            bool inString = false;
+            bool escaped = false;
+            char quote = '\0';
+            int parenthesisDepth = 0;
+            bool hasValue = false;
+
+            for (int i = 0; i < expression.Length;)
+            {
+                char c = expression[i];
+
+                if (inString)
+                {
+                    if (escaped) escaped = false;
+                    else if (c == '\\') escaped = true;
+                    else if (c == quote) inString = false;
+                    i++;
+                    continue;
+                }
+
+                if (c == '"' || c == '\'')
+                {
+                    inString = true;
+                    quote = c;
+                    hasValue = true;
+                    i++;
+                    continue;
+                }
+
+                if (c == '[' || c == ']' || c == '.' || c == ',' ||
+                    c == '=' || c == '<' || c == '>' || c == '!' ||
+                    c == '&' || c == '|')
+                    return false;
+
+                if (IsIdentifierStart(c) || char.IsDigit(c))
+                {
+                    int start = i;
+                    bool identifier = IsIdentifierStart(c);
+                    i++;
+                    while (i < expression.Length && IsIdentifierPart(expression[i]))
+                        i++;
+
+                    if (identifier)
+                    {
+                        int lookahead = i;
+                        SkipWhitespace(expression, ref lookahead);
+                        if (lookahead < expression.Length && expression[lookahead] == '(')
+                            return false; // Function calls are outside this feature.
+                    }
+
+                    hasValue = true;
+                    continue;
+                }
+
+                if (c == '(')
+                {
+                    parenthesisDepth++;
+                    i++;
+                    continue;
+                }
+
+                if (c == ')')
+                {
+                    parenthesisDepth--;
+                    if (parenthesisDepth < 0) return false;
+                    i++;
+                    continue;
+                }
+
+                if (c == '+' || c == '-' || c == '*' || c == '/' || c == '%' ||
+                    char.IsWhiteSpace(c))
+                {
+                    i++;
+                    continue;
+                }
+
+                return false;
+            }
+
+            return hasValue && !inString && parenthesisDepth == 0;
         }
 
         public static bool CanRewriteExpression(string expression)
         {
             string rewritten;
             List<KeyValuePair<string, string>> reads;
-            return TryRewriteExpression(expression, "_storyapi_probe", out rewritten, out reads);
+            List<KeyValuePair<string, string>> dynamicIndexes;
+            return TryRewriteExpression(expression, "_storyapi_probe", out rewritten,
+                out reads, out dynamicIndexes);
         }
 
         public static bool TryCreateTemporary(string temporaryName, string chainExpression,
@@ -274,7 +436,7 @@ namespace StoryAPI.Runtime
         {
             string rootName;
             List<object> indices;
-            if (!TryParse(chainExpression, out rootName, out indices))
+            if (!TryParse(chainExpression, out rootName, out indices, true))
             {
                 line = null;
                 return false;
@@ -295,7 +457,8 @@ namespace StoryAPI.Runtime
             return true;
         }
 
-        private static bool TryParse(string expression, out string rootName, out List<object> indices)
+        private static bool TryParse(string expression, out string rootName,
+            out List<object> indices, bool allowDynamicIndexes = false)
         {
             rootName = null;
             indices = new List<object>();
@@ -315,37 +478,98 @@ namespace StoryAPI.Runtime
                 SkipWhitespace(expression, ref cursor);
                 if (cursor >= expression.Length) break;
                 if (expression[cursor] != '[') return false;
-                cursor++;
-                SkipWhitespace(expression, ref cursor);
-                if (cursor >= expression.Length) return false;
 
+                int contentStart = ++cursor;
+                bool inKeyString = false;
+                bool escaped = false;
+                char quote = '\0';
+                int close = -1;
+
+                while (cursor < expression.Length)
+                {
+                    char c = expression[cursor];
+                    if (inKeyString)
+                    {
+                        if (escaped) escaped = false;
+                        else if (c == '\\') escaped = true;
+                        else if (c == quote) inKeyString = false;
+                        cursor++;
+                        continue;
+                    }
+
+                    if (c == '"' || c == '\'')
+                    {
+                        inKeyString = true;
+                        quote = c;
+                        cursor++;
+                        continue;
+                    }
+
+                    if (c == '[') return false;
+                    if (c == ']')
+                    {
+                        close = cursor;
+                        break;
+                    }
+
+                    cursor++;
+                }
+
+                if (close < 0 || inKeyString) return false;
+
+                string keyExpression = expression.Substring(
+                    contentStart, close - contentStart).Trim();
                 object key;
-                if (expression[cursor] == '"' || expression[cursor] == '\'')
-                {
-                    if (!TryReadString(expression, ref cursor, out string stringKey)) return false;
-                    key = stringKey;
-                }
-                else
-                {
-                    int numberStart = cursor;
-                    if (expression[cursor] == '-' || expression[cursor] == '+') cursor++;
-                    int digitsStart = cursor;
-                    while (cursor < expression.Length && char.IsDigit(expression[cursor])) cursor++;
-                    if (cursor == digitsStart) return false;
+                if (!TryParseIndexKey(keyExpression, allowDynamicIndexes, out key))
+                    return false;
 
-                    if (!int.TryParse(expression.Substring(numberStart, cursor - numberStart),
-                        NumberStyles.Integer, CultureInfo.InvariantCulture, out int number))
-                        return false;
-                    key = number;
-                }
-
-                SkipWhitespace(expression, ref cursor);
-                if (cursor >= expression.Length || expression[cursor] != ']') return false;
-                cursor++;
                 indices.Add(key);
+                cursor = close + 1;
             }
 
             return indices.Count > 0;
+        }
+
+        private static bool TryParseIndexKey(string expression, bool allowDynamicIndexes,
+            out object key)
+        {
+            key = null;
+            if (string.IsNullOrWhiteSpace(expression)) return false;
+
+            string trimmed = expression.Trim();
+            if (trimmed[0] == '"' || trimmed[0] == '\'')
+            {
+                int cursor = 0;
+                string stringKey;
+                if (!TryReadString(trimmed, ref cursor, out stringKey)) return false;
+                SkipWhitespace(trimmed, ref cursor);
+                if (cursor != trimmed.Length) return false;
+                key = stringKey;
+                return true;
+            }
+
+            int number;
+            if (int.TryParse(trimmed, NumberStyles.Integer, CultureInfo.InvariantCulture, out number))
+            {
+                key = number;
+                return true;
+            }
+
+            if (allowDynamicIndexes && IsSimpleIdentifier(trimmed))
+            {
+                key = new DynamicIndex(trimmed);
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool IsSimpleIdentifier(string value)
+        {
+            if (string.IsNullOrEmpty(value) || !IsIdentifierStart(value[0])) return false;
+            for (int i = 1; i < value.Length; i++)
+                if (!IsIdentifierPart(value[i])) return false;
+            return true;
         }
 
         private static bool TryReadString(string expression, ref int cursor, out string value)
@@ -417,6 +641,94 @@ namespace StoryAPI.Runtime
             }
         }
 
+        private static bool TryGetDynamicIndexValue(string name, IContext context, out object value)
+        {
+            value = null;
+            if (context == null || string.IsNullOrEmpty(name)) return false;
+
+            try
+            {
+                if (!context.ResolveVariable(name, out DataValue dataValue)) return false;
+                Type dataValueType = typeof(DataValue);
+
+                FieldInfo objectField = dataValueType.GetField(
+                    "objectRef", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                object objectValue = objectField == null ? null : objectField.GetValue(dataValue);
+                if (objectValue is string || objectValue is byte || objectValue is sbyte ||
+                    objectValue is short || objectValue is ushort || objectValue is int ||
+                    objectValue is uint || objectValue is long || objectValue is ulong ||
+                    objectValue is float || objectValue is double || objectValue is decimal)
+                {
+                    value = objectValue;
+                    return true;
+                }
+
+                if (objectValue != null)
+                    return false;
+
+                FieldInfo stringField = dataValueType.GetField(
+                    "stringVal", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                object stringValue = stringField == null ? null : stringField.GetValue(dataValue);
+                if (stringValue is string)
+                {
+                    value = (string)stringValue;
+                    return true;
+                }
+
+                FieldInfo typeField = dataValueType.GetField(
+                    "type", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                string typeName = typeField == null ? string.Empty :
+                    Convert.ToString(typeField.GetValue(dataValue), CultureInfo.InvariantCulture);
+                if (typeName.IndexOf("none", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    typeName.IndexOf("null", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    typeName.IndexOf("object", StringComparison.OrdinalIgnoreCase) >= 0)
+                    return false;
+
+                FieldInfo numberField = dataValueType.GetField(
+                    "floatVal", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                if (numberField == null) return false;
+                object numberValue = numberField.GetValue(dataValue);
+                if (!(numberValue is float) && !(numberValue is double) &&
+                    !(numberValue is decimal) && !(numberValue is int))
+                    return false;
+
+                value = numberValue;
+                return true;
+            }
+            catch
+            {
+                value = null;
+                return false;
+            }
+        }
+
+        private static bool TryConvertListIndex(object value, out int index)
+        {
+            index = 0;
+            if (value is int)
+            {
+                index = (int)value;
+                return true;
+            }
+
+            double number;
+            if (value is float) number = (float)value;
+            else if (value is double) number = (double)value;
+            else if (value is decimal) number = (double)(decimal)value;
+            else if (value is short) number = (short)value;
+            else if (value is byte) number = (byte)value;
+            else if (value is long) number = (long)value;
+            else return false;
+
+            if (double.IsNaN(number) || double.IsInfinity(number) ||
+                number != Math.Truncate(number) ||
+                number < int.MinValue || number > int.MaxValue)
+                return false;
+
+            index = (int)number;
+            return true;
+        }
+
         public void Apply(IContext context)
         {
             if (_state == null || _state.Initialized || _state.Failed) return;
@@ -432,21 +744,29 @@ namespace StoryAPI.Runtime
 
                 foreach (object key in _indices)
                 {
+                    object resolvedKey = key;
+                    DynamicIndex dynamicIndex = key as DynamicIndex;
+                    if (dynamicIndex != null &&
+                        !TryGetDynamicIndexValue(dynamicIndex.Name, context, out resolvedKey))
+                        throw new InvalidOperationException("dynamic index '" + dynamicIndex.Name +
+                            "' was not a supported scalar value");
+
                     if (current is IDictionary dictionary)
                     {
-                        if (!(key is string) || !dictionary.Contains(key))
-                            throw new InvalidOperationException("dictionary key '" + key +
-                                "' was not found or is not a string key");
-                        current = dictionary[key];
+                        if (!(resolvedKey is string) || !dictionary.Contains(resolvedKey))
+                            throw new InvalidOperationException("dictionary key '" + resolvedKey +
+                                "' was not found or did not evaluate to a string key");
+                        current = dictionary[resolvedKey];
                     }
                     else if (current is IList list)
                     {
-                        if (!(key is int))
-                            throw new InvalidOperationException("a list index must be an integer");
-                        int index = (int)key;
+                        int index;
+                        if (!TryConvertListIndex(resolvedKey, out index))
+                            throw new InvalidOperationException(
+                                "a list index must evaluate to an integer scalar");
                         if (index < 0) index += list.Count;
                         if (index < 0 || index >= list.Count)
-                            throw new IndexOutOfRangeException("list index " + key +
+                            throw new IndexOutOfRangeException("list index " + index +
                                 " is outside the valid range");
                         current = list[index];
                     }

@@ -156,7 +156,7 @@ with DDLC+'s scalar evaluator first, then performs the collection lookup; list i
 evaluate to integers and dynamic dictionary keys must evaluate to strings. Index reads can also
 be combined with scalar arithmetic, comparisons, and logical operators, for example
 `define bonus = inventory[0] * 2`, `define total = inventory[0] + inventory[1]`, or
-`default can_enter = settings["count"] >= 2 and has_key`. Nested indexes inside a dynamic key,
+`default can_enter = settings["count"] >= 2 and has_key`. The same restricted indexed reads are supported in runtime `if`, `elif`, and `while` conditions. Nested indexes inside a dynamic key,
 attribute access, function calls, slices, arbitrary Python initializers,
 Python class instances, tuples, and the full Ren'Py initialization phase remain unsupported.
 Collection element assignment is supported for existing list indexes and dictionary keys, for

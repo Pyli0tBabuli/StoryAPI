@@ -43,6 +43,7 @@ namespace StoryAPI.Tests
             Run("for-dictionary key iteration", TestForDictionaryIteration);
             Run("for-dictionary key/value iteration", TestForDictionaryItemsIteration);
             Run("for-dictionary values iteration", TestForDictionaryValuesIteration);
+            Run("for-dictionary keys() iteration", TestForDictionaryKeysMethodIteration);
             Run("range() for-loop arguments", TestForRangeIteration);
             Run("image/audio asset paths", TestAssetPaths);
             Run("comments and blank lines", TestCommentsAndBlankLines);
@@ -1797,6 +1798,63 @@ namespace StoryAPI.Tests
             Check(GameBridge.TryGetLastTestLiteral("value", out observedValue) &&
                     Equals(observedValue, prepared[1]),
                 "The second iteration should assign the next snapshotted value.");
+        }
+
+        private static void TestForDictionaryKeysMethodIteration()
+        {
+            var statements = Parse(
+                "label for_dict_keys_method_test:\\n" +
+                "    for key in settings.keys():\\n" +
+                "        if key == \"alpha\":\\n" +
+                "            pass\\n" +
+                "    return\\n");
+            var label = Require<LabelStatement>(statements[0], "Expected dictionary-keys label.");
+            var loop = Require<ForStatement>(label.Body[0], "Expected dictionary.keys() loop.");
+            Check(loop.Variable == "key" && loop.ValueVariable == null,
+                "Dictionary.keys() should use a single loop variable.");
+            Check(loop.Collection == "settings" && loop.IsDictionaryKeys &&
+                    !loop.IsDictionaryItems && !loop.IsDictionaryValues && !loop.IsRange,
+                "Dictionary.keys() should be represented as an explicit keys-only loop.");
+
+            ExpectSyntaxError(
+                "label dict_keys_two_names:\\n" +
+                "    for key, value in settings.keys():\\n" +
+                "        pass\\n",
+                "accepts only one loop variable");
+
+            const string sourcePath = "dictionary-keys-runtime-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var settings = new Dictionary<string, object>
+            {
+                { "alpha", 2f },
+                { "beta", 4f }
+            };
+            context.SetVariable("settings", new SimpleExpressionEngine.DataValue((object)settings));
+
+            RenPyParser.Line preparation;
+            Check(VariableIndexExpressionLine.TryCreateForEachPreparationLine(
+                    "settings", "_stage21_keys", false, false, true, sourcePath, 30, out preparation),
+                "The runtime should create a dictionary-keys preparation line.");
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
+
+            object preparedValue;
+            Check(GameBridge.TryGetLastTestLiteral("_stage21_keys", out preparedValue) &&
+                    preparedValue is List<object>,
+                "Dictionary.keys() should snapshot keys into an iterable list.");
+            var prepared = (List<object>)preparedValue;
+            Check(prepared.Count == 2 && prepared.Contains("alpha") && prepared.Contains("beta"),
+                "The key snapshot should contain each dictionary key exactly once.");
+
+            settings["gamma"] = 6f;
+            Check(prepared.Count == 2 && !prepared.Contains("gamma"),
+                "Keys added after preparation must not enter the active snapshot.");
+
+            context.SetVariable("settings",
+                new SimpleExpressionEngine.DataValue((object)new List<object> { "not", "a", "dictionary" }));
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("_stage21_keys", out preparedValue) &&
+                    preparedValue is List<object> rejected && rejected.Count == 0,
+                "dictionary.keys() must not silently iterate a list source.");
         }
 
         private static void TestForRangeIteration()

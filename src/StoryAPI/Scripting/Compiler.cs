@@ -684,13 +684,25 @@ namespace StoryAPI.Scripting
         private void EmitForList(ForStatement statement)
         {
             string safeLabel = Regex.Replace(_textLabel ?? "label", @"[^A-Za-z0-9_]", "_");
-            string indexName = "_storyapi_for_" + safeLabel + "_" +
-                statement.Line.ToString(CultureInfo.InvariantCulture) + "_index";
+            string prefix = "_storyapi_for_" + safeLabel + "_" +
+                statement.Line.ToString(CultureInfo.InvariantCulture);
+            string indexName = prefix + "_index";
+            string iterationCollectionName = prefix + "_items";
+
+            // Lists are reused; dictionaries are converted into a snapshot of their keys.
+            Line preparationLine;
+            if (!VariableIndexExpressionLine.TryCreateForEachPreparationLine(
+                statement.Collection, iterationCollectionName,
+                _textLabel ?? "unknown", statement.Line, out preparationLine))
+                throw new InvalidOperationException(
+                    "for loops require a simple collection variable name (line " +
+                    statement.Line + ").");
+            _out.Add(preparationLine);
 
             _out.Add(new RenpyOneLinePython("$ " + indexName + " = 0"));
             int start = _out.Count;
             string condition = PrepareCondition(
-                indexName + " < len(" + statement.Collection + ")", statement.Line);
+                indexName + " < len(" + iterationCollectionName + ")", statement.Line);
             int guard = EmitUnless(condition);
 
             string itemGateName = indexName + "_item_valid";
@@ -698,10 +710,10 @@ namespace StoryAPI.Scripting
 
             Line itemLine;
             if (!VariableIndexExpressionLine.TryCreateForEachItemLine(
-                statement.Variable, statement.Collection, indexName, itemGateName,
+                statement.Variable, iterationCollectionName, indexName, itemGateName,
                 _textLabel ?? "unknown", statement.Line, out itemLine))
                 throw new InvalidOperationException(
-                    "for loops require simple variable names and a named list (line " +
+                    "for loops require simple variable names and a named list or dictionary (line " +
                     statement.Line + ").");
             _out.Add(itemLine);
             int itemGuard = _out.Count;

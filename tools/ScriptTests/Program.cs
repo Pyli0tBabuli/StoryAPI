@@ -557,7 +557,7 @@ namespace StoryAPI.Tests
                         dividePrefix + "_rhs_index_0 / (4)"),
                 "The indexed compound assignment should divide the current value.");
             context.SetVariable(dividePrefix + "_value", new SimpleExpressionEngine.DataValue(6f));
-            ((RenpyParser.Images.IApply)lines.Last()).Apply(context);
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
             Check(Convert.ToSingle(inventory[0]) == 6f,
                 "The indexed /= assignment should write the divided value.");
 
@@ -570,7 +570,7 @@ namespace StoryAPI.Tests
                         moduloPrefix + "_rhs_index_0 % (4)"),
                 "The indexed compound assignment should apply modulo.");
             context.SetVariable(moduloPrefix + "_value", new SimpleExpressionEngine.DataValue(2f));
-            ((RenpyParser.Images.IApply)lines.Last()).Apply(context);
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
             Check(Convert.ToSingle(inventory[0]) == 2f,
                 "The indexed %= assignment should write the remainder.");
 
@@ -584,7 +584,7 @@ namespace StoryAPI.Tests
                 "The dictionary indexed compound assignment should apply modulo.");
             context.SetVariable(dictionaryModuloPrefix + "_value",
                 new SimpleExpressionEngine.DataValue(1f));
-            ((RenpyParser.Images.IApply)lines.Last()).Apply(context);
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
             Check(Convert.ToSingle(settings["count"]) == 1f,
                 "The dictionary indexed %= assignment should write the remainder.");
 

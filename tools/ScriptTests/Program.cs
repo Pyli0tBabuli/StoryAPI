@@ -1412,10 +1412,10 @@ namespace StoryAPI.Tests
                 "dict.get() must require an assignment target.");
 
             var statements = Parse(
-                "label dictionary_get_test:\\n" +
-                "    $ theme = settings.get(\"theme\")\\n" +
-                "    $ fallback = settings.get(\"missing\", \"off\")\\n" +
-                "    return\\n");
+                "label dictionary_get_test:\n" +
+                "    $ theme = settings.get(\"theme\")\n" +
+                "    $ fallback = settings.get(\"missing\", \"off\")\n" +
+                "    return\n");
             var label = Require<LabelStatement>(statements[0],
                 "Expected a label containing dictionary get() calls.");
             Check(Require<PythonStatement>(label.Body[0],

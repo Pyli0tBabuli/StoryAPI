@@ -202,6 +202,11 @@ The call is resolved before the native condition is evaluated, and several lengt
 be used in one condition or combined with indexed reads. Other function calls and nested
 forms such as `len(inventory[0])` remain unsupported.
 
+The Python `None` literal is supported in runtime `if`, `elif`, and `while` comparisons,
+for example `if optional_value == None:`. StoryAPI materializes the literal as a temporary
+value before the game's scalar condition evaluator runs; the word `None` inside quoted text
+is left unchanged.
+
 Within a label, `while`, `for item in inventory:`, `for key in settings:`,
 `for key in settings.keys():`, `for key, value in settings.items():`, and
 `for value in settings.values():`, `for i in range(...):`, `break`, `continue`, and `pass` are

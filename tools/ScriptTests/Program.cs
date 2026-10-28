@@ -1729,11 +1729,11 @@ namespace StoryAPI.Tests
         private static void TestForDictionaryValuesIteration()
         {
             var statements = Parse(
-                "label for_dict_values_test:\\n" +
-                "    for value in settings.values():\\n" +
-                "        if value > 0:\\n" +
-                "            pass\\n" +
-                "    return\\n");
+                "label for_dict_values_test:\n" +
+                "    for value in settings.values():\n" +
+                "        if value > 0:\n" +
+                "            pass\n" +
+                "    return\n");
             var label = Require<LabelStatement>(statements[0], "Expected dictionary-values label.");
             var loop = Require<ForStatement>(label.Body[0], "Expected dictionary-values loop.");
             Check(loop.Variable == "value" && loop.ValueVariable == null,
@@ -1745,14 +1745,14 @@ namespace StoryAPI.Tests
                 "The dictionary-values loop body should parse normally.");
 
             ExpectSyntaxError(
-                "label dict_values_two_names:\\n" +
-                "    for key, value in settings.values():\\n" +
-                "        pass\\n",
+                "label dict_values_two_names:\n" +
+                "    for key, value in settings.values():\n" +
+                "        pass\n",
                 "accepts only one loop variable");
             ExpectSyntaxError(
-                "label dict_values_items_mismatch:\\n" +
-                "    for value in settings.items():\\n" +
-                "        pass\\n",
+                "label dict_values_items_mismatch:\n" +
+                "    for value in settings.items():\n" +
+                "        pass\n",
                 "requires 'for key, value");
 
             const string sourcePath = "dictionary-values-runtime-test.rpy";
@@ -1768,7 +1768,7 @@ namespace StoryAPI.Tests
             Check(VariableIndexExpressionLine.TryCreateForEachPreparationLine(
                     "settings", "_stage20_values", false, true, sourcePath, 22, out preparation),
                 "The runtime should create a dictionary-values preparation line.");
-            ((RenpyParser.Images.IApply)preparation).Apply(context);
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
 
             object preparedValue;
             Check(GameBridge.TryGetLastTestLiteral("_stage20_values", out preparedValue) &&
@@ -1786,14 +1786,14 @@ namespace StoryAPI.Tests
                     sourcePath, 23, out itemLine),
                 "The runtime should create a single-value assignment line.");
             context.SetVariable("_stage20_index", new SimpleExpressionEngine.DataValue(0f));
-            ((RenpyParser.Images.IApply)itemLine).Apply(context);
+            ((RenPyParser.Images.IApply)itemLine).Apply(context);
             object observedValue;
             Check(GameBridge.TryGetLastTestLiteral("value", out observedValue) &&
                     Equals(observedValue, prepared[0]),
                 "The first iteration should assign the first snapshotted value.");
 
             context.SetVariable("_stage20_index", new SimpleExpressionEngine.DataValue(1f));
-            ((RenpyParser.Images.IApply)itemLine).Apply(context);
+            ((RenPyParser.Images.IApply)itemLine).Apply(context);
             Check(GameBridge.TryGetLastTestLiteral("value", out observedValue) &&
                     Equals(observedValue, prepared[1]),
                 "The second iteration should assign the next snapshotted value.");

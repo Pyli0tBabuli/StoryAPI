@@ -310,14 +310,15 @@ namespace StoryAPI.Scripting
         public List<Statement> Body { get; } = new List<Statement>();
     }
 
-    /// <summary>
-    /// Iterates through a named list, assigning each element to a loop variable.
-    /// Range expressions and tuple unpacking are intentionally handled in later stages.
-    /// </summary>
+    /// <summary>Iterates through a named list or a numeric range.</summary>
     public sealed class ForStatement : Statement
     {
         public string Variable { get; set; }
         public string Collection { get; set; }
+        public bool IsRange { get; set; }
+        public string RangeStart { get; set; }
+        public string RangeStop { get; set; }
+        public string RangeStep { get; set; }
         public List<Statement> Body { get; } = new List<Statement>();
     }
 

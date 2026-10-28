@@ -571,6 +571,18 @@ namespace StoryAPI.Scripting
             if (Current.Type != TokenType.Identifier)
                 throw new ScriptSyntaxException("Expected a loop variable after 'for'.", line);
             string variable = Advance().Text;
+            string valueVariable = null;
+
+            // A two-name target is accepted only for dictionary .items() iteration.
+            if (Current.Text == ",")
+            {
+                _index++;
+                if (Current.Type != TokenType.Identifier)
+                    throw new ScriptSyntaxException("Expected a second loop variable after ','.", Current.Line);
+                valueVariable = Advance().Text;
+                if (Current.Text == ",")
+                    throw new ScriptSyntaxException("Only two loop variables are supported for dictionary items.", Current.Line);
+            }
 
             if (!MatchIdentifier("in"))
                 throw new ScriptSyntaxException("Expected 'in' after the loop variable.", Current.Line);

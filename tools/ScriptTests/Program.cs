@@ -1511,7 +1511,7 @@ namespace StoryAPI.Tests
                 "setdefault() with a string default should be recognized.");
             Check(line.GetType().Name == "DictionarySetDefaultLine",
                 "setdefault() should emit the dedicated setdefault instruction.");
-            ((RenpyParser.Images.IApply)line).Apply(context);
+            ((RenPyParser.Images.IApply)line).Apply(context);
             object observed;
             Check(GameBridge.TryGetLastTestLiteral("existing", out observed) &&
                     Equals(observed, "dark"),
@@ -1523,7 +1523,7 @@ namespace StoryAPI.Tests
                     "inserted = settings.setdefault(\"accent\", \"blue\")",
                     sourcePath, 11, out line),
                 "setdefault() should accept a quoted string default.");
-            ((RenpyParser.Images.IApply)line).Apply(context);
+            ((RenPyParser.Images.IApply)line).Apply(context);
             Check(GameBridge.TryGetLastTestLiteral("inserted", out observed) &&
                     Equals(observed, "blue"),
                 "setdefault() should return the default for a missing key.");
@@ -1534,7 +1534,7 @@ namespace StoryAPI.Tests
                     "again = settings.setdefault(\"accent\", \"red\")",
                     sourcePath, 12, out line),
                 "A repeated setdefault() call should be recognized.");
-            ((RenpyParser.Images.IApply)line).Apply(context);
+            ((RenPyParser.Images.IApply)line).Apply(context);
             Check(GameBridge.TryGetLastTestLiteral("again", out observed) &&
                     Equals(observed, "blue") && Equals(settings["accent"], "blue"),
                 "A repeated setdefault() must return the existing value and preserve it.");
@@ -1543,7 +1543,7 @@ namespace StoryAPI.Tests
                     "number = settings.setdefault(\"new_count\", 7)",
                     sourcePath, 13, out line),
                 "setdefault() should accept a numeric literal default.");
-            ((RenpyParser.Images.IApply)line).Apply(context);
+            ((RenPyParser.Images.IApply)line).Apply(context);
             Check(GameBridge.TryGetLastTestLiteral("number", out observed) &&
                     Math.Abs(Convert.ToSingle(observed) - 7f) < 0.001f &&
                     Math.Abs(Convert.ToSingle(settings["new_count"]) - 7f) < 0.001f,
@@ -1553,7 +1553,7 @@ namespace StoryAPI.Tests
                     "enabled_default = settings.setdefault(\"new_enabled\", True)",
                     sourcePath, 14, out line),
                 "setdefault() should accept a boolean literal default.");
-            ((RenpyParser.Images.IApply)line).Apply(context);
+            ((RenPyParser.Images.IApply)line).Apply(context);
             Check(GameBridge.TryGetLastTestLiteral("enabled_default", out observed) &&
                     Equals(observed, true) && Equals(settings["new_enabled"], true),
                 "A boolean default should be assigned and stored.");
@@ -1562,7 +1562,7 @@ namespace StoryAPI.Tests
                     "no_default = settings.setdefault(\"nullable\")",
                     sourcePath, 15, out line),
                 "setdefault() without a default should be recognized.");
-            ((RenpyParser.Images.IApply)line).Apply(context);
+            ((RenPyParser.Images.IApply)line).Apply(context);
             Check(GameBridge.TryGetLastTestLiteral("no_default", out observed) && observed == null &&
                     settings.ContainsKey("nullable") && settings["nullable"] == null,
                 "Without a default, setdefault() should insert and return None.");

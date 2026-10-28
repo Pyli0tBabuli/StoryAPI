@@ -544,7 +544,7 @@ namespace StoryAPI.Runtime
             if (string.IsNullOrWhiteSpace(expression)) return false;
 
             var pattern = new Regex(
-                @"(?<![A-Za-z0-9_.])(?:(?<left>[A-Za-z_][A-Za-z0-9_]*)\\s*(?<op>==|!=)\\s*None|None\\s*(?<reverseOp>==|!=)\\s*(?<right>[A-Za-z_][A-Za-z0-9_]*))(?![A-Za-z0-9_])",
+                @"(?<![A-Za-z0-9_.])(?:(?<left>[A-Za-z_][A-Za-z0-9_]*)\s*(?<op>==|!=)\s*None|None\s*(?<reverseOp>==|!=)\s*(?<right>[A-Za-z_][A-Za-z0-9_]*))(?![A-Za-z0-9_])",
                 RegexOptions.Compiled);
             MatchCollection matches = pattern.Matches(expression);
             var replacements = new List<Tuple<int, int, string>>();

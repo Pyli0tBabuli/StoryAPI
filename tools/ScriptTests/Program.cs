@@ -566,27 +566,27 @@ namespace StoryAPI.Tests
                     "inventory[0] %= 4", moduloPrefix, sourcePath, 15, 150, out lines),
                 "A list index %= assignment should be recognized.");
             Check(lines.OfType<RenpyParser.RenpyOneLinePython>().Any(x =>
-                    x.Code == "$ " + moduloPrefix + "_value = " +
-                        moduloPrefix + "_rhs_index_0 % (4)"),
-                "The indexed compound assignment should apply modulo.");
-            context.SetVariable(moduloPrefix + "_value", new SimpleExpressionEngine.DataValue(2f));
+                    x.Code == "$ " + moduloPrefix + "_value = (4)"),
+                "The indexed %= assignment should evaluate the RHS without using native modulo.");
+            inventory[0] = 18f;
+            context.SetVariable(moduloPrefix + "_value", new SimpleExpressionEngine.DataValue(4f));
             ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
             Check(Convert.ToSingle(inventory[0]) == 2f,
-                "The indexed %= assignment should write the remainder.");
+                "The indexed %= assignment should compute and write the remainder at runtime.");
 
             const string dictionaryModuloPrefix = "_storyapi_indexed_dictionary_modulo";
             Check(VariableIndexExpressionLine.TryCreateIndexedCompoundAssignmentLines(
                     "settings[\"count\"] %= 4", dictionaryModuloPrefix, sourcePath, 16, 160, out lines),
                 "A dictionary value %= assignment should be recognized.");
             Check(lines.OfType<RenpyParser.RenpyOneLinePython>().Any(x =>
-                    x.Code == "$ " + dictionaryModuloPrefix + "_value = " +
-                        dictionaryModuloPrefix + "_rhs_index_0 % (4)"),
-                "The dictionary indexed compound assignment should apply modulo.");
+                    x.Code == "$ " + dictionaryModuloPrefix + "_value = (4)"),
+                "The dictionary %= assignment should evaluate its RHS without native modulo.");
+            settings["count"] = 10f;
             context.SetVariable(dictionaryModuloPrefix + "_value",
-                new SimpleExpressionEngine.DataValue(1f));
+                new SimpleExpressionEngine.DataValue(4f));
             ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
-            Check(Convert.ToSingle(settings["count"]) == 1f,
-                "The dictionary indexed %= assignment should write the remainder.");
+            Check(Convert.ToSingle(settings["count"]) == 2f,
+                "The dictionary indexed %= assignment should compute and write the remainder.");
 
             Check(!VariableIndexExpressionLine.TryCreateIndexedCompoundAssignmentLines(
                     "coins += 1", "_storyapi_scalar_only", sourcePath, 20, 200, out lines),
@@ -687,8 +687,12 @@ namespace StoryAPI.Tests
                 "/= should translate to division.");
             Check(VariableIndexExpressionLine.TryCreateCompoundAssignmentLines(
                     "coins %= 3", prefix, sourcePath, 16, 160, out lines) &&
-                    ((RenpyParser.RenpyOneLinePython)lines[0]).Code == "$ coins = coins % (3)",
-                "%= should translate to modulo.");
+                    lines.Count == 2 &&
+                    lines[0] is RenpyParser.RenpyOneLinePython &&
+                    ((RenpyParser.RenpyOneLinePython)lines[0]).Code ==
+                        "$ " + prefix + "_compound_rhs_value = (3)" &&
+                    lines[1].GetType().Name == "ScalarModuloAssignmentLine",
+                "%= should evaluate its RHS and calculate the modulo in StoryAPI.");
             Check(!VariableIndexExpressionLine.TryCreateCompoundAssignmentLines(
                     "coins **= 2", prefix, sourcePath, 17, 170, out lines),
                 "Unsupported exponent compound assignments must remain rejected.");

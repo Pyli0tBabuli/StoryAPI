@@ -1248,13 +1248,27 @@ namespace StoryAPI.Runtime
             string key;
             if (!TryReadString(code, ref cursor, out key)) return false;
             SkipWhitespace(code, ref cursor);
+
+            bool hasDefault = false;
+            object defaultValue = null;
+            if (cursor < code.Length && code[cursor] == ',')
+            {
+                cursor++;
+                SkipWhitespace(code, ref cursor);
+                if (!TryReadDictionaryGetDefault(code, ref cursor, out defaultValue))
+                    return false;
+                hasDefault = true;
+                SkipWhitespace(code, ref cursor);
+            }
+
             if (cursor >= code.Length || code[cursor++] != ')') return false;
             SkipWhitespace(code, ref cursor);
             if (cursor != code.Length) return false;
 
             lines = new List<Line>
             {
-                new DictionaryPopLine(rootName, destinationName, key, sourcePath, sourceLine)
+                new DictionaryPopLine(rootName, destinationName, key, hasDefault,
+                    defaultValue, sourcePath, sourceLine)
             };
             return true;
         }
@@ -2537,15 +2551,19 @@ namespace StoryAPI.Runtime
             private readonly string _rootName;
             private readonly string _destinationName;
             private readonly string _key;
+            private readonly bool _hasDefault;
+            private readonly object _defaultValue;
             private readonly string _sourcePath;
             private readonly int _sourceLine;
 
             public DictionaryPopLine(string rootName, string destinationName, string key,
-                string sourcePath, int sourceLine)
+                bool hasDefault, object defaultValue, string sourcePath, int sourceLine)
             {
                 _rootName = rootName;
                 _destinationName = destinationName;
                 _key = key;
+                _hasDefault = hasDefault;
+                _defaultValue = defaultValue;
                 _sourcePath = sourcePath;
                 _sourceLine = sourceLine;
             }
@@ -2562,7 +2580,19 @@ namespace StoryAPI.Runtime
                     if (dictionary.IsReadOnly || dictionary.IsFixedSize)
                         throw new InvalidOperationException("dict.pop() target is not mutable");
                     if (!dictionary.Contains(_key))
-                        throw new InvalidOperationException("dictionary key '" + _key + "' was not found");
+                    {
+                        if (!_hasDefault)
+                            throw new InvalidOperationException("dictionary key '" + _key + "' was not found");
+
+                        if (_destinationName != null &&
+                            !GameBridge.TrySetVariableLiteral(_destinationName, _defaultValue, false, context))
+                            throw new InvalidOperationException(
+                                "could not assign the dict.pop() default to '" + _destinationName + "'");
+
+                        Log.Info("Applied dict.pop default for missing key '" + _key + "' on '" +
+                            _rootName + "' at " + _sourcePath + ":" + _sourceLine + ".");
+                        return;
+                    }
 
                     object removed = dictionary[_key];
                     if (_destinationName != null &&

@@ -35,6 +35,7 @@ namespace StoryAPI.Tests
             Run("list extend method", TestListExtendMethod);
             Run("list insert and pop methods", TestListInsertAndPopMethods);
             Run("dictionary update and pop methods", TestDictionaryUpdateAndPopMethods);
+            Run("dictionary pop default argument", TestDictionaryPopDefaultArgument);
             Run("dictionary get method", TestDictionaryGetMethod);
             Run("dictionary setdefault method", TestDictionarySetDefaultMethod);
             Run("dictionary copy method", TestDictionaryCopyMethod);
@@ -1364,9 +1365,9 @@ namespace StoryAPI.Tests
             Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
                     "settings.pop()", sourcePath, 22, out lines),
                 "dict.pop() should reject a missing key.");
-            Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+            Check(VariableIndexExpressionLine.TryCreateDictionaryPopLines(
                     "settings.pop(\"sound\", \"off\")", sourcePath, 23, out lines),
-                "dict.pop() should reject a default-value argument in this subset.");
+                "dict.pop() should accept a literal default argument.");
             Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
                     "settings.pop(key_name)", sourcePath, 24, out lines),
                 "dict.pop() should require a quoted string key.");
@@ -1395,6 +1396,90 @@ namespace StoryAPI.Tests
                     "The pop assignment should parse as a Python statement.").Code ==
                     "old_theme = settings.pop(\"theme\")",
                 "The parser should preserve dictionary pop() assignments.");
+        }
+
+        private static void TestDictionaryPopDefaultArgument()
+        {
+            const string sourcePath = "dictionary-pop-default-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var settings = new Dictionary<string, object>
+            {
+                { "theme", "dark" },
+                { "count", 5f }
+            };
+            context.SetVariable("settings",
+                new SimpleExpressionEngine.DataValue((object)settings));
+
+            List<RenPyParser.Line> lines;
+            Check(VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "theme_value = settings.pop(\"theme\", \"fallback\")",
+                    sourcePath, 10, out lines),
+                "pop() with a default should be recognized.");
+            Check(lines.Count == 1 && lines[0].GetType().Name == "DictionaryPopLine",
+                "pop() with a default should emit the dictionary-pop instruction.");
+            ((RenPyParser.Images.IApply)lines[0]).Apply(context);
+
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("theme_value", out observed) &&
+                    Equals(observed, "dark") && !settings.ContainsKey("theme"),
+                "When the key exists, pop() should return and remove its value instead of the default.");
+
+            Check(VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "missing_value = settings.pop(\"missing\", \"fallback\")",
+                    sourcePath, 11, out lines),
+                "pop() should recognize a string default for a missing key.");
+            ((RenPyParser.Images.IApply)lines[0]).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("missing_value", out observed) &&
+                    Equals(observed, "fallback"),
+                "pop() should assign its default when the key is missing.");
+            Check(!settings.ContainsKey("missing"),
+                "Using pop() with a default must not insert the missing key.");
+
+            Check(VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "count_value = settings.pop(\"missing_count\", 7)",
+                    sourcePath, 12, out lines),
+                "pop() should accept a numeric default.");
+            ((RenPyParser.Images.IApply)lines[0]).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("count_value", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 7f) < 0.001f,
+                "pop() should return a numeric default when the key is missing.");
+
+            Check(VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "nullable_value = settings.pop(\"missing_nullable\", None)",
+                    sourcePath, 13, out lines),
+                "pop() should accept None as a default.");
+            ((RenPyParser.Images.IApply)lines[0]).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("nullable_value", out observed) && observed == null,
+                "pop() should assign None when the key is missing and its default is None.");
+
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "settings.pop(\"missing\", fallback)", sourcePath, 20, out lines),
+                "pop() should reject variable defaults in this restricted implementation.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "settings.pop(\"missing\", \"a\", \"b\")", sourcePath, 21, out lines),
+                "pop() should reject more than two arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "settings.pop(key_name, \"fallback\")", sourcePath, 22, out lines),
+                "pop() should continue to require a quoted string key.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "settings[\"nested\"].pop(\"missing\", \"fallback\")",
+                    sourcePath, 23, out lines),
+                "pop() should reject indexed targets.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "settings.pop(\"missing\", \"fallback\"); settings.clear()",
+                    sourcePath, 24, out lines),
+                "pop() should reject multiple statements.");
+
+            var statements = Parse(
+                "label dictionary_pop_default_test:\n" +
+                "    $ missing_value = settings.pop(\"missing\", \"fallback\")\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing a dictionary pop() with default.");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The pop() with default should parse as a Python statement.").Code ==
+                    "missing_value = settings.pop(\"missing\", \"fallback\")",
+                "The parser should preserve dictionary pop() defaults.");
         }
 
         private static void TestDictionaryGetMethod()

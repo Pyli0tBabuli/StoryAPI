@@ -34,6 +34,7 @@ namespace StoryAPI.Tests
             Run("list extend method", TestListExtendMethod);
             Run("list insert and pop methods", TestListInsertAndPopMethods);
             Run("dictionary update and pop methods", TestDictionaryUpdateAndPopMethods);
+            Run("dictionary get method", TestDictionaryGetMethod);
             Run("compound scalar assignments", TestCompoundScalarAssignments);
             Run("compound indexed collection assignments", TestIndexedCompoundAssignments);
             Run("if/elif/else branches", TestConditionalBranches);
@@ -1330,6 +1331,101 @@ namespace StoryAPI.Tests
                     "The pop assignment should parse as a Python statement.").Code ==
                     "old_theme = settings.pop(\"theme\")",
                 "The parser should preserve dictionary pop() assignments.");
+        }
+
+        private static void TestDictionaryGetMethod()
+        {
+            const string sourcePath = "dictionary-get-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var settings = new Dictionary<string, object>
+            {
+                { "theme", "dark" },
+                { "count", 5f },
+                { "enabled", true }
+            };
+            context.SetVariable("settings",
+                new SimpleExpressionEngine.DataValue((object)settings));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "theme = settings.get(\"theme\")", sourcePath, 10, out line),
+                "dict.get() without a default should be recognized.");
+            Check(line.GetType().Name == "DictionaryGetLine",
+                "dict.get() should emit the dedicated dictionary-get instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("theme", out observed) &&
+                    Equals(observed, "dark"),
+                "dict.get() should assign the existing value.");
+            Check(settings.Count == 3 && (string)settings["theme"] == "dark",
+                "dict.get() must not mutate the source dictionary.");
+
+            Check(VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "missing = settings.get(\"missing\", \"fallback\")", sourcePath, 11, out line),
+                "dict.get() with a quoted-string default should be recognized.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("missing", out observed) &&
+                    Equals(observed, "fallback"),
+                "dict.get() should assign the default when the key is absent.");
+
+            Check(VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "missing_none = settings.get(\"absent\")", sourcePath, 12, out line),
+                "dict.get() without a default should still support absent keys.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("missing_none", out observed) && observed == null,
+                "An absent key without a default should assign None/null.");
+
+            Check(VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "count_default = settings.get(\"absent\", 7)", sourcePath, 13, out line),
+                "dict.get() should accept a numeric literal default.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("count_default", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 7f) < 0.001f,
+                "dict.get() should preserve a numeric default.");
+
+            Check(VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "enabled_default = settings.get(\"absent\", True)", sourcePath, 14, out line),
+                "dict.get() should accept a boolean default.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("enabled_default", out observed) &&
+                    Equals(observed, true),
+                "dict.get() should preserve a boolean default.");
+
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "theme = settings.get(key_name)", sourcePath, 15, out line),
+                "dict.get() should require a quoted string key in this subset.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "theme = settings.get(\"theme\", fallback)", sourcePath, 16, out line),
+                "dict.get() should reject non-literal defaults in this subset.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "theme = settings.get(\"theme\", \"fallback\", \"extra\")",
+                    sourcePath, 17, out line),
+                "dict.get() should reject more than two arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "theme = settings[\"nested\"].get(\"theme\")", sourcePath, 18, out line),
+                "dict.get() should reject indexed targets.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "theme = settings.get(\"theme\"); settings.clear()", sourcePath, 19, out line),
+                "dict.get() should reject multiple statements.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "settings.get(\"theme\")", sourcePath, 20, out line),
+                "dict.get() must require an assignment target.");
+
+            var statements = Parse(
+                "label dictionary_get_test:\\n" +
+                "    $ theme = settings.get(\"theme\")\\n" +
+                "    $ fallback = settings.get(\"missing\", \"off\")\\n" +
+                "    return\\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing dictionary get() calls.");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The first get() should parse as a Python statement.").Code ==
+                    "theme = settings.get(\"theme\")",
+                "The parser should preserve dictionary get() assignments.");
+            Check(Require<PythonStatement>(label.Body[1],
+                    "The second get() should parse as a Python statement.").Code ==
+                    "fallback = settings.get(\"missing\", \"off\")",
+                "The parser should preserve dict.get() calls with a default.");
         }
 
         private static void TestListExtendMethod()

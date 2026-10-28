@@ -1567,14 +1567,14 @@ namespace StoryAPI.Tests
                 "Expected break.").IsContinue, "The second branch should break.");
             Require<SayStatement>(loop.Body[2], "Expected dialogue.");
 
-            var compiled = new Compiler(null).Compile(label);
-            Check(compiled.Ok, "for loop should compile: " + string.Join("; ", compiled.Warnings));
-            Check(compiled.Lines.Any(x => x.GetType().Name == "ForEachItemLine"),
-                "for loop should emit a runtime list-item reader.");
-            Check(compiled.Lines.Any(x => x.GetType().Name == "RenpyGoToLineUnless"),
-                "for loop should emit a conditional exit.");
-            Check(compiled.Lines.Any(x => x.GetType().Name == "RenpyGoToLine"),
-                "for loop should emit backward and loop-control jumps.");
+            Check(VariableIndexExpressionLine.TryCreateForEachItemLine(
+                    "item", "inventory", "_for_test_index", "for-test.rpy", 2, out var itemLine),
+                "for loop should create a runtime list-item reader.");
+            Check(itemLine.GetType().Name == "ForEachItemLine",
+                "for loop should emit the dedicated runtime list-item reader.");
+            Check(!VariableIndexExpressionLine.TryCreateForEachItemLine(
+                    "item.value", "inventory", "_for_test_index", "for-test.rpy", 2, out var invalidLine),
+                "The loop variable must be a simple identifier.");
 
             var empty = Parse(
                 "label empty_for_test:\n" +

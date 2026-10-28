@@ -1588,12 +1588,12 @@ namespace StoryAPI.Tests
         private static void TestForDictionaryIteration()
         {
             var statements = Parse(
-                "label for_dict_test:\\n" +
-                "    for key in settings:\\n" +
-                "        if key in settings:\\n" +
-                "            pass\\n" +
-                "        _ \"[key]\"\\n" +
-                "    return\\n");
+                "label for_dict_test:\n" +
+                "    for key in settings:\n" +
+                "        if key in settings:\n" +
+                "            pass\n" +
+                "        _ \"[key]\"\n" +
+                "    return\n");
             var label = Require<LabelStatement>(statements[0], "Expected dictionary-loop label.");
             var loop = Require<ForStatement>(label.Body[0], "Expected dictionary for loop.");
             Check(loop.Variable == "key", "Dictionary loop variable mismatch.");

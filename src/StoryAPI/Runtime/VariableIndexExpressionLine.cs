@@ -1189,6 +1189,109 @@ namespace StoryAPI.Runtime
         /// Converts a restricted indexed assignment (for example, items[index + 1] = score + 2)
         /// into native scalar-evaluation instructions and one guarded collection mutation line.
         /// </summary>
+        /// <summary>
+        /// Compiles compound assignments for a simple variable (+=, -=, *=). Collection
+        /// reads on the right-hand side are resolved before the native scalar assignment.
+        /// Indexed targets and other compound operators remain unsupported.
+        /// </summary>
+        public static bool TryCreateCompoundAssignmentLines(string code, string temporaryPrefix,
+            string sourcePath, int sourceLine, int blockStart, out List<Line> lines)
+        {
+            lines = null;
+            if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(temporaryPrefix))
+                return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+
+            int nameStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string targetName = code.Substring(nameStart, cursor - nameStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor + 1 >= code.Length || code[cursor + 1] != '=' ||
+                (code[cursor] != '+' && code[cursor] != '-' && code[cursor] != '*'))
+                return false;
+
+            char operation = code[cursor];
+            cursor += 2;
+            string rightExpression = code.Substring(cursor).Trim();
+            if (string.IsNullOrWhiteSpace(rightExpression) ||
+                ContainsUnquotedSemicolon(rightExpression))
+                return false;
+
+            string valueExpression = rightExpression;
+            var rightIndexReads = new List<KeyValuePair<string, string>>();
+            var rightDynamicIndexes = new List<KeyValuePair<string, string>>();
+            bool hasIndexReads = ContainsIndexSyntax(rightExpression);
+            if (hasIndexReads &&
+                !TryRewriteExpression(rightExpression, temporaryPrefix + "_compound_rhs",
+                    out valueExpression, out rightIndexReads, out rightDynamicIndexes))
+                return false;
+
+            string assignment = "$ " + targetName + " = " + targetName + " " +
+                operation + " (" + valueExpression + ")";
+            if (!hasIndexReads)
+            {
+                lines = new List<Line> { new RenpyOneLinePython(assignment) };
+                return true;
+            }
+
+            var state = new VariableInitializationState();
+            string gateName = temporaryPrefix + "_compound_gate";
+            var rightReadLines = new List<Line>();
+            foreach (KeyValuePair<string, string> read in rightIndexReads)
+            {
+                VariableIndexExpressionLine readLine;
+                if (!TryCreateTemporary(read.Key, read.Value, sourcePath, sourceLine,
+                    state, gateName, targetName, out readLine))
+                    return false;
+                rightReadLines.Add(readLine);
+            }
+
+            int blockSize = 3 + rightDynamicIndexes.Count + rightReadLines.Count;
+            int skipTarget = blockStart + blockSize;
+            var result = new List<Line>(blockSize);
+            result.Add(new RenpyOneLinePython("$ " + gateName + " = True"));
+            foreach (KeyValuePair<string, string> dynamicIndex in rightDynamicIndexes)
+                result.Add(new RenpyOneLinePython(
+                    "$ " + dynamicIndex.Key + " = " + dynamicIndex.Value));
+            result.AddRange(rightReadLines);
+            result.Add(new RenpyGoToLineUnless(gateName, skipTarget));
+            result.Add(new RenpyOneLinePython(assignment));
+            lines = result;
+            return true;
+        }
+
+        private static bool ContainsUnquotedSemicolon(string expression)
+        {
+            bool inString = false;
+            bool escaped = false;
+            char quote = '\0';
+            for (int i = 0; i < expression.Length; i++)
+            {
+                char c = expression[i];
+                if (inString)
+                {
+                    if (escaped) escaped = false;
+                    else if (c == '\\') escaped = true;
+                    else if (c == quote) inString = false;
+                    continue;
+                }
+                if (c == '"' || c == '\'')
+                {
+                    inString = true;
+                    quote = c;
+                }
+                else if (c == ';')
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
         public static bool TryCreateAssignmentLines(string code, string temporaryPrefix,
             string sourcePath, int sourceLine, int blockStart, out List<Line> lines)
         {

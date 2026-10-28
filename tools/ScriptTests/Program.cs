@@ -32,6 +32,7 @@ namespace StoryAPI.Tests
             Run("list and dictionary length conditions", TestCollectionLengthConditions);
             Run("None comparison conditions", TestNoneComparisonConditions);
             Run("list and dictionary clear methods", TestCollectionClearMethods);
+            Run("list reverse method", TestListReverseMethod);
             Run("list extend method", TestListExtendMethod);
             Run("list insert and pop methods", TestListInsertAndPopMethods);
             Run("dictionary update and pop methods", TestDictionaryUpdateAndPopMethods);
@@ -1770,6 +1771,67 @@ namespace StoryAPI.Tests
                     "The copy call should parse as a Python statement.").Code ==
                     "copied = settings.copy()",
                 "The parser should preserve dictionary copy assignments.");
+        }
+
+        private static void TestListReverseMethod()
+        {
+            const string sourcePath = "list-reverse-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var inventory = new List<object> { "key", "flashlight", "battery", "medkit" };
+            context.SetVariable("inventory",
+                new SimpleExpressionEngine.DataValue((object)inventory));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateListReverseLine(
+                    "inventory.reverse()", sourcePath, 3, out line),
+                "inventory.reverse() should be recognized.");
+            Check(line.GetType().Name == "ListReverseLine",
+                "reverse() should emit the dedicated list-reverse instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(inventory.SequenceEqual(new object[] { "medkit", "battery", "flashlight", "key" }),
+                "reverse() should reverse the list in place.");
+            Check(GameBridge.TryGetObjectBackedVariableForTesting("inventory", context, out object observed) &&
+                    object.ReferenceEquals(observed, inventory),
+                "reverse() should preserve the original list object.");
+
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(inventory.SequenceEqual(new object[] { "key", "flashlight", "battery", "medkit" }),
+                "Calling reverse() a second time should restore the original order.");
+
+            var empty = new List<object>();
+            context.SetVariable("empty_inventory",
+                new SimpleExpressionEngine.DataValue((object)empty));
+            Check(VariableIndexExpressionLine.TryCreateListReverseLine(
+                    "empty_inventory.reverse()", sourcePath, 4, out line),
+                "reverse() should recognize an empty-list call.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(empty.Count == 0, "Reversing an empty list should leave it empty.");
+
+            Check(!VariableIndexExpressionLine.TryCreateListReverseLine(
+                    "inventory.reverse(1)", sourcePath, 10, out line),
+                "reverse() should reject arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateListReverseLine(
+                    "inventory[0].reverse()", sourcePath, 11, out line),
+                "reverse() should reject indexed targets.");
+            Check(!VariableIndexExpressionLine.TryCreateListReverseLine(
+                    "inventory.reverse().clear()", sourcePath, 12, out line),
+                "reverse() should reject chained calls.");
+            Check(!VariableIndexExpressionLine.TryCreateListReverseLine(
+                    "inventory.reverse(); inventory.clear()", sourcePath, 13, out line),
+                "reverse() should reject multiple statements.");
+            Check(!VariableIndexExpressionLine.TryCreateListReverseLine(
+                    "settings.clear()", sourcePath, 14, out line),
+                "The reverse recognizer must not capture other method names.");
+
+            var statements = Parse(
+                "label list_reverse_test:\\n" +
+                "    $ inventory.reverse()\\n" +
+                "    return\\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing a list reverse call.");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The reverse call should parse as a Python statement.").Code == "inventory.reverse()",
+                "The parser should preserve list reverse calls.");
         }
 
         private static void TestListExtendMethod()

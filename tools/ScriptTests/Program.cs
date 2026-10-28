@@ -1675,7 +1675,7 @@ namespace StoryAPI.Tests
                 "Only two loop variables");
 
             const string sourcePath = "dictionary-items-runtime-test.rpy";
-            var context = new RenPyParser.DynamicIndexTestContext();
+            var context = new RenpyParser.DynamicIndexTestContext();
             var settings = new Dictionary<string, object>
             {
                 { "alpha", 2f },

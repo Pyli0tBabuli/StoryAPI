@@ -42,6 +42,7 @@ namespace StoryAPI.Tests
             Run("for-list iteration and loop control", TestForListIteration);
             Run("for-dictionary key iteration", TestForDictionaryIteration);
             Run("for-dictionary key/value iteration", TestForDictionaryItemsIteration);
+            Run("for-dictionary values iteration", TestForDictionaryValuesIteration);
             Run("range() for-loop arguments", TestForRangeIteration);
             Run("image/audio asset paths", TestAssetPaths);
             Run("comments and blank lines", TestCommentsAndBlankLines);
@@ -1723,6 +1724,79 @@ namespace StoryAPI.Tests
             Check(GameBridge.TryGetLastTestLiteral("value", out observedValue) &&
                     Math.Abs(Convert.ToSingle(observedValue) - 4f) < 0.001f,
                 "The second iteration should assign the matching dictionary value.");
+        }
+
+        private static void TestForDictionaryValuesIteration()
+        {
+            var statements = Parse(
+                "label for_dict_values_test:\n" +
+                "    for value in settings.values():\n" +
+                "        if value > 0:\n" +
+                "            pass\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0], "Expected dictionary-values label.");
+            var loop = Require<ForStatement>(label.Body[0], "Expected dictionary-values loop.");
+            Check(loop.Variable == "value" && loop.ValueVariable == null,
+                "Dictionary.values() should use a single loop variable.");
+            Check(loop.Collection == "settings" && loop.IsDictionaryValues &&
+                    !loop.IsDictionaryItems && !loop.IsRange,
+                "Dictionary.values() should be represented as a values-only loop.");
+            Check(loop.Body.Count == 1 && loop.Body[0] is IfStatement,
+                "The dictionary-values loop body should parse normally.");
+
+            ExpectSyntaxError(
+                "label dict_values_two_names:\n" +
+                "    for key, value in settings.values():\n" +
+                "        pass\n",
+                "accepts only one loop variable");
+            ExpectSyntaxError(
+                "label dict_values_items_mismatch:\n" +
+                "    for value in settings.items():\n" +
+                "        pass\n",
+                "requires 'for key, value");
+
+            const string sourcePath = "dictionary-values-runtime-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var settings = new Dictionary<string, object>
+            {
+                { "alpha", 2f },
+                { "beta", 4f }
+            };
+            context.SetVariable("settings", new SimpleExpressionEngine.DataValue((object)settings));
+
+            RenPyParser.Line preparation;
+            Check(VariableIndexExpressionLine.TryCreateForEachPreparationLine(
+                    "settings", "_stage20_values", false, true, sourcePath, 22, out preparation),
+                "The runtime should create a dictionary-values preparation line.");
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
+
+            object preparedValue;
+            Check(GameBridge.TryGetLastTestLiteral("_stage20_values", out preparedValue) &&
+                    preparedValue is List<object>,
+                "Dictionary.values() should snapshot values into an iterable list.");
+            var prepared = (List<object>)preparedValue;
+            Check(prepared.Count == 2 && prepared.Contains(2f) && prepared.Contains(4f),
+                "The values snapshot should contain every dictionary value exactly once.");
+            context.SetVariable("_stage20_values",
+                new SimpleExpressionEngine.DataValue((object)prepared));
+
+            RenPyParser.Line itemLine;
+            Check(VariableIndexExpressionLine.TryCreateForEachItemLine(
+                    "value", "_stage20_values", "_stage20_index", "_stage20_gate",
+                    sourcePath, 23, out itemLine),
+                "The runtime should create a single-value assignment line.");
+            context.SetVariable("_stage20_index", new SimpleExpressionEngine.DataValue(0f));
+            ((RenPyParser.Images.IApply)itemLine).Apply(context);
+            object observedValue;
+            Check(GameBridge.TryGetLastTestLiteral("value", out observedValue) &&
+                    Equals(observedValue, prepared[0]),
+                "The first iteration should assign the first snapshotted value.");
+
+            context.SetVariable("_stage20_index", new SimpleExpressionEngine.DataValue(1f));
+            ((RenPyParser.Images.IApply)itemLine).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("value", out observedValue) &&
+                    Equals(observedValue, prepared[1]),
+                "The second iteration should assign the next snapshotted value.");
         }
 
         private static void TestForRangeIteration()

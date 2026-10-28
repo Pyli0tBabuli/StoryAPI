@@ -2593,18 +2593,30 @@ namespace StoryAPI.Runtime
             string sourcePath, int sourceLine, out Line line)
         {
             return TryCreateForEachPreparationLine(
-                sourceName, destinationName, false, sourcePath, sourceLine, out line);
+                sourceName, destinationName, false, false, sourcePath, sourceLine, out line);
+        }
+
+        // Backwards-compatible overload: true means dictionary.items() key/value pairs.
+        public static bool TryCreateForEachPreparationLine(string sourceName, string destinationName,
+            bool includeDictionaryItems, string sourcePath, int sourceLine, out Line line)
+        {
+            return TryCreateForEachPreparationLine(
+                sourceName, destinationName, includeDictionaryItems, false,
+                sourcePath, sourceLine, out line);
         }
 
         public static bool TryCreateForEachPreparationLine(string sourceName, string destinationName,
-            bool includeDictionaryValues, string sourcePath, int sourceLine, out Line line)
+            bool includeDictionaryItems, bool dictionaryValuesOnly,
+            string sourcePath, int sourceLine, out Line line)
         {
             line = null;
-            if (!IsSimpleIdentifier(sourceName) || !IsSimpleIdentifier(destinationName))
+            if (!IsSimpleIdentifier(sourceName) || !IsSimpleIdentifier(destinationName) ||
+                (includeDictionaryItems && dictionaryValuesOnly))
                 return false;
 
             line = new ForEachPreparationLine(
-                sourceName, destinationName, includeDictionaryValues, sourcePath, sourceLine);
+                sourceName, destinationName, includeDictionaryItems, dictionaryValuesOnly,
+                sourcePath, sourceLine);
             return true;
         }
 
@@ -2649,16 +2661,19 @@ namespace StoryAPI.Runtime
         {
             private readonly string _sourceName;
             private readonly string _destinationName;
-            private readonly bool _includeDictionaryValues;
+            private readonly bool _includeDictionaryItems;
+            private readonly bool _dictionaryValuesOnly;
             private readonly string _sourcePath;
             private readonly int _sourceLine;
 
             public ForEachPreparationLine(string sourceName, string destinationName,
-                bool includeDictionaryValues, string sourcePath, int sourceLine)
+                bool includeDictionaryItems, bool dictionaryValuesOnly,
+                string sourcePath, int sourceLine)
             {
                 _sourceName = sourceName;
                 _destinationName = destinationName;
-                _includeDictionaryValues = includeDictionaryValues;
+                _includeDictionaryItems = includeDictionaryItems;
+                _dictionaryValuesOnly = dictionaryValuesOnly;
                 _sourcePath = sourcePath;
                 _sourceLine = sourceLine;
             }
@@ -2674,12 +2689,12 @@ namespace StoryAPI.Runtime
                             "' is not an object-backed list or dictionary");
 
                     object iterationItems;
-                    if (_includeDictionaryValues)
+                    if (_includeDictionaryItems)
                     {
                         if (!(source is IDictionary entryDictionary))
                             throw new InvalidOperationException(
                                 "dictionary.items() requires a dictionary source");
-                        
+
                         // Snapshot pairs so dictionary edits within the loop do not invalidate
                         // iteration. Each internal item is a two-slot object array; it is never
                         // exposed as a Ren'Py scalar and is unpacked by ForEachItemLine.
@@ -2687,6 +2702,19 @@ namespace StoryAPI.Runtime
                         foreach (object key in entryDictionary.Keys)
                             entries.Add(new object[] { key, entryDictionary[key] });
                         iterationItems = entries;
+                    }
+                    else if (_dictionaryValuesOnly)
+                    {
+                        if (!(source is IDictionary valuesDictionary))
+                            throw new InvalidOperationException(
+                                "dictionary.values() requires a dictionary source");
+
+                        // Snapshot values so dictionary edits inside the loop don't alter the
+                        // active sequence. The original objects are preserved in the snapshot.
+                        var values = new List<object>();
+                        foreach (object value in valuesDictionary.Values)
+                            values.Add(value);
+                        iterationItems = values;
                     }
                     else if (source is IList items)
                     {

@@ -317,6 +317,7 @@ namespace StoryAPI.Scripting
         public string ValueVariable { get; set; }
         public string Collection { get; set; }
         public bool IsDictionaryItems { get; set; }
+        public bool IsDictionaryValues { get; set; }
         public bool IsRange { get; set; }
         public string RangeStart { get; set; }
         public string RangeStop { get; set; }

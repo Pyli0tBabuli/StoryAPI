@@ -1038,6 +1038,54 @@ namespace StoryAPI.Runtime
         }
 
         /// <summary>
+        /// Recognizes assignment from dictionary.copy(). The copy is shallow and requires a
+        /// simple destination/root variable with no method arguments.
+        /// </summary>
+        public static bool TryCreateDictionaryCopyLine(string code, string sourcePath,
+            int sourceLine, out Line line)
+        {
+            line = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int destinationStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string destinationName = code.Substring(destinationStart, cursor - destinationStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '=' ||
+                (cursor < code.Length && code[cursor] == '=')) return false;
+            SkipWhitespace(code, ref cursor);
+
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int rootStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string rootName = code.Substring(rootStart, cursor - rootStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '.') return false;
+            SkipWhitespace(code, ref cursor);
+            const string methodName = "copy";
+            if (cursor + methodName.Length > code.Length ||
+                string.Compare(code, cursor, methodName, 0, methodName.Length,
+                    StringComparison.Ordinal) != 0) return false;
+            cursor += methodName.Length;
+            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '(') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != ')') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor != code.Length) return false;
+
+            line = new DictionaryCopyLine(destinationName, rootName, sourcePath, sourceLine);
+            return true;
+        }
+
+        /// <summary>
         /// Recognizes assignment from dictionary.setdefault("key"[, literalDefault]).
         /// This supported subset returns the existing value, or inserts and returns the
         /// literal default (None when omitted) if the key does not yet exist.
@@ -2315,6 +2363,64 @@ namespace StoryAPI.Runtime
                     Log.Warn("Could not evaluate None comparison for '" + _variableName +
                         "' at " + _sourcePath + ":" + _sourceLine + ": " +
                         e.GetBaseException().Message);
+                }
+            }
+        }
+
+        private sealed class DictionaryCopyLine : Line, IApply
+        {
+            private readonly string _destinationName;
+            private readonly string _rootName;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public DictionaryCopyLine(string destinationName, string rootName,
+                string sourcePath, int sourceLine)
+            {
+                _destinationName = destinationName;
+                _rootName = rootName;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object source) ||
+                        !(source is IDictionary sourceDictionary))
+                        throw new InvalidOperationException("dict.copy() requires a dictionary target");
+
+                    IDictionary copy = null;
+                    try
+                    {
+                        copy = Activator.CreateInstance(source.GetType()) as IDictionary;
+                    }
+                    catch
+                    {
+                        // A fallback dictionary is used when the runtime dictionary type
+                        // does not expose a public parameterless constructor.
+                    }
+
+                    if (copy == null || copy.IsReadOnly || copy.IsFixedSize)
+                        copy = new Hashtable();
+
+                    foreach (DictionaryEntry entry in sourceDictionary)
+                        copy.Add(entry.Key, entry.Value);
+
+                    if (!GameBridge.TrySetVariableLiteral(_destinationName, copy, false, context))
+                        throw new InvalidOperationException(
+                            "could not assign dict.copy() result to '" + _destinationName + "'");
+
+                    Log.Info("Applied dict.copy on '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not apply dict.copy on '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " + e.GetBaseException().Message);
                 }
             }
         }

@@ -848,6 +848,112 @@ namespace StoryAPI.Runtime
         }
 
         /// <summary>
+        /// Recognizes assignment from dictionary.get("key") or dictionary.get("key", literalDefault).
+        /// Keys and defaults are deliberately limited to quoted string keys and scalar literals.
+        /// </summary>
+        public static bool TryCreateDictionaryGetLine(string code, string sourcePath,
+            int sourceLine, out Line line)
+        {
+            line = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int destinationStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string destinationName = code.Substring(destinationStart, cursor - destinationStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '=' ||
+                (cursor < code.Length && code[cursor] == '=')) return false;
+            SkipWhitespace(code, ref cursor);
+
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int rootStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string rootName = code.Substring(rootStart, cursor - rootStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '.') return false;
+            SkipWhitespace(code, ref cursor);
+            const string methodName = "get";
+            if (cursor + methodName.Length > code.Length ||
+                string.Compare(code, cursor, methodName, 0, methodName.Length,
+                    StringComparison.Ordinal) != 0) return false;
+            cursor += methodName.Length;
+            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '(') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || (code[cursor] != '"' && code[cursor] != '\'')) return false;
+
+            string key;
+            if (!TryReadString(code, ref cursor, out key)) return false;
+            SkipWhitespace(code, ref cursor);
+
+            bool hasDefault = false;
+            object defaultValue = null;
+            if (cursor < code.Length && code[cursor] == ',')
+            {
+                cursor++;
+                SkipWhitespace(code, ref cursor);
+                if (!TryReadDictionaryGetDefault(code, ref cursor, out defaultValue))
+                    return false;
+                hasDefault = true;
+                SkipWhitespace(code, ref cursor);
+            }
+
+            if (cursor >= code.Length || code[cursor++] != ')') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor != code.Length) return false;
+
+            line = new DictionaryGetLine(destinationName, rootName, key, hasDefault,
+                defaultValue, sourcePath, sourceLine);
+            return true;
+        }
+
+        private static bool TryReadDictionaryGetDefault(string code, ref int cursor,
+            out object value)
+        {
+            value = null;
+            if (cursor >= code.Length) return false;
+
+            if (code[cursor] == '"' || code[cursor] == '\'')
+            {
+                string stringValue;
+                if (!TryReadString(code, ref cursor, out stringValue)) return false;
+                value = stringValue;
+                return true;
+            }
+
+            int start = cursor;
+            while (cursor < code.Length && code[cursor] != ')') cursor++;
+            string literal = code.Substring(start, cursor - start).Trim();
+            if (literal == "True") { value = true; return true; }
+            if (literal == "False") { value = false; return true; }
+            if (literal == "None") { value = null; return true; }
+
+            int integer;
+            if (int.TryParse(literal, NumberStyles.Integer, CultureInfo.InvariantCulture, out integer))
+            {
+                value = (float)integer;
+                return true;
+            }
+
+            float number;
+            if (float.TryParse(literal, NumberStyles.Float, CultureInfo.InvariantCulture, out number) &&
+                !float.IsNaN(number) && !float.IsInfinity(number))
+            {
+                value = number;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Recognizes dictionary.pop("key"), optionally assigning the removed value to a
         /// simple variable. Keys must be quoted string literals in this supported subset.
         /// </summary>
@@ -1967,6 +2073,56 @@ namespace StoryAPI.Runtime
                     Log.Warn("Could not apply dict.update on '" + _targetName + "' using '" +
                         _sourceName + "' at " + _sourcePath + ":" + _sourceLine + ": " +
                         e.GetBaseException().Message);
+                }
+            }
+        }
+
+        private sealed class DictionaryGetLine : Line, IApply
+        {
+            private readonly string _destinationName;
+            private readonly string _rootName;
+            private readonly string _key;
+            private readonly bool _hasDefault;
+            private readonly object _defaultValue;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public DictionaryGetLine(string destinationName, string rootName, string key,
+                bool hasDefault, object defaultValue, string sourcePath, int sourceLine)
+            {
+                _destinationName = destinationName;
+                _rootName = rootName;
+                _key = key;
+                _hasDefault = hasDefault;
+                _defaultValue = defaultValue;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object source) ||
+                        !(source is IDictionary dictionary))
+                        throw new InvalidOperationException("dict.get() requires a dictionary target");
+
+                    object value = dictionary.Contains(_key)
+                        ? dictionary[_key]
+                        : (_hasDefault ? _defaultValue : null);
+                    if (!GameBridge.TrySetVariableLiteral(_destinationName, value, false, context))
+                        throw new InvalidOperationException(
+                            "could not assign dict.get() result to '" + _destinationName + "'");
+
+                    Log.Info("Applied dict.get on '" + _rootName + "' for key '" + _key +
+                        "' at " + _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not apply dict.get on '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " + e.GetBaseException().Message);
                 }
             }
         }

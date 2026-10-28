@@ -456,6 +456,14 @@ namespace StoryAPI.Runtime
                 sourcePath, sourceLine, out lengthLines, out lengthExpression);
 
             string expressionToRewrite = hasLength ? lengthExpression : expressionAfterMembership;
+            List<Line> noneComparisonLines;
+            string expressionWithNoneComparisons;
+            bool hasNoneComparisons = TryRewriteNoneComparisons(expressionToRewrite,
+                temporaryPrefix, sourcePath, sourceLine, out noneComparisonLines,
+                out expressionWithNoneComparisons);
+            if (hasNoneComparisons)
+                expressionToRewrite = expressionWithNoneComparisons;
+
             string rewrittenExpression;
             string noneVariableName;
             string expressionWithNone;
@@ -469,7 +477,8 @@ namespace StoryAPI.Runtime
             bool hasIndexReads = TryRewriteExpression(expressionToRewrite, temporaryPrefix,
                 out rewrittenExpression, out indexReads, out dynamicIndexes);
 
-            if (!hasMembership && !hasLength && !hasIndexReads && !hasNoneLiteral)
+            if (!hasMembership && !hasLength && !hasIndexReads &&
+                !hasNoneLiteral && !hasNoneComparisons)
                 return false;
 
             if (!hasIndexReads)
@@ -491,6 +500,8 @@ namespace StoryAPI.Runtime
                 result.AddRange(membershipLines);
             if (hasLength)
                 result.AddRange(lengthLines);
+            if (hasNoneComparisons)
+                result.AddRange(noneComparisonLines);
 
             foreach (KeyValuePair<string, string> dynamicIndex in dynamicIndexes)
             {
@@ -515,6 +526,69 @@ namespace StoryAPI.Runtime
 
             preparatoryLines = result;
             preparedCondition = gateName + " and (" + rewrittenExpression + ")";
+            return true;
+        }
+
+        /// <summary>
+        /// Rewrites simple variable/None comparisons to a dedicated runtime instruction.
+        /// The game's scalar evaluator does not reliably compare Unknown DataValue instances,
+        /// even when both represent Python None, so evaluate this one case against the actual
+        /// DataValue representation and expose the result as an ordinary boolean temporary.
+        /// </summary>
+        private static bool TryRewriteNoneComparisons(string expression, string temporaryPrefix,
+            string sourcePath, int sourceLine, out List<Line> preparatoryLines,
+            out string rewrittenExpression)
+        {
+            preparatoryLines = new List<Line>();
+            rewrittenExpression = expression;
+            if (string.IsNullOrWhiteSpace(expression)) return false;
+
+            var pattern = new Regex(
+                @"(?<![A-Za-z0-9_.])(?:(?<left>[A-Za-z_][A-Za-z0-9_]*)\\s*(?<op>==|!=)\\s*None|None\\s*(?<reverseOp>==|!=)\\s*(?<right>[A-Za-z_][A-Za-z0-9_]*))(?![A-Za-z0-9_])",
+                RegexOptions.Compiled);
+            MatchCollection matches = pattern.Matches(expression);
+            var replacements = new List<Tuple<int, int, string>>();
+            var lines = new List<Line>();
+            int comparisonIndex = 0;
+
+            foreach (Match match in matches)
+            {
+                if (!IsOutsideStringAt(expression, match.Index))
+                    continue;
+
+                string variableName = match.Groups["left"].Success
+                    ? match.Groups["left"].Value
+                    : match.Groups["right"].Value;
+                if (string.Equals(variableName, "None", StringComparison.Ordinal))
+                    continue;
+
+                string operatorText = match.Groups["left"].Success
+                    ? match.Groups["op"].Value
+                    : match.Groups["reverseOp"].Value;
+                string resultName = temporaryPrefix + "_none_compare_" +
+                    comparisonIndex.ToString(CultureInfo.InvariantCulture);
+
+                lines.Add(new NoneComparisonLine(variableName, resultName,
+                    operatorText == "!=", sourcePath, sourceLine));
+                replacements.Add(Tuple.Create(match.Index, match.Length, resultName));
+                comparisonIndex++;
+            }
+
+            if (replacements.Count == 0)
+                return false;
+
+            var builder = new StringBuilder(expression.Length + 32);
+            int cursor = 0;
+            foreach (Tuple<int, int, string> replacement in replacements)
+            {
+                builder.Append(expression, cursor, replacement.Item1 - cursor);
+                builder.Append(replacement.Item3);
+                cursor = replacement.Item1 + replacement.Item2;
+            }
+            builder.Append(expression, cursor, expression.Length - cursor);
+
+            preparatoryLines = lines;
+            rewrittenExpression = builder.ToString();
             return true;
         }
 
@@ -2121,6 +2195,57 @@ namespace StoryAPI.Runtime
                 {
                     Log.Warn("Could not apply dict.update on '" + _targetName + "' using '" +
                         _sourceName + "' at " + _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+        }
+
+        private sealed class NoneComparisonLine : Line, IApply
+        {
+            private readonly string _variableName;
+            private readonly string _resultName;
+            private readonly bool _notEqual;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public NoneComparisonLine(string variableName, string resultName, bool notEqual,
+                string sourcePath, int sourceLine)
+            {
+                _variableName = variableName;
+                _resultName = resultName;
+                _notEqual = notEqual;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                if (context == null)
+                {
+                    Log.Warn("Could not evaluate None comparison for '" + _variableName +
+                        "' at " + _sourcePath + ":" + _sourceLine + ": no live context.");
+                    return;
+                }
+
+                try
+                {
+                    DataValue value;
+                    bool resolved = context.ResolveVariable(_variableName, out value);
+                    // Unknown is the engine's default DataValue representation for Python None.
+                    // ValueType.Equals compares the discriminator and backing fields together.
+                    bool isNone = resolved && object.Equals(value, default(DataValue));
+                    bool result = resolved && (_notEqual ? !isNone : isNone);
+
+                    if (!GameBridge.TrySetVariableLiteral(_resultName, result, false, context))
+                        throw new InvalidOperationException("could not assign boolean result");
+
+                    Log.Info("Evaluated None comparison for '" + _variableName + "' at " +
+                        _sourcePath + ":" + _sourceLine + " as " + result + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not evaluate None comparison for '" + _variableName +
+                        "' at " + _sourcePath + ":" + _sourceLine + ": " +
                         e.GetBaseException().Message);
                 }
             }

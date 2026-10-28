@@ -566,7 +566,7 @@ namespace StoryAPI.Tests
                     "inventory[0] %= 4", moduloPrefix, sourcePath, 15, 150, out lines),
                 "A list index %= assignment should be recognized.");
             Check(lines.OfType<RenpyParser.RenpyOneLinePython>().Any(x =>
-                    x.Code == "$ " + moduloPrefix + "_value = (4)"),
+                    x.Code == "$ " + moduloPrefix + "_value = 4"),
                 "The indexed %= assignment should evaluate the RHS without using native modulo.");
             inventory[0] = 18f;
             context.SetVariable(moduloPrefix + "_value", new SimpleExpressionEngine.DataValue(4f));
@@ -579,7 +579,7 @@ namespace StoryAPI.Tests
                     "settings[\"count\"] %= 4", dictionaryModuloPrefix, sourcePath, 16, 160, out lines),
                 "A dictionary value %= assignment should be recognized.");
             Check(lines.OfType<RenpyParser.RenpyOneLinePython>().Any(x =>
-                    x.Code == "$ " + dictionaryModuloPrefix + "_value = (4)"),
+                    x.Code == "$ " + dictionaryModuloPrefix + "_value = 4"),
                 "The dictionary %= assignment should evaluate its RHS without native modulo.");
             settings["count"] = 10f;
             context.SetVariable(dictionaryModuloPrefix + "_value",

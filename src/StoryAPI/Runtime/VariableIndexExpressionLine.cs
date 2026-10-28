@@ -456,13 +456,29 @@ namespace StoryAPI.Runtime
                 sourcePath, sourceLine, out lengthLines, out lengthExpression);
 
             string expressionToRewrite = hasLength ? lengthExpression : expressionAfterMembership;
+            List<Line> noneComparisonLines;
+            string expressionWithNoneComparisons;
+            bool hasNoneComparisons = TryRewriteNoneComparisons(expressionToRewrite,
+                temporaryPrefix, sourcePath, sourceLine, out noneComparisonLines,
+                out expressionWithNoneComparisons);
+            if (hasNoneComparisons)
+                expressionToRewrite = expressionWithNoneComparisons;
+
             string rewrittenExpression;
+            string noneVariableName;
+            string expressionWithNone;
+            bool hasNoneLiteral = TryRewriteNoneLiteral(expressionToRewrite, temporaryPrefix,
+                out expressionWithNone, out noneVariableName);
+            if (hasNoneLiteral)
+                expressionToRewrite = expressionWithNone;
+
             List<KeyValuePair<string, string>> indexReads;
             List<KeyValuePair<string, string>> dynamicIndexes;
             bool hasIndexReads = TryRewriteExpression(expressionToRewrite, temporaryPrefix,
                 out rewrittenExpression, out indexReads, out dynamicIndexes);
 
-            if (!hasMembership && !hasLength && !hasIndexReads)
+            if (!hasMembership && !hasLength && !hasIndexReads &&
+                !hasNoneLiteral && !hasNoneComparisons)
                 return false;
 
             if (!hasIndexReads)
@@ -478,10 +494,14 @@ namespace StoryAPI.Runtime
                 new RenpyOneLinePython("$ " + gateName + " = True")
             };
 
+            if (hasNoneLiteral)
+                result.Add(new RenpyOneLinePython("$ " + noneVariableName + " = None"));
             if (hasMembership)
                 result.AddRange(membershipLines);
             if (hasLength)
                 result.AddRange(lengthLines);
+            if (hasNoneComparisons)
+                result.AddRange(noneComparisonLines);
 
             foreach (KeyValuePair<string, string> dynamicIndex in dynamicIndexes)
             {
@@ -506,6 +526,109 @@ namespace StoryAPI.Runtime
 
             preparatoryLines = result;
             preparedCondition = gateName + " and (" + rewrittenExpression + ")";
+            return true;
+        }
+
+        /// <summary>
+        /// Rewrites simple variable/None comparisons to a dedicated runtime instruction.
+        /// The game's scalar evaluator does not reliably compare Unknown DataValue instances,
+        /// even when both represent Python None, so evaluate this one case against the actual
+        /// DataValue representation and expose the result as an ordinary boolean temporary.
+        /// </summary>
+        private static bool TryRewriteNoneComparisons(string expression, string temporaryPrefix,
+            string sourcePath, int sourceLine, out List<Line> preparatoryLines,
+            out string rewrittenExpression)
+        {
+            preparatoryLines = new List<Line>();
+            rewrittenExpression = expression;
+            if (string.IsNullOrWhiteSpace(expression)) return false;
+
+            var pattern = new Regex(
+                @"(?<![A-Za-z0-9_.])(?:(?<left>[A-Za-z_][A-Za-z0-9_]*)\s*(?<op>==|!=)\s*None|None\s*(?<reverseOp>==|!=)\s*(?<right>[A-Za-z_][A-Za-z0-9_]*))(?![A-Za-z0-9_])",
+                RegexOptions.Compiled);
+            MatchCollection matches = pattern.Matches(expression);
+            var replacements = new List<Tuple<int, int, string>>();
+            var lines = new List<Line>();
+            int comparisonIndex = 0;
+
+            foreach (Match match in matches)
+            {
+                if (!IsOutsideStringAt(expression, match.Index))
+                    continue;
+
+                string variableName = match.Groups["left"].Success
+                    ? match.Groups["left"].Value
+                    : match.Groups["right"].Value;
+                if (string.Equals(variableName, "None", StringComparison.Ordinal))
+                    continue;
+
+                string operatorText = match.Groups["left"].Success
+                    ? match.Groups["op"].Value
+                    : match.Groups["reverseOp"].Value;
+                string resultName = temporaryPrefix + "_none_compare_" +
+                    comparisonIndex.ToString(CultureInfo.InvariantCulture);
+
+                lines.Add(new NoneComparisonLine(variableName, resultName,
+                    operatorText == "!=", sourcePath, sourceLine));
+                replacements.Add(Tuple.Create(match.Index, match.Length, resultName));
+                comparisonIndex++;
+            }
+
+            if (replacements.Count == 0)
+                return false;
+
+            var builder = new StringBuilder(expression.Length + 32);
+            int cursor = 0;
+            foreach (Tuple<int, int, string> replacement in replacements)
+            {
+                builder.Append(expression, cursor, replacement.Item1 - cursor);
+                builder.Append(replacement.Item3);
+                cursor = replacement.Item1 + replacement.Item2;
+            }
+            builder.Append(expression, cursor, expression.Length - cursor);
+
+            preparatoryLines = lines;
+            rewrittenExpression = builder.ToString();
+            return true;
+        }
+
+        /// <summary>
+        /// Rewrites the Python None literal in a condition to a temporary variable.
+        /// The game condition evaluator may treat "None" as a variable name, while the
+        /// native one-line Python assignment can materialize the actual None value.
+        /// Identical text inside string literals is left untouched.
+        /// </summary>
+        private static bool TryRewriteNoneLiteral(string expression, string temporaryPrefix,
+            out string rewrittenExpression, out string noneVariableName)
+        {
+            rewrittenExpression = expression;
+            noneVariableName = null;
+            if (string.IsNullOrWhiteSpace(expression)) return false;
+
+            var pattern = new Regex(@"(?<![A-Za-z0-9_.])None(?![A-Za-z0-9_])",
+                RegexOptions.Compiled);
+            MatchCollection matches = pattern.Matches(expression);
+            var replacements = new List<Tuple<int, int, string>>();
+            foreach (Match match in matches)
+            {
+                if (IsOutsideStringAt(expression, match.Index))
+                    replacements.Add(Tuple.Create(match.Index, match.Length, string.Empty));
+            }
+
+            if (replacements.Count == 0) return false;
+
+            noneVariableName = temporaryPrefix + "_none_reference";
+            var builder = new StringBuilder();
+            int cursor = 0;
+            foreach (Tuple<int, int, string> replacement in replacements)
+            {
+                builder.Append(expression, cursor, replacement.Item1 - cursor);
+                builder.Append(noneVariableName);
+                cursor = replacement.Item1 + replacement.Item2;
+            }
+
+            builder.Append(expression, cursor, expression.Length - cursor);
+            rewrittenExpression = builder.ToString();
             return true;
         }
 
@@ -845,6 +968,112 @@ namespace StoryAPI.Runtime
 
             line = new DictionaryUpdateLine(targetName, sourceName, sourcePath, sourceLine);
             return true;
+        }
+
+        /// <summary>
+        /// Recognizes assignment from dictionary.get("key") or dictionary.get("key", literalDefault).
+        /// Keys and defaults are deliberately limited to quoted string keys and scalar literals.
+        /// </summary>
+        public static bool TryCreateDictionaryGetLine(string code, string sourcePath,
+            int sourceLine, out Line line)
+        {
+            line = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int destinationStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string destinationName = code.Substring(destinationStart, cursor - destinationStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '=' ||
+                (cursor < code.Length && code[cursor] == '=')) return false;
+            SkipWhitespace(code, ref cursor);
+
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int rootStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string rootName = code.Substring(rootStart, cursor - rootStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '.') return false;
+            SkipWhitespace(code, ref cursor);
+            const string methodName = "get";
+            if (cursor + methodName.Length > code.Length ||
+                string.Compare(code, cursor, methodName, 0, methodName.Length,
+                    StringComparison.Ordinal) != 0) return false;
+            cursor += methodName.Length;
+            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '(') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || (code[cursor] != '"' && code[cursor] != '\'')) return false;
+
+            string key;
+            if (!TryReadString(code, ref cursor, out key)) return false;
+            SkipWhitespace(code, ref cursor);
+
+            bool hasDefault = false;
+            object defaultValue = null;
+            if (cursor < code.Length && code[cursor] == ',')
+            {
+                cursor++;
+                SkipWhitespace(code, ref cursor);
+                if (!TryReadDictionaryGetDefault(code, ref cursor, out defaultValue))
+                    return false;
+                hasDefault = true;
+                SkipWhitespace(code, ref cursor);
+            }
+
+            if (cursor >= code.Length || code[cursor++] != ')') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor != code.Length) return false;
+
+            line = new DictionaryGetLine(destinationName, rootName, key, hasDefault,
+                defaultValue, sourcePath, sourceLine);
+            return true;
+        }
+
+        private static bool TryReadDictionaryGetDefault(string code, ref int cursor,
+            out object value)
+        {
+            value = null;
+            if (cursor >= code.Length) return false;
+
+            if (code[cursor] == '"' || code[cursor] == '\'')
+            {
+                string stringValue;
+                if (!TryReadString(code, ref cursor, out stringValue)) return false;
+                value = stringValue;
+                return true;
+            }
+
+            int start = cursor;
+            while (cursor < code.Length && code[cursor] != ')') cursor++;
+            string literal = code.Substring(start, cursor - start).Trim();
+            if (literal == "True") { value = true; return true; }
+            if (literal == "False") { value = false; return true; }
+            if (literal == "None") { value = null; return true; }
+
+            int integer;
+            if (int.TryParse(literal, NumberStyles.Integer, CultureInfo.InvariantCulture, out integer))
+            {
+                value = (float)integer;
+                return true;
+            }
+
+            float number;
+            if (float.TryParse(literal, NumberStyles.Float, CultureInfo.InvariantCulture, out number) &&
+                !float.IsNaN(number) && !float.IsInfinity(number))
+            {
+                value = number;
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -1967,6 +2196,107 @@ namespace StoryAPI.Runtime
                     Log.Warn("Could not apply dict.update on '" + _targetName + "' using '" +
                         _sourceName + "' at " + _sourcePath + ":" + _sourceLine + ": " +
                         e.GetBaseException().Message);
+                }
+            }
+        }
+
+        private sealed class NoneComparisonLine : Line, IApply
+        {
+            private readonly string _variableName;
+            private readonly string _resultName;
+            private readonly bool _notEqual;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public NoneComparisonLine(string variableName, string resultName, bool notEqual,
+                string sourcePath, int sourceLine)
+            {
+                _variableName = variableName;
+                _resultName = resultName;
+                _notEqual = notEqual;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                if (context == null)
+                {
+                    Log.Warn("Could not evaluate None comparison for '" + _variableName +
+                        "' at " + _sourcePath + ":" + _sourceLine + ": no live context.");
+                    return;
+                }
+
+                try
+                {
+                    DataValue value;
+                    bool resolved = context.ResolveVariable(_variableName, out value);
+                    // Unknown is the engine's default DataValue representation for Python None.
+                    // ValueType.Equals compares the discriminator and backing fields together.
+                    bool isNone = resolved && object.Equals(value, default(DataValue));
+                    bool result = resolved && (_notEqual ? !isNone : isNone);
+
+                    if (!GameBridge.TrySetVariableLiteral(_resultName, result, false, context))
+                        throw new InvalidOperationException("could not assign boolean result");
+
+                    Log.Info("Evaluated None comparison for '" + _variableName + "' at " +
+                        _sourcePath + ":" + _sourceLine + " as " + result + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not evaluate None comparison for '" + _variableName +
+                        "' at " + _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+        }
+
+        private sealed class DictionaryGetLine : Line, IApply
+        {
+            private readonly string _destinationName;
+            private readonly string _rootName;
+            private readonly string _key;
+            private readonly bool _hasDefault;
+            private readonly object _defaultValue;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public DictionaryGetLine(string destinationName, string rootName, string key,
+                bool hasDefault, object defaultValue, string sourcePath, int sourceLine)
+            {
+                _destinationName = destinationName;
+                _rootName = rootName;
+                _key = key;
+                _hasDefault = hasDefault;
+                _defaultValue = defaultValue;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object source) ||
+                        !(source is IDictionary dictionary))
+                        throw new InvalidOperationException("dict.get() requires a dictionary target");
+
+                    object value = dictionary.Contains(_key)
+                        ? dictionary[_key]
+                        : (_hasDefault ? _defaultValue : null);
+                    if (!GameBridge.TrySetVariableLiteral(_destinationName, value, false, context))
+                        throw new InvalidOperationException(
+                            "could not assign dict.get() result to '" + _destinationName + "'");
+
+                    Log.Info("Applied dict.get on '" + _rootName + "' for key '" + _key +
+                        "' at " + _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not apply dict.get on '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " + e.GetBaseException().Message);
                 }
             }
         }

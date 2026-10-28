@@ -4093,7 +4093,53 @@ namespace StoryAPI.Game
 
             DataValue value;
             if (!TryConvertDataValue(literal, out value)) return false;
-            return TrySetContextVariable(context, name, value);
+
+            bool assigned = TrySetContextVariable(context, name, value);
+            if (literal == null)
+            {
+                string resolvedDescription = "<unresolved>";
+                try
+                {
+                    if (context.ResolveVariable(name, out DataValue resolved))
+                        resolvedDescription = DescribeDataValue(resolved);
+                }
+                catch (Exception e)
+                {
+                    resolvedDescription = "<resolve failed: " + e.GetBaseException().Message + ">";
+                }
+
+                Log.LogInfo("[StoryAPI] Null assignment diagnostic for '" + name +
+                    "': converted=" + DescribeDataValue(value) +
+                    "; defaultDataValue=" + DescribeDataValue(default(DataValue)) +
+                    "; assigned=" + assigned +
+                    "; resolved=" + resolvedDescription);
+            }
+
+            return assigned;
+        }
+
+        private static string DescribeDataValue(DataValue value)
+        {
+            try
+            {
+                var fields = new List<string>();
+                foreach (FieldInfo field in typeof(DataValue).GetFields(Instance))
+                {
+                    object fieldValue = field.GetValue(value);
+                    string formatted = fieldValue == null
+                        ? "<null>"
+                        : fieldValue + " [" + fieldValue.GetType().FullName + "]";
+                    fields.Add(field.Name + "=" + formatted);
+                }
+
+                return fields.Count == 0
+                    ? value.ToString()
+                    : string.Join(", ", fields);
+            }
+            catch (Exception e)
+            {
+                return "<DataValue diagnostic failed: " + e.GetBaseException().Message + ">";
+            }
         }
 
         /// <summary>
@@ -4164,6 +4210,17 @@ namespace StoryAPI.Game
         {
             value = default(DataValue);
             Type targetType = typeof(DataValue);
+
+            // In SimpleExpressionEngine a script-level None/null value is
+            // represented by the default DataValue (DataType.Unknown). Wrapping a
+            // null reference with DataValue(object) instead produces ObjectRef(null),
+            // which does not compare equal to a value initialized from the None literal.
+            if (source == null)
+            {
+                value = default(DataValue);
+                return true;
+            }
+
             Type sourceType = source == null ? typeof(string) : source.GetType();
 
             // Prefer an implicit conversion supplied by the game, then try a public

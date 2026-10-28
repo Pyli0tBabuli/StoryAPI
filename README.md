@@ -176,7 +176,11 @@ to insert a scalar or supported value at an index; indexes are integers, and neg
 indexes are clamped like Python's `list.insert()`. Lists also support `$ item = inventory.pop()`
 and `$ item = inventory.pop(0)`; `pop()` removes the final item by default or the item at the
 provided integer index, and can assign the removed scalar to a variable. Invalid/empty pops log
-a warning without changing the list. Dictionaries support `$ settings.update(overrides)`, which
+a warning without changing the list. Dictionaries support scalar assignment from `$ theme = settings.get("theme")` and
+`$ theme = settings.get("missing", "default")`. The key must be a quoted string; an absent key
+returns None unless a simple scalar literal default is provided. Defaults may be strings, numbers,
+`True`, `False`, or `None`; variable defaults and method calls inside expressions are not supported.
+`get()` does not mutate the dictionary. Dictionaries also support `$ settings.update(overrides)`, which
 adds missing keys and replaces values for keys already present; the argument must be a simple
 variable referring to another dictionary. Dictionaries also support `$ settings.pop("theme")`
 and `$ old_theme = settings.pop("theme")`; this removes the named key and can assign its value
@@ -197,6 +201,12 @@ Runtime `if`, `elif`, and `while` conditions also support the restricted form
 The call is resolved before the native condition is evaluated, and several length calls can
 be used in one condition or combined with indexed reads. Other function calls and nested
 forms such as `len(inventory[0])` remain unsupported.
+
+The Python `None` literal is supported in runtime `if`, `elif`, and `while` comparisons,
+for example `if optional_value == None:` and `if optional_value != None:`. Simple variable-to-`None`
+comparisons are evaluated against the runtime `DataValue` representation and rewritten to a
+boolean temporary, avoiding the game's unreliable comparison of `Unknown` values. The word
+`None` inside quoted text is left unchanged.
 
 Within a label, `while`, `for item in inventory:`, `for key in settings:`,
 `for key in settings.keys():`, `for key, value in settings.items():`, and

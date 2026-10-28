@@ -156,6 +156,14 @@ namespace StoryAPI.Scripting
                 return;
             }
 
+            Line dictionaryGetLine;
+            if (VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                python.Code, _textLabel ?? "unknown", python.Line, out dictionaryGetLine))
+            {
+                _out.Add(dictionaryGetLine);
+                return;
+            }
+
             Line dictionaryUpdateLine;
             if (VariableIndexExpressionLine.TryCreateDictionaryUpdateLine(
                 python.Code, _textLabel ?? "unknown", python.Line, out dictionaryUpdateLine))

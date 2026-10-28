@@ -1568,12 +1568,14 @@ namespace StoryAPI.Tests
             Require<SayStatement>(loop.Body[2], "Expected dialogue.");
 
             Check(VariableIndexExpressionLine.TryCreateForEachItemLine(
-                    "item", "inventory", "_for_test_index", "for-test.rpy", 2, out var itemLine),
+                    "item", "inventory", "_for_test_index", "_for_test_gate",
+                    "for-test.rpy", 2, out var itemLine),
                 "for loop should create a runtime list-item reader.");
             Check(itemLine.GetType().Name == "ForEachItemLine",
                 "for loop should emit the dedicated runtime list-item reader.");
             Check(!VariableIndexExpressionLine.TryCreateForEachItemLine(
-                    "item.value", "inventory", "_for_test_index", "for-test.rpy", 2, out var invalidLine),
+                    "item.value", "inventory", "_for_test_index", "_for_test_gate",
+                    "for-test.rpy", 2, out var invalidLine),
                 "The loop variable must be a simple identifier.");
 
             var empty = Parse(

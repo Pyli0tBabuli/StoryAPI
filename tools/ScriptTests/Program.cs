@@ -41,6 +41,7 @@ namespace StoryAPI.Tests
             Run("while and loop-control statements", TestWhileAndLoopControl);
             Run("for-list iteration and loop control", TestForListIteration);
             Run("for-dictionary key iteration", TestForDictionaryIteration);
+            Run("for-dictionary key/value iteration", TestForDictionaryItemsIteration);
             Run("range() for-loop arguments", TestForRangeIteration);
             Run("image/audio asset paths", TestAssetPaths);
             Run("comments and blank lines", TestCommentsAndBlankLines);
@@ -1638,6 +1639,90 @@ namespace StoryAPI.Tests
             Check(loop.Body.Count == 2, "Expected membership check and dialogue in dictionary loop.");
             Require<IfStatement>(loop.Body[0], "Expected dictionary membership condition.");
             Require<SayStatement>(loop.Body[1], "Expected dialogue in dictionary loop.");
+        }
+
+        private static void TestForDictionaryItemsIteration()
+        {
+            var statements = Parse(
+                "label for_dict_items_test:\n" +
+                "    for key, value in settings.items():\n" +
+                "        if value > 0:\n" +
+                "            pass\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0], "Expected dictionary-items label.");
+            var loop = Require<ForStatement>(label.Body[0], "Expected dictionary-items loop.");
+            Check(loop.Variable == "key" && loop.ValueVariable == "value",
+                "Dictionary.items() should preserve both loop variable names.");
+            Check(loop.Collection == "settings" && loop.IsDictionaryItems && !loop.IsRange,
+                "Dictionary.items() should be represented as a dictionary entry loop.");
+            Check(loop.Body.Count == 1 && loop.Body[0] is IfStatement,
+                "The dictionary-items loop body should parse normally.");
+
+            ExpectSyntaxError(
+                "label dict_items_missing_value:\n" +
+                "    for key in settings.items():\n" +
+                "        pass\n",
+                "requires 'for key, value");
+            ExpectSyntaxError(
+                "label dict_items_two_names_list:\n" +
+                "    for key, value in settings:\n" +
+                "        pass\n",
+                "require dictionary.items()");
+            ExpectSyntaxError(
+                "label dict_items_three_names:\n" +
+                "    for key, value, extra in settings.items():\n" +
+                "        pass\n",
+                "Only two loop variables");
+
+            const string sourcePath = "dictionary-items-runtime-test.rpy";
+            var context = new RenPyParser.DynamicIndexTestContext();
+            var settings = new Dictionary<string, object>
+            {
+                { "alpha", 2f },
+                { "beta", 4f }
+            };
+            context.SetVariable("settings", new SimpleExpressionEngine.DataValue((object)settings));
+
+            RenPyParser.Line preparation;
+            Check(VariableIndexExpressionLine.TryCreateForEachPreparationLine(
+                    "settings", "_stage19_items", true, sourcePath, 12, out preparation),
+                "The runtime should create a dictionary-items preparation line.");
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
+
+            object preparedValue;
+            Check(GameBridge.TryGetLastTestLiteral("_stage19_items", out preparedValue) &&
+                    preparedValue is List<object>,
+                "Dictionary-items preparation should snapshot entries into an iterable list.");
+            var prepared = (List<object>)preparedValue;
+            Check(prepared.Count == 2 &&
+                    prepared.All(item => item is object[] pair && pair.Length == 2),
+                "Each snapshot item should contain exactly one key and one value.");
+            context.SetVariable("_stage19_items",
+                new SimpleExpressionEngine.DataValue((object)prepared));
+
+            RenPyParser.Line itemLine;
+            Check(VariableIndexExpressionLine.TryCreateForEachItemLine(
+                    "key", "value", "_stage19_items", "_stage19_index", "_stage19_gate",
+                    sourcePath, 13, out itemLine),
+                "The runtime should create a key/value assignment line.");
+            context.SetVariable("_stage19_index", new SimpleExpressionEngine.DataValue(0f));
+            ((RenPyParser.Images.IApply)itemLine).Apply(context);
+            object observedKey, observedValue;
+            Check(GameBridge.TryGetLastTestLiteral("key", out observedKey) &&
+                    (string)observedKey == "alpha",
+                "The first iteration should assign the first dictionary key.");
+            Check(GameBridge.TryGetLastTestLiteral("value", out observedValue) &&
+                    Math.Abs(Convert.ToSingle(observedValue) - 2f) < 0.001f,
+                "The first iteration should assign the corresponding dictionary value.");
+
+            context.SetVariable("_stage19_index", new SimpleExpressionEngine.DataValue(1f));
+            ((RenPyParser.Images.IApply)itemLine).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("key", out observedKey) &&
+                    (string)observedKey == "beta",
+                "The second iteration should advance to the next dictionary key.");
+            Check(GameBridge.TryGetLastTestLiteral("value", out observedValue) &&
+                    Math.Abs(Convert.ToSingle(observedValue) - 4f) < 0.001f,
+                "The second iteration should assign the matching dictionary value.");
         }
 
         private static void TestForRangeIteration()

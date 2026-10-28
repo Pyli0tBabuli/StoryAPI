@@ -1037,6 +1037,74 @@ namespace StoryAPI.Runtime
             return true;
         }
 
+        /// <summary>
+        /// Recognizes assignment from dictionary.setdefault("key"[, literalDefault]).
+        /// This supported subset returns the existing value, or inserts and returns the
+        /// literal default (None when omitted) if the key does not yet exist.
+        /// </summary>
+        public static bool TryCreateDictionarySetDefaultLine(string code, string sourcePath,
+            int sourceLine, out Line line)
+        {
+            line = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int destinationStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string destinationName = code.Substring(destinationStart, cursor - destinationStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '=' ||
+                (cursor < code.Length && code[cursor] == '=')) return false;
+            SkipWhitespace(code, ref cursor);
+
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int rootStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string rootName = code.Substring(rootStart, cursor - rootStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '.') return false;
+            SkipWhitespace(code, ref cursor);
+            const string methodName = "setdefault";
+            if (cursor + methodName.Length > code.Length ||
+                string.Compare(code, cursor, methodName, 0, methodName.Length,
+                    StringComparison.Ordinal) != 0) return false;
+            cursor += methodName.Length;
+            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '(') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || (code[cursor] != '"' && code[cursor] != '\'')) return false;
+
+            string key;
+            if (!TryReadString(code, ref cursor, out key)) return false;
+            SkipWhitespace(code, ref cursor);
+
+            bool hasDefault = false;
+            object defaultValue = null;
+            if (cursor < code.Length && code[cursor] == ',')
+            {
+                cursor++;
+                SkipWhitespace(code, ref cursor);
+                if (!TryReadDictionaryGetDefault(code, ref cursor, out defaultValue))
+                    return false;
+                hasDefault = true;
+                SkipWhitespace(code, ref cursor);
+            }
+
+            if (cursor >= code.Length || code[cursor++] != ')') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor != code.Length) return false;
+
+            line = new DictionarySetDefaultLine(destinationName, rootName, key, hasDefault,
+                defaultValue, sourcePath, sourceLine);
+            return true;
+        }
+
         private static bool TryReadDictionaryGetDefault(string code, ref int cursor,
             out object value)
         {
@@ -2247,6 +2315,63 @@ namespace StoryAPI.Runtime
                     Log.Warn("Could not evaluate None comparison for '" + _variableName +
                         "' at " + _sourcePath + ":" + _sourceLine + ": " +
                         e.GetBaseException().Message);
+                }
+            }
+        }
+
+        private sealed class DictionarySetDefaultLine : Line, IApply
+        {
+            private readonly string _destinationName;
+            private readonly string _rootName;
+            private readonly string _key;
+            private readonly bool _hasDefault;
+            private readonly object _defaultValue;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public DictionarySetDefaultLine(string destinationName, string rootName, string key,
+                bool hasDefault, object defaultValue, string sourcePath, int sourceLine)
+            {
+                _destinationName = destinationName;
+                _rootName = rootName;
+                _key = key;
+                _hasDefault = hasDefault;
+                _defaultValue = defaultValue;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object source) ||
+                        !(source is IDictionary dictionary))
+                        throw new InvalidOperationException("dict.setdefault() requires a dictionary target");
+
+                    bool exists = dictionary.Contains(_key);
+                    if (!exists && (dictionary.IsReadOnly || dictionary.IsFixedSize))
+                        throw new InvalidOperationException("dict.setdefault() target is not mutable");
+
+                    object value = exists
+                        ? dictionary[_key]
+                        : (_hasDefault ? _defaultValue : null);
+                    if (!GameBridge.TrySetVariableLiteral(_destinationName, value, false, context))
+                        throw new InvalidOperationException(
+                            "could not assign dict.setdefault() result to '" + _destinationName + "'");
+
+                    if (!exists)
+                        dictionary[_key] = value;
+
+                    Log.Info("Applied dict.setdefault on '" + _rootName + "' for key '" + _key +
+                        "' at " + _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not apply dict.setdefault on '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " + e.GetBaseException().Message);
                 }
             }
         }

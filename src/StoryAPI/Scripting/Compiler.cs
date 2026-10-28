@@ -156,6 +156,14 @@ namespace StoryAPI.Scripting
                 return;
             }
 
+            Line dictionarySetDefaultLine;
+            if (VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                python.Code, _textLabel ?? "unknown", python.Line, out dictionarySetDefaultLine))
+            {
+                _out.Add(dictionarySetDefaultLine);
+                return;
+            }
+
             Line dictionaryGetLine;
             if (VariableIndexExpressionLine.TryCreateDictionaryGetLine(
                 python.Code, _textLabel ?? "unknown", python.Line, out dictionaryGetLine))

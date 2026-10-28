@@ -36,6 +36,7 @@ namespace StoryAPI.Tests
             Run("list insert and pop methods", TestListInsertAndPopMethods);
             Run("dictionary update and pop methods", TestDictionaryUpdateAndPopMethods);
             Run("dictionary get method", TestDictionaryGetMethod);
+            Run("dictionary setdefault method", TestDictionarySetDefaultMethod);
             Run("compound scalar assignments", TestCompoundScalarAssignments);
             Run("compound indexed collection assignments", TestIndexedCompoundAssignments);
             Run("if/elif/else branches", TestConditionalBranches);
@@ -1488,6 +1489,121 @@ namespace StoryAPI.Tests
                     "The second get() should parse as a Python statement.").Code ==
                     "fallback = settings.get(\"missing\", \"off\")",
                 "The parser should preserve dict.get() calls with a default.");
+        }
+
+        private static void TestDictionarySetDefaultMethod()
+        {
+            const string sourcePath = "dictionary-setdefault-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var settings = new Dictionary<string, object>
+            {
+                { "theme", "dark" },
+                { "count", 5f },
+                { "enabled", true }
+            };
+            context.SetVariable("settings",
+                new SimpleExpressionEngine.DataValue((object)settings));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                    "existing = settings.setdefault(\"theme\", \"light\")",
+                    sourcePath, 10, out line),
+                "setdefault() with a string default should be recognized.");
+            Check(line.GetType().Name == "DictionarySetDefaultLine",
+                "setdefault() should emit the dedicated setdefault instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("existing", out observed) &&
+                    Equals(observed, "dark"),
+                "setdefault() should return the existing value.");
+            Check((string)settings["theme"] == "dark" && settings.Count == 3,
+                "setdefault() must not replace or add anything when the key already exists.");
+
+            Check(VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                    "inserted = settings.setdefault(\"accent\", \"blue\")",
+                    sourcePath, 11, out line),
+                "setdefault() should accept a quoted string default.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("inserted", out observed) &&
+                    Equals(observed, "blue"),
+                "setdefault() should return the default for a missing key.");
+            Check(settings.ContainsKey("accent") && Equals(settings["accent"], "blue"),
+                "setdefault() should insert the default for a missing key.");
+
+            Check(VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                    "again = settings.setdefault(\"accent\", \"red\")",
+                    sourcePath, 12, out line),
+                "A repeated setdefault() call should be recognized.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("again", out observed) &&
+                    Equals(observed, "blue") && Equals(settings["accent"], "blue"),
+                "A repeated setdefault() must return the existing value and preserve it.");
+
+            Check(VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                    "number = settings.setdefault(\"new_count\", 7)",
+                    sourcePath, 13, out line),
+                "setdefault() should accept a numeric literal default.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("number", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 7f) < 0.001f &&
+                    Math.Abs(Convert.ToSingle(settings["new_count"]) - 7f) < 0.001f,
+                "A numeric default should be assigned and stored.");
+
+            Check(VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                    "enabled_default = settings.setdefault(\"new_enabled\", True)",
+                    sourcePath, 14, out line),
+                "setdefault() should accept a boolean literal default.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("enabled_default", out observed) &&
+                    Equals(observed, true) && Equals(settings["new_enabled"], true),
+                "A boolean default should be assigned and stored.");
+
+            Check(VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                    "no_default = settings.setdefault(\"nullable\")",
+                    sourcePath, 15, out line),
+                "setdefault() without a default should be recognized.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("no_default", out observed) && observed == null &&
+                    settings.ContainsKey("nullable") && settings["nullable"] == null,
+                "Without a default, setdefault() should insert and return None.");
+
+            Check(!VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                    "value = settings.setdefault(key_name)", sourcePath, 20, out line),
+                "setdefault() should require a quoted string key in this subset.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                    "value = settings.setdefault(\"key\", fallback)", sourcePath, 21, out line),
+                "setdefault() should reject non-literal defaults in this subset.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                    "value = settings.setdefault(\"key\", \"one\", \"two\")",
+                    sourcePath, 22, out line),
+                "setdefault() should reject more than two arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                    "value = settings[\"nested\"].setdefault(\"key\")",
+                    sourcePath, 23, out line),
+                "setdefault() should reject indexed targets.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                    "value = settings.setdefault(\"key\"); settings.clear()",
+                    sourcePath, 24, out line),
+                "setdefault() should reject multiple statements.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                    "settings.setdefault(\"theme\")", sourcePath, 25, out line),
+                "This restricted setdefault() feature must require an assignment target.");
+
+            var statements = Parse(
+                "label dictionary_setdefault_test:\n" +
+                "    $ existing = settings.setdefault(\"theme\", \"light\")\n" +
+                "    $ inserted = settings.setdefault(\"accent\", \"blue\")\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing dictionary setdefault() assignments.");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The existing-key call should parse as a Python statement.").Code ==
+                    "existing = settings.setdefault(\"theme\", \"light\")",
+                "The parser should preserve setdefault() assignments.");
+            Check(Require<PythonStatement>(label.Body[1],
+                    "The missing-key call should parse as a Python statement.").Code ==
+                    "inserted = settings.setdefault(\"accent\", \"blue\")",
+                "The parser should preserve setdefault() assignments with defaults.");
         }
 
         private static void TestListExtendMethod()

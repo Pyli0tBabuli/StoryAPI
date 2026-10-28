@@ -180,9 +180,14 @@ a warning without changing the list. Dictionaries support scalar assignment from
 `$ theme = settings.get("missing", "default")`. The key must be a quoted string; an absent key
 returns None unless a simple scalar literal default is provided. Defaults may be strings, numbers,
 `True`, `False`, or `None`; variable defaults and method calls inside expressions are not supported.
-`get()` does not mutate the dictionary. Dictionaries also support `$ settings.update(overrides)`, which
-adds missing keys and replaces values for keys already present; the argument must be a simple
-variable referring to another dictionary. Dictionaries also support `$ settings.pop("theme")`
+`get()` does not mutate the dictionary. Dictionaries also support assignment from
+`$ theme = settings.setdefault("theme", "default")` or `$ theme = settings.setdefault("theme")`.
+The key must be a quoted string; the optional default must be a scalar literal (string, number,
+`True`, `False`, or `None`). When the key exists, `setdefault()` returns its current value
+without replacing it; when absent, it inserts and returns the default, or `None` if no default
+is supplied. This restricted implementation requires an assignment target. Dictionaries also
+support `$ settings.update(overrides)`, which adds missing keys and replaces values for keys
+already present; the argument must be a simple variable referring to another dictionary. Dictionaries also support `$ settings.pop("theme")`
 and `$ old_theme = settings.pop("theme")`; this removes the named key and can assign its value
 to a variable. The key must be a quoted string literal, and a missing key logs a warning without
 changing the dictionary. Both lists and dictionaries support the no-argument method

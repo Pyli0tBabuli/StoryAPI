@@ -148,6 +148,14 @@ namespace StoryAPI.Scripting
                 return;
             }
 
+            Line reverseLine;
+            if (VariableIndexExpressionLine.TryCreateListReverseLine(
+                python.Code, _textLabel ?? "unknown", python.Line, out reverseLine))
+            {
+                _out.Add(reverseLine);
+                return;
+            }
+
             Line extendLine;
             if (VariableIndexExpressionLine.TryCreateListExtendLine(
                 python.Code, _textLabel ?? "unknown", python.Line, out extendLine))

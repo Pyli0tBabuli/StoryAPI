@@ -883,12 +883,11 @@ namespace StoryAPI.Tests
                     "optional_value != None and label == \"None\"",
                     nonePrefix, "condition-test.rpy", 10, out noIndexLines, out unchangedCondition),
                 "A Python None literal in a condition should be prepared for the game evaluator.");
-            Check(unchangedCondition == nonePrefix + "_gate and (optional_value != " +
-                    nonePrefix + "_none_reference and label == \"None\")",
-                "Only the None literal outside a string should be rewritten.");
-            Check(noIndexLines.OfType<RenpyParser.RenpyOneLinePython>().Any(line =>
-                    line.Code == "$ " + nonePrefix + "_none_reference = None"),
-                "Condition preparation should materialize None through a native Python assignment.");
+            Check(unchangedCondition == nonePrefix + "_gate and (" +
+                    nonePrefix + "_none_compare_0 and label == \"None\")",
+                "The None comparison should be rewritten, while quoted text remains unchanged.");
+            Check(noIndexLines.Any(line => line.GetType().Name == "NoneComparisonLine"),
+                "Condition preparation should emit a dedicated runtime None comparison.");
         }
 
         private static void TestListMethodMutations()

@@ -1653,7 +1653,7 @@ namespace StoryAPI.Tests
             Check(VariableIndexExpressionLine.TryCreateDictionaryCopyLine(
                     "empty_copy = empty_settings.copy()", sourcePath, 11, out line),
                 "copy() should work for an empty dictionary.");
-            ((RenpyParser.Images.IApply)line).Apply(context);
+            ((RenPyParser.Images.IApply)line).Apply(context);
             Check(GameBridge.TryGetLastTestLiteral("empty_copy", out observed) &&
                     observed is Dictionary<string, object> emptyCopy &&
                     emptyCopy.Count == 0 && !object.ReferenceEquals(empty, emptyCopy),

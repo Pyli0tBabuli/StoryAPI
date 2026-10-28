@@ -37,6 +37,7 @@ namespace StoryAPI.Tests
             Run("dictionary update and pop methods", TestDictionaryUpdateAndPopMethods);
             Run("dictionary get method", TestDictionaryGetMethod);
             Run("dictionary setdefault method", TestDictionarySetDefaultMethod);
+            Run("dictionary copy method", TestDictionaryCopyMethod);
             Run("compound scalar assignments", TestCompoundScalarAssignments);
             Run("compound indexed collection assignments", TestIndexedCompoundAssignments);
             Run("if/elif/else branches", TestConditionalBranches);
@@ -1604,6 +1605,86 @@ namespace StoryAPI.Tests
                     "The missing-key call should parse as a Python statement.").Code ==
                     "inserted = settings.setdefault(\"accent\", \"blue\")",
                 "The parser should preserve setdefault() assignments with defaults.");
+        }
+
+        private static void TestDictionaryCopyMethod()
+        {
+            const string sourcePath = "dictionary-copy-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var settings = new Dictionary<string, object>
+            {
+                { "theme", "dark" },
+                { "count", 5f },
+                { "enabled", true }
+            };
+            context.SetVariable("settings",
+                new SimpleExpressionEngine.DataValue((object)settings));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateDictionaryCopyLine(
+                    "copied = settings.copy()", sourcePath, 10, out line),
+                "settings.copy() assignment should be recognized.");
+            Check(line.GetType().Name == "DictionaryCopyLine",
+                "copy() should emit the dedicated dictionary-copy instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("copied", out observed) &&
+                    observed is Dictionary<string, object>,
+                "copy() should assign a dictionary object.");
+            var copied = (Dictionary<string, object>)observed;
+            Check(!object.ReferenceEquals(settings, copied),
+                "copy() must create a distinct dictionary instance.");
+            Check(copied.Count == settings.Count &&
+                    Equals(copied["theme"], "dark") &&
+                    Math.Abs(Convert.ToSingle(copied["count"]) - 5f) < 0.001f &&
+                    Equals(copied["enabled"], true),
+                "The copy should preserve all source key/value pairs.");
+            copied["theme"] = "light";
+            copied["accent"] = "blue";
+            Check(Equals(settings["theme"], "dark") && !settings.ContainsKey("accent"),
+                "Mutating the copied dictionary must not mutate the original.");
+            Check(settings.Count == 3,
+                "copy() must leave the original dictionary unchanged.");
+
+            var empty = new Dictionary<string, object>();
+            context.SetVariable("empty_settings",
+                new SimpleExpressionEngine.DataValue((object)empty));
+            Check(VariableIndexExpressionLine.TryCreateDictionaryCopyLine(
+                    "empty_copy = empty_settings.copy()", sourcePath, 11, out line),
+                "copy() should work for an empty dictionary.");
+            ((RenpyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("empty_copy", out observed) &&
+                    observed is Dictionary<string, object> emptyCopy &&
+                    emptyCopy.Count == 0 && !object.ReferenceEquals(empty, emptyCopy),
+                "Copying an empty dictionary should produce an independent empty dictionary.");
+
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryCopyLine(
+                    "copied = settings.copy(extra)", sourcePath, 20, out line),
+                "copy() should reject arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryCopyLine(
+                    "copied = settings.copy().clear()", sourcePath, 21, out line),
+                "copy() should reject chained calls.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryCopyLine(
+                    "settings.copy()", sourcePath, 22, out line),
+                "The restricted copy() feature must require an assignment target.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryCopyLine(
+                    "copied = settings[\"nested\"].copy()", sourcePath, 23, out line),
+                "copy() should reject indexed targets.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryCopyLine(
+                    "copied = settings.copy(); settings.clear()", sourcePath, 24, out line),
+                "copy() should reject multiple statements.");
+
+            var statements = Parse(
+                "label dictionary_copy_test:\n" +
+                "    $ copied = settings.copy()\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing a dictionary copy assignment.");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The copy call should parse as a Python statement.").Code ==
+                    "copied = settings.copy()",
+                "The parser should preserve dictionary copy assignments.");
         }
 
         private static void TestListExtendMethod()

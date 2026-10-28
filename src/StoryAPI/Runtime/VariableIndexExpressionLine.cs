@@ -1292,6 +1292,114 @@ namespace StoryAPI.Runtime
             return false;
         }
 
+        /// <summary>
+        /// Compiles +=, -=, and *= assignments to indexed list/dictionary entries by
+        /// translating them into the existing guarded indexed-assignment pipeline.
+        /// Only targets accepted by the regular indexed assignment parser are supported.
+        /// </summary>
+        public static bool TryCreateIndexedCompoundAssignmentLines(string code,
+            string temporaryPrefix, string sourcePath, int sourceLine, int blockStart,
+            out List<Line> lines)
+        {
+            lines = null;
+            if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(temporaryPrefix))
+                return false;
+
+            string targetExpression;
+            char operation;
+            string rightExpression;
+            if (!TryParseIndexedCompoundAssignment(code, out targetExpression,
+                out operation, out rightExpression))
+                return false;
+
+            string probeAssignment = targetExpression + " = 0";
+            string rootName;
+            List<object> targetIndices;
+            List<KeyValuePair<string, string>> targetDynamicIndexes;
+            string ignoredRight;
+            if (!TryParseCollectionAssignment(probeAssignment, temporaryPrefix,
+                out rootName, out targetIndices, out targetDynamicIndexes, out ignoredRight) ||
+                targetIndices.Count == 0)
+                return false;
+
+            // Reuse the standard assignment pipeline: it snapshots the current indexed value,
+            // resolves any indexed values on the RHS, guards failed reads, then mutates in-place.
+            string expandedAssignment = targetExpression + " = " + targetExpression + " " +
+                operation + " (" + rightExpression + ")";
+            return TryCreateAssignmentLines(expandedAssignment, temporaryPrefix, sourcePath,
+                sourceLine, blockStart, out lines);
+        }
+
+        private static bool TryParseIndexedCompoundAssignment(string code,
+            out string targetExpression, out char operation, out string rightExpression)
+        {
+            targetExpression = null;
+            operation = '\0';
+            rightExpression = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            bool inString = false;
+            bool escaped = false;
+            char quote = '\0';
+            int bracketDepth = 0;
+            int operatorPosition = -1;
+            char foundOperator = '\0';
+
+            for (int i = 0; i < code.Length; i++)
+            {
+                char c = code[i];
+                if (inString)
+                {
+                    if (escaped) escaped = false;
+                    else if (c == '\\') escaped = true;
+                    else if (c == quote) inString = false;
+                    continue;
+                }
+
+                if (c == '"' || c == '\'')
+                {
+                    inString = true;
+                    quote = c;
+                    continue;
+                }
+
+                if (c == '[')
+                {
+                    bracketDepth++;
+                    continue;
+                }
+                if (c == ']')
+                {
+                    if (bracketDepth == 0) return false;
+                    bracketDepth--;
+                    continue;
+                }
+
+                if (bracketDepth != 0 || i + 1 >= code.Length || code[i + 1] != '=' ||
+                    (c != '+' && c != '-' && c != '*'))
+                    continue;
+
+                if (operatorPosition >= 0)
+                    return false; // Do not treat multiple statements/compound operators as one call.
+                operatorPosition = i;
+                foundOperator = c;
+                i++;
+            }
+
+            if (inString || bracketDepth != 0 || operatorPosition < 0)
+                return false;
+
+            targetExpression = code.Substring(0, operatorPosition).Trim();
+            rightExpression = code.Substring(operatorPosition + 2).Trim();
+            operation = foundOperator;
+            if (string.IsNullOrWhiteSpace(targetExpression) ||
+                string.IsNullOrWhiteSpace(rightExpression) ||
+                ContainsUnquotedSemicolon(rightExpression))
+                return false;
+
+            return true;
+        }
+
         public static bool TryCreateAssignmentLines(string code, string temporaryPrefix,
             string sourcePath, int sourceLine, int blockStart, out List<Line> lines)
         {

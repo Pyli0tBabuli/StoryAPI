@@ -2589,6 +2589,17 @@ namespace StoryAPI.Runtime
             throw new InvalidOperationException("value is not a list or dictionary");
         }
 
+        public static bool TryCreateForEachPreparationLine(string sourceName, string destinationName,
+            string sourcePath, int sourceLine, out Line line)
+        {
+            line = null;
+            if (!IsSimpleIdentifier(sourceName) || !IsSimpleIdentifier(destinationName))
+                return false;
+
+            line = new ForEachPreparationLine(sourceName, destinationName, sourcePath, sourceLine);
+            return true;
+        }
+
         public static bool TryCreateForEachItemLine(string variableName, string collectionName,
             string indexName, string gateName, string sourcePath, int sourceLine, out Line line)
         {
@@ -2613,6 +2624,69 @@ namespace StoryAPI.Runtime
             line = new ForRangeValidationLine(
                 startName, stopName, stepName, validName, sourcePath, sourceLine);
             return true;
+        }
+
+        private sealed class ForEachPreparationLine : Line, IApply
+        {
+            private readonly string _sourceName;
+            private readonly string _destinationName;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public ForEachPreparationLine(string sourceName, string destinationName,
+                string sourcePath, int sourceLine)
+            {
+                _sourceName = sourceName;
+                _destinationName = destinationName;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_sourceName, context, out object source))
+                        throw new InvalidOperationException("source variable '" + _sourceName +
+                            "' is not an object-backed list or dictionary");
+
+                    object iterationItems;
+                    if (source is IList items)
+                    {
+                        // Keep list iteration live: appends and indexed changes remain visible.
+                        iterationItems = items;
+                    }
+                    else if (source is IDictionary dictionary)
+                    {
+                        // Dictionary iteration yields keys. Snapshot once so mutations to the
+                        // dictionary during the loop don't invalidate a live key enumerator.
+                        var keys = new List<object>();
+                        foreach (object key in dictionary.Keys) keys.Add(key);
+                        iterationItems = keys;
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException(
+                            "for-in currently supports lists and dictionaries");
+                    }
+
+                    if (!GameBridge.TrySetVariableLiteral(
+                        _destinationName, iterationItems, false, context))
+                        throw new InvalidOperationException(
+                            "could not prepare the loop collection '" + _destinationName + "'");
+                }
+                catch (Exception e)
+                {
+                    // The next length guard will skip the body after a failed preparation.
+                    GameBridge.TrySetVariableLiteral(
+                        _destinationName, new List<object>(), false, context);
+                    Log.Warn("Could not prepare for-in collection '" + _sourceName +
+                        "' at " + _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
         }
 
         private sealed class ForEachItemLine : Line, IApply

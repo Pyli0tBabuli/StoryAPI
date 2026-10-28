@@ -620,15 +620,29 @@ namespace StoryAPI.Scripting
                         "Expected a named list or range(start, stop[, step]) after 'in'.", Current.Line);
                 string collection = Advance().Text;
                 bool isDictionaryItems = false;
-                if (Current.Text == "." && Ahead(1).Text == "items" &&
+                bool isDictionaryValues = false;
+                if (Current.Text == "." &&
+                    (Ahead(1).Text == "items" || Ahead(1).Text == "values") &&
                     Ahead(2).Text == "(" && Ahead(3).Text == ")")
                 {
-                    if (valueVariable == null)
-                        throw new ScriptSyntaxException(
-                            "dictionary.items() iteration requires 'for key, value in dictionary.items():'.",
-                            Current.Line);
+                    string dictionaryMethod = Ahead(1).Text;
+                    if (dictionaryMethod == "items")
+                    {
+                        if (valueVariable == null)
+                            throw new ScriptSyntaxException(
+                                "dictionary.items() iteration requires 'for key, value in dictionary.items():'.",
+                                Current.Line);
+                        isDictionaryItems = true;
+                    }
+                    else
+                    {
+                        if (valueVariable != null)
+                            throw new ScriptSyntaxException(
+                                "dictionary.values() iteration accepts only one loop variable.",
+                                Current.Line);
+                        isDictionaryValues = true;
+                    }
                     _index += 4;
-                    isDictionaryItems = true;
                 }
                 else if (valueVariable != null)
                 {
@@ -638,7 +652,8 @@ namespace StoryAPI.Scripting
 
                 if (Current.Type != TokenType.Colon)
                     throw new ScriptSyntaxException(
-                        "Only a named list or dictionary.items() is supported after 'in'.", Current.Line);
+                        "Only a named list, dictionary.items(), or dictionary.values() is supported after 'in'.",
+                        Current.Line);
 
                 ExpectColon();
                 statement = new ForStatement
@@ -647,6 +662,7 @@ namespace StoryAPI.Scripting
                     ValueVariable = valueVariable,
                     Collection = collection,
                     IsDictionaryItems = isDictionaryItems,
+                    IsDictionaryValues = isDictionaryValues,
                     Line = line,
                 };
             }

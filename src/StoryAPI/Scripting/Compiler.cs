@@ -164,6 +164,14 @@ namespace StoryAPI.Scripting
                 return;
             }
 
+            Line dictionaryCopyLine;
+            if (VariableIndexExpressionLine.TryCreateDictionaryCopyLine(
+                python.Code, _textLabel ?? "unknown", python.Line, out dictionaryCopyLine))
+            {
+                _out.Add(dictionaryCopyLine);
+                return;
+            }
+
             Line dictionaryGetLine;
             if (VariableIndexExpressionLine.TryCreateDictionaryGetLine(
                 python.Code, _textLabel ?? "unknown", python.Line, out dictionaryGetLine))

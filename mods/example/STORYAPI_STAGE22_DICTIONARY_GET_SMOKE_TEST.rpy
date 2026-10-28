@@ -4,6 +4,7 @@ define stage22_probe_dict = {"theme": "dark", "count": 5}
 default stage22_theme = ""
 default stage22_fallback = ""
 default stage22_missing = "sentinel"
+default stage22_none_reference = None
 
 label storyapi_stage22_dictionary_get_smoke:
     $ stage22_theme = stage22_probe_dict.get("theme")
@@ -17,6 +18,13 @@ label storyapi_stage22_dictionary_get_smoke:
         return
 
     $ stage22_missing = stage22_probe_dict.get("missing")
+    # First compare against a variable initialized with None. This isolates the
+    # returned value from whether the game's conditional evaluator handles the
+    # literal None token correctly.
+    if stage22_missing != stage22_none_reference:
+        _ "STORYAPI_DICTIONARY_GET_NONE_VALUE_FAIL"
+        return
+
     if stage22_missing != None:
         _ "STORYAPI_DICTIONARY_GET_NONE_FAIL"
         return

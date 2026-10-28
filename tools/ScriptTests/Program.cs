@@ -759,7 +759,7 @@ namespace StoryAPI.Tests
                     "assignment_target", out line),
                 "A dynamic dictionary read should produce a temporary runtime line.");
 
-            ((RenpyParser.Images.IApply)line).Apply(context);
+            ((RenPyParser.Images.IApply)line).Apply(context);
             object first;
             Check(GameBridge.TryGetLastTestLiteral("temporary_value", out first) &&
                     Math.Abs(Convert.ToSingle(first) - 1f) < 0.001f,
@@ -768,7 +768,7 @@ namespace StoryAPI.Tests
             // The same instruction object is revisited when the assignment is inside a loop.
             // It must use the current key rather than a one-time cached value.
             context.SetVariable("key", new SimpleExpressionEngine.DataValue("beta"));
-            ((RenpyParser.Images.IApply)line).Apply(context);
+            ((RenPyParser.Images.IApply)line).Apply(context);
             object second;
             Check(GameBridge.TryGetLastTestLiteral("temporary_value", out second) &&
                     Math.Abs(Convert.ToSingle(second) - 2f) < 0.001f,

@@ -2590,15 +2590,15 @@ namespace StoryAPI.Runtime
         }
 
         public static bool TryCreateForEachItemLine(string variableName, string collectionName,
-            string indexName, string sourcePath, int sourceLine, out Line line)
+            string indexName, string gateName, string sourcePath, int sourceLine, out Line line)
         {
             line = null;
             if (!IsSimpleIdentifier(variableName) || !IsSimpleIdentifier(collectionName) ||
-                !IsSimpleIdentifier(indexName))
+                !IsSimpleIdentifier(indexName) || !IsSimpleIdentifier(gateName))
                 return false;
 
             line = new ForEachItemLine(
-                variableName, collectionName, indexName, sourcePath, sourceLine);
+                variableName, collectionName, indexName, gateName, sourcePath, sourceLine);
             return true;
         }
 
@@ -2607,15 +2607,17 @@ namespace StoryAPI.Runtime
             private readonly string _variableName;
             private readonly string _collectionName;
             private readonly string _indexName;
+            private readonly string _gateName;
             private readonly string _sourcePath;
             private readonly int _sourceLine;
 
             public ForEachItemLine(string variableName, string collectionName, string indexName,
-                string sourcePath, int sourceLine)
+                string gateName, string sourcePath, int sourceLine)
             {
                 _variableName = variableName;
                 _collectionName = collectionName;
                 _indexName = indexName;
+                _gateName = gateName;
                 _sourcePath = sourcePath;
                 _sourceLine = sourceLine;
             }
@@ -2636,6 +2638,7 @@ namespace StoryAPI.Runtime
                         int count = source is IDictionary dictionary ? dictionary.Count :
                             (source is ICollection collection ? collection.Count : int.MaxValue);
                         GameBridge.TrySetVariableLiteral(_indexName, count, false, context);
+                        GameBridge.TrySetVariableLiteral(_gateName, false, false, context);
                         throw new InvalidOperationException(
                             "for-in currently supports lists, not dictionaries or other values");
                     }
@@ -2648,6 +2651,7 @@ namespace StoryAPI.Runtime
                     {
                         // A list may change between the length check and this instruction.
                         GameBridge.TrySetVariableLiteral(_indexName, items.Count, false, context);
+                        GameBridge.TrySetVariableLiteral(_gateName, false, false, context);
                         throw new InvalidOperationException(
                             "list changed while resolving the next loop item");
                     }
@@ -2659,6 +2663,10 @@ namespace StoryAPI.Runtime
                 }
                 catch (Exception e)
                 {
+                    // Prevent the body from running with a stale item if reading or assigning
+                    // the current list element failed.
+                    GameBridge.TrySetVariableLiteral(_gateName, false, false, context);
+
                     // Force the generated condition to exit on the next check after a
                     // runtime type/value error, preventing a stuck loop.
                     if (TryGetObjectBackedVariable(_collectionName, context, out object source))

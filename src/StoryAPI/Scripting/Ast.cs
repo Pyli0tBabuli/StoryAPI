@@ -310,11 +310,13 @@ namespace StoryAPI.Scripting
         public List<Statement> Body { get; } = new List<Statement>();
     }
 
-    /// <summary>Iterates through a named list or a numeric range.</summary>
+    /// <summary>Iterates through a named collection, dictionary entries, or numeric range.</summary>
     public sealed class ForStatement : Statement
     {
         public string Variable { get; set; }
+        public string ValueVariable { get; set; }
         public string Collection { get; set; }
+        public bool IsDictionaryItems { get; set; }
         public bool IsRange { get; set; }
         public string RangeStart { get; set; }
         public string RangeStop { get; set; }

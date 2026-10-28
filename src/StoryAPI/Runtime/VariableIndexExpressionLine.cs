@@ -877,6 +877,46 @@ namespace StoryAPI.Runtime
         }
 
         /// <summary>
+        /// Recognizes a no-argument reverse() call on a named list variable.
+        /// </summary>
+        public static bool TryCreateListReverseLine(string code, string sourcePath,
+            int sourceLine, out Line line)
+        {
+            line = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+
+            int nameStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string rootName = code.Substring(nameStart, cursor - nameStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '.') return false;
+            SkipWhitespace(code, ref cursor);
+
+            const string methodName = "reverse";
+            if (cursor + methodName.Length > code.Length ||
+                string.Compare(code, cursor, methodName, 0, methodName.Length,
+                    StringComparison.Ordinal) != 0)
+                return false;
+            cursor += methodName.Length;
+            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '(') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != ')') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor != code.Length) return false;
+
+            line = new ListReverseLine(rootName, sourcePath, sourceLine);
+            return true;
+        }
+
+        /// <summary>
         /// Recognizes extend(otherList) on a named object-backed list. The argument must
         /// be another simple variable name; expressions and indexed/nested targets are unsupported.
         /// </summary>
@@ -2217,6 +2257,54 @@ namespace StoryAPI.Runtime
                 catch (Exception e)
                 {
                     Log.Warn("Could not clear collection '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+        }
+
+        private sealed class ListReverseLine : Line, IApply
+        {
+            private readonly string _rootName;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public ListReverseLine(string rootName, string sourcePath, int sourceLine)
+            {
+                _rootName = rootName;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object target) ||
+                        !(target is IList list))
+                        throw new InvalidOperationException("list.reverse() requires a list target");
+                    if (list.IsReadOnly || list.IsFixedSize)
+                        throw new InvalidOperationException("list.reverse() target is not mutable");
+
+                    int left = 0;
+                    int right = list.Count - 1;
+                    while (left < right)
+                    {
+                        object value = list[left];
+                        list[left] = list[right];
+                        list[right] = value;
+                        left++;
+                        right--;
+                    }
+
+                    Log.Info("Applied list.reverse on '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not reverse list '" + _rootName + "' at " +
                         _sourcePath + ":" + _sourceLine + ": " +
                         e.GetBaseException().Message);
                 }

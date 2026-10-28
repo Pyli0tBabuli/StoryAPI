@@ -166,7 +166,8 @@ the same restricted dynamic scalar indexes supported by reads. Assignment values
 expressions; collection reads on the right-hand side are resolved before the assignment. Compound assignments to simple scalar variables and indexed list/dictionary entries support
 `+=`, `-=`, `*=`, `/=`, and `%=`; their right-hand side may use supported scalar expressions and
 collection index reads. Other compound operators such as `**=`, slices, and assigning a new value
-beyond the end of a list remain unsupported. Lists support one-argument scalar
+beyond the end of a list remain unsupported. Lists support `$ inventory.reverse()`, which
+reverses the existing list in place and accepts no arguments. Lists support one-argument scalar
 method calls `$ inventory.append("battery")` and `$ inventory.remove("key")`; `remove`
 deletes the first matching item. Lists also support `$ inventory.extend(rewards)`, which
 appends the items from another named list in order without changing the source list. The

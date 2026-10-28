@@ -1805,8 +1805,7 @@ namespace StoryAPI.Tests
             var statements = Parse(
                 "label for_dict_keys_method_test:\\n" +
                 "    for key in settings.keys():\\n" +
-                "        if key == \"alpha\":\\n" +
-                "            pass\\n" +
+                "        pass\\n" +
                 "    return\\n");
             var label = Require<LabelStatement>(statements[0], "Expected dictionary-keys label.");
             var loop = Require<ForStatement>(label.Body[0], "Expected dictionary.keys() loop.");

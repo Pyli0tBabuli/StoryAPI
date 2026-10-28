@@ -79,6 +79,7 @@ namespace SimpleExpressionEngine
 {
     public enum TestDataValueType
     {
+        Unknown,
         Float,
         String,
         Object

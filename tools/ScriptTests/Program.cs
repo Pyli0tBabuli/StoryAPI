@@ -30,6 +30,7 @@ namespace StoryAPI.Tests
             Run("indexed collection conditions", TestIndexedCollectionConditions);
             Run("list and dictionary membership conditions", TestCollectionMembershipConditions);
             Run("list and dictionary length conditions", TestCollectionLengthConditions);
+            Run("None comparison conditions", TestNoneComparisonConditions);
             Run("list and dictionary clear methods", TestCollectionClearMethods);
             Run("list extend method", TestListExtendMethod);
             Run("list insert and pop methods", TestListInsertAndPopMethods);
@@ -1167,6 +1168,56 @@ namespace StoryAPI.Tests
                     stringCondition, prefix, "length-test.rpy", 26, out lines, out prepared) &&
                 prepared == stringCondition,
                 "Text containing len(collection) inside a string must not be rewritten.");
+        }
+
+        private static void TestNoneComparisonConditions()
+        {
+            const string sourcePath = "none-condition-test.rpy";
+            const string prefix = "_storyapi_none_comparison_test";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            context.SetVariable("optional_value", default(SimpleExpressionEngine.DataValue));
+
+            List<RenPyParser.Line> lines;
+            string prepared;
+            Check(VariableIndexExpressionLine.TryPrepareCondition(
+                    "optional_value != None", prefix, sourcePath, 31,
+                    out lines, out prepared),
+                "A simple variable != None condition should be rewritten.");
+            Check(prepared == prefix + "_gate and (" + prefix + "_none_compare_0)",
+                "A None comparison should use a boolean temporary rather than the native scalar evaluator.");
+            RenPyParser.Line noneComparison = lines.Single(
+                line => line.GetType().Name == "NoneComparisonLine");
+            ((RenPyParser.Images.IApply)noneComparison).Apply(context);
+
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral(prefix + "_none_compare_0", out observed) &&
+                    observed is bool && !(bool)observed,
+                "An Unknown/default DataValue should compare equal to None.");
+
+            context.SetVariable("optional_value", new SimpleExpressionEngine.DataValue("present"));
+            ((RenPyParser.Images.IApply)noneComparison).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(prefix + "_none_compare_0", out observed) &&
+                    observed is bool && (bool)observed,
+                "A string DataValue should compare unequal to None.");
+
+            const string reversePrefix = "_storyapi_reverse_none_comparison_test";
+            context.SetVariable("optional_value", default(SimpleExpressionEngine.DataValue));
+            Check(VariableIndexExpressionLine.TryPrepareCondition(
+                    "None == optional_value", reversePrefix, sourcePath, 32,
+                    out lines, out prepared),
+                "A None == variable condition should be rewritten.");
+            ((RenPyParser.Images.IApply)lines.Single(
+                line => line.GetType().Name == "NoneComparisonLine")).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(
+                    reversePrefix + "_none_compare_0", out observed) &&
+                    observed is bool && (bool)observed,
+                "The reverse operand order should also compare None correctly.");
+
+            const string literalCondition = "\"The word None is literal text\"";
+            Check(!VariableIndexExpressionLine.TryPrepareCondition(
+                    literalCondition, prefix, sourcePath, 33, out lines, out prepared) &&
+                    prepared == literalCondition,
+                "None inside a quoted string must remain untouched.");
         }
 
         private static void TestCollectionClearMethods()

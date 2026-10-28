@@ -188,6 +188,15 @@ namespace StoryAPI.Scripting
                 return;
             }
 
+            List<Line> indexedCompoundAssignmentLines;
+            if (VariableIndexExpressionLine.TryCreateIndexedCompoundAssignmentLines(
+                python.Code, prefix, _textLabel ?? "unknown", python.Line, _out.Count,
+                out indexedCompoundAssignmentLines))
+            {
+                _out.AddRange(indexedCompoundAssignmentLines);
+                return;
+            }
+
             List<Line> compoundAssignmentLines;
             if (VariableIndexExpressionLine.TryCreateCompoundAssignmentLines(
                 python.Code, prefix, _textLabel ?? "unknown", python.Line, _out.Count,

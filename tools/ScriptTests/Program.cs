@@ -34,6 +34,7 @@ namespace StoryAPI.Tests
             Run("list insert and pop methods", TestListInsertAndPopMethods);
             Run("dictionary update and pop methods", TestDictionaryUpdateAndPopMethods);
             Run("compound scalar assignments", TestCompoundScalarAssignments);
+            Run("compound indexed collection assignments", TestIndexedCompoundAssignments);
             Run("if/elif/else branches", TestConditionalBranches);
             Run("menu choices and nested statements", TestMenuChoices);
             Run("while and loop-control statements", TestWhileAndLoopControl);
@@ -479,6 +480,112 @@ namespace StoryAPI.Tests
             success = (bool)reader.Invoke(null, arguments);
             Check(success && arguments[2] is string && (string)arguments[2] == "answer",
                 "A string DataValue should read stringVal using the discriminator.");
+        }
+
+        private static void TestIndexedCompoundAssignments()
+        {
+            const string sourcePath = "indexed-compound-assignment-test.rpy";
+            const string listPrefix = "_storyapi_indexed_compound_list";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var inventory = new List<object> { 10f, 20f };
+            context.SetVariable("inventory", new SimpleExpressionEngine.DataValue((object)inventory));
+
+            List<RenPyParser.Line> lines;
+            Check(VariableIndexExpressionLine.TryCreateIndexedCompoundAssignmentLines(
+                    "inventory[0] += 2", listPrefix, sourcePath, 10, 100, out lines),
+                "A list index += assignment should be recognized.");
+            Check(lines.Last().GetType().Name == "CollectionMutationLine",
+                "Indexed compound assignment should reuse the guarded collection mutation.");
+            Check(lines.OfType<RenpyParser.RenpyOneLinePython>().Any(x =>
+                    x.Code == "$ " + listPrefix + "_value = " +
+                        listPrefix + "_rhs_index_0 + (2)"),
+                "The list compound assignment should add the RHS to the current indexed value.");
+            context.SetVariable(listPrefix + "_value", new SimpleExpressionEngine.DataValue(12f));
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
+            Check(Convert.ToSingle(inventory[0]) == 12f,
+                "The indexed += assignment should write the computed value to the list.");
+
+            const string subtractPrefix = "_storyapi_indexed_compound_subtract";
+            Check(VariableIndexExpressionLine.TryCreateIndexedCompoundAssignmentLines(
+                    "inventory[1] -= 3", subtractPrefix, sourcePath, 11, 110, out lines),
+                "A list index -= assignment should be recognized.");
+            Check(lines.OfType<RenpyParser.RenpyOneLinePython>().Any(x =>
+                    x.Code == "$ " + subtractPrefix + "_value = " +
+                        subtractPrefix + "_rhs_index_0 - (3)"),
+                "The list compound assignment should subtract the RHS.");
+            context.SetVariable(subtractPrefix + "_value", new SimpleExpressionEngine.DataValue(17f));
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
+            Check(Convert.ToSingle(inventory[1]) == 17f,
+                "The indexed -= assignment should update the selected list element.");
+
+            const string multiplyPrefix = "_storyapi_indexed_compound_multiply";
+            Check(VariableIndexExpressionLine.TryCreateIndexedCompoundAssignmentLines(
+                    "inventory[0] *= 2", multiplyPrefix, sourcePath, 12, 120, out lines),
+                "A list index *= assignment should be recognized.");
+            Check(lines.OfType<RenpyParser.RenpyOneLinePython>().Any(x =>
+                    x.Code == "$ " + multiplyPrefix + "_value = " +
+                        multiplyPrefix + "_rhs_index_0 * (2)"),
+                "The list compound assignment should multiply the current value.");
+            context.SetVariable(multiplyPrefix + "_value", new SimpleExpressionEngine.DataValue(24f));
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
+            Check(Convert.ToSingle(inventory[0]) == 24f,
+                "The indexed *= assignment should write the computed value to the list.");
+
+            const string dictionaryPrefix = "_storyapi_indexed_compound_dictionary";
+            var settings = new Dictionary<string, object> { { "count", 5f } };
+            context.SetVariable("settings", new SimpleExpressionEngine.DataValue((object)settings));
+            Check(VariableIndexExpressionLine.TryCreateIndexedCompoundAssignmentLines(
+                    "settings[\"count\"] += inventory[0]", dictionaryPrefix, sourcePath, 13, 130,
+                    out lines),
+                "A dictionary value may use += with an indexed collection read on the RHS.");
+            Check(lines.OfType<RenpyParser.RenpyOneLinePython>().Any(x =>
+                    x.Code == "$ " + dictionaryPrefix + "_value = " +
+                        dictionaryPrefix + "_rhs_index_0 + (" +
+                        dictionaryPrefix + "_rhs_index_1)"),
+                "The dictionary target value and RHS collection read should both be resolved.");
+            context.SetVariable(dictionaryPrefix + "_value", new SimpleExpressionEngine.DataValue(29f));
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
+            Check(Convert.ToSingle(settings["count"]) == 29f,
+                "The dictionary compound assignment should write the computed value.");
+
+            Check(!VariableIndexExpressionLine.TryCreateIndexedCompoundAssignmentLines(
+                    "coins += 1", "_storyapi_scalar_only", sourcePath, 20, 200, out lines),
+                "This recognizer must not capture scalar-only compound assignments.");
+            Check(!VariableIndexExpressionLine.TryCreateIndexedCompoundAssignmentLines(
+                    "inventory[0] /= 2", listPrefix, sourcePath, 21, 210, out lines),
+                "/= remains unsupported for indexed targets.");
+            Check(!VariableIndexExpressionLine.TryCreateIndexedCompoundAssignmentLines(
+                    "inventory[0] += ", listPrefix, sourcePath, 22, 220, out lines),
+                "An indexed compound assignment must have a RHS.");
+            Check(!VariableIndexExpressionLine.TryCreateIndexedCompoundAssignmentLines(
+                    "inventory[0] += 1; inventory.clear()", listPrefix, sourcePath, 23, 230, out lines),
+                "Multiple statements must not be accepted as one indexed compound assignment.");
+            Check(!VariableIndexExpressionLine.TryCreateIndexedCompoundAssignmentLines(
+                    "inventory[0] == 1", listPrefix, sourcePath, 24, 240, out lines),
+                "Comparisons must not be interpreted as compound assignments.");
+            Check(!VariableIndexExpressionLine.TryCreateIndexedCompoundAssignmentLines(
+                    "inventory += 1", listPrefix, sourcePath, 25, 250, out lines),
+                "The target must be indexed.");
+            Check(!VariableIndexExpressionLine.TryCreateIndexedCompoundAssignmentLines(
+                    "inventory[0] += 1, settings[\"count\"] += 2", listPrefix,
+                    sourcePath, 26, 260, out lines),
+                "Multiple compound operators must be rejected.");
+
+            var statements = Parse(
+                "label indexed_compound_test:\n" +
+                "    $ inventory[0] += 1\n" +
+                "    $ settings[\"count\"] -= 1\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label with indexed compound assignments.");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The list indexed compound assignment should parse as Python code.").Code ==
+                    "inventory[0] += 1",
+                "The parser should preserve list compound-assignment syntax.");
+            Check(Require<PythonStatement>(label.Body[1],
+                    "The dictionary indexed compound assignment should parse as Python code.").Code ==
+                    "settings[\"count\"] -= 1",
+                "The parser should preserve dictionary compound-assignment syntax.");
         }
 
         private static void TestCompoundScalarAssignments()

@@ -4093,7 +4093,53 @@ namespace StoryAPI.Game
 
             DataValue value;
             if (!TryConvertDataValue(literal, out value)) return false;
-            return TrySetContextVariable(context, name, value);
+
+            bool assigned = TrySetContextVariable(context, name, value);
+            if (literal == null)
+            {
+                string resolvedDescription = "<unresolved>";
+                try
+                {
+                    if (context.ResolveVariable(name, out DataValue resolved))
+                        resolvedDescription = DescribeDataValue(resolved);
+                }
+                catch (Exception e)
+                {
+                    resolvedDescription = "<resolve failed: " + e.GetBaseException().Message + ">";
+                }
+
+                Log.LogInfo("[StoryAPI] Null assignment diagnostic for '" + name +
+                    "': converted=" + DescribeDataValue(value) +
+                    "; defaultDataValue=" + DescribeDataValue(default(DataValue)) +
+                    "; assigned=" + assigned +
+                    "; resolved=" + resolvedDescription);
+            }
+
+            return assigned;
+        }
+
+        private static string DescribeDataValue(DataValue value)
+        {
+            try
+            {
+                var fields = new List<string>();
+                foreach (FieldInfo field in typeof(DataValue).GetFields(Instance))
+                {
+                    object fieldValue = field.GetValue(value);
+                    string formatted = fieldValue == null
+                        ? "<null>"
+                        : fieldValue + " [" + fieldValue.GetType().FullName + "]";
+                    fields.Add(field.Name + "=" + formatted);
+                }
+
+                return fields.Count == 0
+                    ? value.ToString()
+                    : string.Join(", ", fields);
+            }
+            catch (Exception e)
+            {
+                return "<DataValue diagnostic failed: " + e.GetBaseException().Message + ">";
+            }
         }
 
         /// <summary>

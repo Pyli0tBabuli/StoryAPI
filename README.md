@@ -203,9 +203,10 @@ be used in one condition or combined with indexed reads. Other function calls an
 forms such as `len(inventory[0])` remain unsupported.
 
 The Python `None` literal is supported in runtime `if`, `elif`, and `while` comparisons,
-for example `if optional_value == None:`. StoryAPI materializes the literal as a temporary
-value before the game's scalar condition evaluator runs; the word `None` inside quoted text
-is left unchanged.
+for example `if optional_value == None:` and `if optional_value != None:`. Simple variable-to-`None`
+comparisons are evaluated against the runtime `DataValue` representation and rewritten to a
+boolean temporary, avoiding the game's unreliable comparison of `Unknown` values. The word
+`None` inside quoted text is left unchanged.
 
 Within a label, `while`, `for item in inventory:`, `for key in settings:`,
 `for key in settings.keys():`, `for key, value in settings.items():`, and

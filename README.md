@@ -180,7 +180,10 @@ a warning without changing the list. Dictionaries support scalar assignment from
 `$ theme = settings.get("missing", "default")`. The key must be a quoted string; an absent key
 returns None unless a simple scalar literal default is provided. Defaults may be strings, numbers,
 `True`, `False`, or `None`; variable defaults and method calls inside expressions are not supported.
-`get()` does not mutate the dictionary. Dictionaries also support assignment from
+`get()` does not mutate the dictionary. Dictionaries also support scalar assignment from
+`$ copied_settings = settings.copy()`. The call accepts no arguments and makes a shallow copy:
+the returned dictionary can be modified independently, while nested objects (if any) remain shared.
+The source dictionary is not changed by making the copy. Dictionaries also support assignment from
 `$ theme = settings.setdefault("theme", "default")` or `$ theme = settings.setdefault("theme")`.
 The key must be a quoted string; the optional default must be a scalar literal (string, number,
 `True`, `False`, or `None`). When the key exists, `setdefault()` returns its current value

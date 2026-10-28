@@ -457,12 +457,19 @@ namespace StoryAPI.Runtime
 
             string expressionToRewrite = hasLength ? lengthExpression : expressionAfterMembership;
             string rewrittenExpression;
+            string noneVariableName;
+            string expressionWithNone;
+            bool hasNoneLiteral = TryRewriteNoneLiteral(expressionToRewrite, temporaryPrefix,
+                out expressionWithNone, out noneVariableName);
+            if (hasNoneLiteral)
+                expressionToRewrite = expressionWithNone;
+
             List<KeyValuePair<string, string>> indexReads;
             List<KeyValuePair<string, string>> dynamicIndexes;
             bool hasIndexReads = TryRewriteExpression(expressionToRewrite, temporaryPrefix,
                 out rewrittenExpression, out indexReads, out dynamicIndexes);
 
-            if (!hasMembership && !hasLength && !hasIndexReads)
+            if (!hasMembership && !hasLength && !hasIndexReads && !hasNoneLiteral)
                 return false;
 
             if (!hasIndexReads)
@@ -478,6 +485,8 @@ namespace StoryAPI.Runtime
                 new RenpyOneLinePython("$ " + gateName + " = True")
             };
 
+            if (hasNoneLiteral)
+                result.Add(new RenpyOneLinePython("$ " + noneVariableName + " = None"));
             if (hasMembership)
                 result.AddRange(membershipLines);
             if (hasLength)
@@ -506,6 +515,46 @@ namespace StoryAPI.Runtime
 
             preparatoryLines = result;
             preparedCondition = gateName + " and (" + rewrittenExpression + ")";
+            return true;
+        }
+
+        /// <summary>
+        /// Rewrites the Python None literal in a condition to a temporary variable.
+        /// The game condition evaluator may treat "None" as a variable name, while the
+        /// native one-line Python assignment can materialize the actual None value.
+        /// Identical text inside string literals is left untouched.
+        /// </summary>
+        private static bool TryRewriteNoneLiteral(string expression, string temporaryPrefix,
+            out string rewrittenExpression, out string noneVariableName)
+        {
+            rewrittenExpression = expression;
+            noneVariableName = null;
+            if (string.IsNullOrWhiteSpace(expression)) return false;
+
+            var pattern = new Regex(@"(?<![A-Za-z0-9_.])None(?![A-Za-z0-9_])",
+                RegexOptions.Compiled);
+            MatchCollection matches = pattern.Matches(expression);
+            var replacements = new List<Tuple<int, int, string>>();
+            foreach (Match match in matches)
+            {
+                if (IsOutsideStringAt(expression, match.Index))
+                    replacements.Add(Tuple.Create(match.Index, match.Length, string.Empty));
+            }
+
+            if (replacements.Count == 0) return false;
+
+            noneVariableName = temporaryPrefix + "_none_reference";
+            var builder = new StringBuilder();
+            int cursor = 0;
+            foreach (Tuple<int, int, string> replacement in replacements)
+            {
+                builder.Append(expression, cursor, replacement.Item1 - cursor);
+                builder.Append(noneVariableName);
+                cursor = replacement.Item1 + replacement.Item2;
+            }
+
+            builder.Append(expression, cursor, expression.Length - cursor);
+            rewrittenExpression = builder.ToString();
             return true;
         }
 

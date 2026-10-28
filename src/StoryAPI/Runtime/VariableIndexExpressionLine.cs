@@ -2602,6 +2602,19 @@ namespace StoryAPI.Runtime
             return true;
         }
 
+        public static bool TryCreateForRangeValidationLine(string startName, string stopName,
+            string stepName, string validName, string sourcePath, int sourceLine, out Line line)
+        {
+            line = null;
+            if (!IsSimpleIdentifier(startName) || !IsSimpleIdentifier(stopName) ||
+                !IsSimpleIdentifier(stepName) || !IsSimpleIdentifier(validName))
+                return false;
+
+            line = new ForRangeValidationLine(
+                startName, stopName, stepName, validName, sourcePath, sourceLine);
+            return true;
+        }
+
         private sealed class ForEachItemLine : Line, IApply
         {
             private readonly string _variableName;
@@ -2683,6 +2696,58 @@ namespace StoryAPI.Runtime
                     Log.Warn("Could not read the next item from list '" + _collectionName +
                         "' at " + _sourcePath + ":" + _sourceLine + ": " +
                         e.GetBaseException().Message);
+                }
+            }
+        }
+
+        private sealed class ForRangeValidationLine : Line, IApply
+        {
+            private readonly string _startName;
+            private readonly string _stopName;
+            private readonly string _stepName;
+            private readonly string _validName;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public ForRangeValidationLine(string startName, string stopName, string stepName,
+                string validName, string sourcePath, int sourceLine)
+            {
+                _startName = startName;
+                _stopName = stopName;
+                _stepName = stepName;
+                _validName = validName;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetDynamicIndexValue(_startName, context, out object rawStart) ||
+                        !TryGetDynamicIndexValue(_stopName, context, out object rawStop) ||
+                        !TryGetDynamicIndexValue(_stepName, context, out object rawStep) ||
+                        !TryConvertListIndex(rawStart, out int start) ||
+                        !TryConvertListIndex(rawStop, out int stop) ||
+                        !TryConvertListIndex(rawStep, out int step))
+                        throw new InvalidOperationException(
+                            "range() arguments must evaluate to integer values within the 32-bit range");
+                    if (step == 0)
+                        throw new InvalidOperationException("range() step cannot be zero");
+
+                    if (!GameBridge.TrySetVariableLiteral(_startName, start, false, context) ||
+                        !GameBridge.TrySetVariableLiteral(_stopName, stop, false, context) ||
+                        !GameBridge.TrySetVariableLiteral(_stepName, step, false, context) ||
+                        !GameBridge.TrySetVariableLiteral(_validName, true, false, context))
+                        throw new InvalidOperationException("could not store validated range() arguments");
+                }
+                catch (Exception e)
+                {
+                    GameBridge.TrySetVariableLiteral(_validName, false, false, context);
+                    Log.Warn("Could not start range() loop at " + _sourcePath + ":" + _sourceLine +
+                        ": " + e.GetBaseException().Message);
                 }
             }
         }

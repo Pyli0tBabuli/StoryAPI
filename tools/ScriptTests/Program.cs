@@ -1820,9 +1820,9 @@ namespace StoryAPI.Tests
                 "The reverse recognizer must not capture other method names.");
 
             var statements = Parse(
-                "label list_reverse_test:\\n" +
-                "    $ inventory.reverse()\\n" +
-                "    return\\n");
+                "label list_reverse_test:\n" +
+                "    $ inventory.reverse()\n" +
+                "    return\n");
             var label = Require<LabelStatement>(statements[0],
                 "Expected a label containing a list reverse call.");
             Check(Require<PythonStatement>(label.Body[0],

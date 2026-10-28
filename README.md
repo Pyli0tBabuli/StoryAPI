@@ -199,16 +199,17 @@ be used in one condition or combined with indexed reads. Other function calls an
 forms such as `len(inventory[0])` remain unsupported.
 
 Within a label, `while`, `for item in inventory:`, `for key in settings:`,
-`for i in range(...):`, `break`, `continue`, and `pass` are supported. List loops assign each
-element to the loop variable and support nested conditions and loop control. Dictionary loops assign
-each key to the loop variable; the key sequence is snapshotted at loop entry, so keys added or removed
-in the loop body do not change the active iteration sequence. Dictionary values can be read with
-expressions such as `settings[key]`. Range loops support `range(stop)`, `range(start, stop)`, and
-`range(start, stop, step)`, including negative steps and empty ranges. Range arguments are evaluated
-once at loop entry and must resolve to 32-bit integers; a zero step or invalid argument logs a warning
-and skips the loop body. Range iteration does not allocate a list. Tuple unpacking and other iterable
-expressions are not yet supported. A `while` loop must eventually change its condition or break;
-infinite loops can stall the game.
+`for key, value in settings.items():`, `for i in range(...):`, `break`, `continue`, and
+`pass` are supported. List loops assign each element to the loop variable and support nested
+conditions and loop control. Dictionary key loops assign each key to the loop variable; the key
+sequence is snapshotted at loop entry, so keys added or removed in the loop body do not change the
+active iteration sequence. Dictionary items loops assign each key and its matching value to two loop
+variables using a snapshot of key/value pairs. Range loops support `range(stop)`, `range(start, stop)`,
+and `range(start, stop, step)`, including negative steps and empty ranges. Range arguments are
+evaluated once at loop entry and must resolve to 32-bit integers; a zero step or invalid argument logs
+a warning and skips the loop body. Range iteration does not allocate a list. Other iterable expressions
+and tuple unpacking outside dictionary `items()` loops are not yet supported. A `while` loop must
+eventually change its condition or break; infinite loops can stall the game.
 
 ### The base game's own scenes
 

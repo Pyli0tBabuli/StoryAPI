@@ -32,6 +32,7 @@ namespace StoryAPI.Tests
             Run("list and dictionary clear methods", TestCollectionClearMethods);
             Run("list extend method", TestListExtendMethod);
             Run("list insert and pop methods", TestListInsertAndPopMethods);
+            Run("dictionary update and pop methods", TestDictionaryUpdateAndPopMethods);
             Run("if/elif/else branches", TestConditionalBranches);
             Run("menu choices and nested statements", TestMenuChoices);
             Run("while and loop-control statements", TestWhileAndLoopControl);
@@ -918,6 +919,119 @@ namespace StoryAPI.Tests
             Check(Require<PythonStatement>(label.Body[1],
                     "The second clear call should parse as a Python statement.").Code == "settings.clear()",
                 "The parser should preserve the dictionary clear() call.");
+        }
+
+        private static void TestDictionaryUpdateAndPopMethods()
+        {
+            const string sourcePath = "dictionary-update-pop-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var settings = new Dictionary<string, object>
+            {
+                { "count", 5f },
+                { "theme", "dark" }
+            };
+            var overrides = new Dictionary<string, object>
+            {
+                { "theme", "light" },
+                { "sound", "on" }
+            };
+            context.SetVariable("settings",
+                new SimpleExpressionEngine.DataValue((object)settings));
+            context.SetVariable("overrides",
+                new SimpleExpressionEngine.DataValue((object)overrides));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateDictionaryUpdateLine(
+                    "settings.update(overrides)", sourcePath, 10, out line),
+                "settings.update(overrides) should be recognized.");
+            Check(line.GetType().Name == "DictionaryUpdateLine",
+                "update() should emit the dedicated dictionary-update instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(settings.Count == 3 && (float)settings["count"] == 5f &&
+                    (string)settings["theme"] == "light" && (string)settings["sound"] == "on",
+                "update() should add missing keys and overwrite matching keys.");
+            Check(overrides.Count == 2 && (string)overrides["theme"] == "light" &&
+                    (string)overrides["sound"] == "on",
+                "update() must not change its source dictionary.");
+
+            Check(VariableIndexExpressionLine.TryCreateDictionaryUpdateLine(
+                    "settings.update(settings)", sourcePath, 11, out line),
+                "A dictionary should be allowed to update itself.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(settings.Count == 3,
+                "Self-update should preserve all entries.");
+
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryUpdateLine(
+                    "settings.update(\"theme\")", sourcePath, 12, out line),
+                "update() should reject literal arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryUpdateLine(
+                    "settings[\"nested\"].update(overrides)", sourcePath, 13, out line),
+                "update() should reject indexed targets.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryUpdateLine(
+                    "settings.update(overrides, settings)", sourcePath, 14, out line),
+                "update() should reject multiple arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryUpdateLine(
+                    "settings.update(overrides); settings.clear()", sourcePath, 15, out line),
+                "update() should reject multiple statements.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryUpdateLine(
+                    "inventory.extend(overrides)", sourcePath, 16, out line),
+                "The update recognizer must not capture other method calls.");
+
+            List<RenPyParser.Line> lines;
+            Check(VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "old_theme = settings.pop(\"theme\")", sourcePath, 20, out lines),
+                "Assignment from dictionary pop() should be recognized.");
+            Check(lines.Count == 1 && lines[0].GetType().Name == "DictionaryPopLine",
+                "pop() should emit the dedicated dictionary-pop instruction.");
+            ((RenPyParser.Images.IApply)lines[0]).Apply(context);
+            object removed;
+            Check(GameBridge.TryGetLastTestLiteral("old_theme", out removed) &&
+                    string.Equals(removed as string, "light", StringComparison.Ordinal),
+                "Dictionary pop() should assign the removed scalar value.");
+            Check(!settings.ContainsKey("theme") && settings.ContainsKey("sound"),
+                "Dictionary pop() should remove only the requested key.");
+
+            Check(VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "settings.pop(\"count\")", sourcePath, 21, out lines),
+                "Dictionary pop() without assignment should be recognized.");
+            ((RenPyParser.Images.IApply)lines[0]).Apply(context);
+            Check(!settings.ContainsKey("count"),
+                "Dictionary pop() without assignment should still remove the key.");
+
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "settings.pop()", sourcePath, 22, out lines),
+                "dict.pop() should reject a missing key.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "settings.pop(\"sound\", \"off\")", sourcePath, 23, out lines),
+                "dict.pop() should reject a default-value argument in this subset.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "settings.pop(key_name)", sourcePath, 24, out lines),
+                "dict.pop() should require a quoted string key.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "settings[\"nested\"].pop(\"sound\")", sourcePath, 25, out lines),
+                "dict.pop() should reject indexed targets.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "settings.pop(\"sound\"); settings.clear()", sourcePath, 26, out lines),
+                "dict.pop() should reject multiple statements.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "settings.clear()", sourcePath, 27, out lines),
+                "The pop recognizer must not capture clear().");
+
+            var statements = Parse(
+                "label dictionary_update_pop_test:\n" +
+                "    $ settings.update(overrides)\n" +
+                "    $ old_theme = settings.pop(\"theme\")\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing dictionary update/pop calls.");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The update call should parse as a Python statement.").Code ==
+                    "settings.update(overrides)",
+                "The parser should preserve dictionary update() calls.");
+            Check(Require<PythonStatement>(label.Body[1],
+                    "The pop assignment should parse as a Python statement.").Code ==
+                    "old_theme = settings.pop(\"theme\")",
+                "The parser should preserve dictionary pop() assignments.");
         }
 
         private static void TestListExtendMethod()

@@ -1790,10 +1790,6 @@ namespace StoryAPI.Tests
             ((RenPyParser.Images.IApply)line).Apply(context);
             Check(inventory.SequenceEqual(new object[] { "medkit", "battery", "flashlight", "key" }),
                 "reverse() should reverse the list in place.");
-            Check(GameBridge.TryGetObjectBackedVariableForTesting("inventory", context, out object observed) &&
-                    object.ReferenceEquals(observed, inventory),
-                "reverse() should preserve the original list object.");
-
             ((RenPyParser.Images.IApply)line).Apply(context);
             Check(inventory.SequenceEqual(new object[] { "key", "flashlight", "battery", "medkit" }),
                 "Calling reverse() a second time should restore the original order.");

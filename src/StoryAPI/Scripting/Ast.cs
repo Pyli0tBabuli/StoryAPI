@@ -310,7 +310,18 @@ namespace StoryAPI.Scripting
         public List<Statement> Body { get; } = new List<Statement>();
     }
 
-    /// <summary>Loop control. It is an error to use it outside a while loop.</summary>
+    /// <summary>
+    /// Iterates through a named list, assigning each element to a loop variable.
+    /// Range expressions and tuple unpacking are intentionally handled in later stages.
+    /// </summary>
+    public sealed class ForStatement : Statement
+    {
+        public string Variable { get; set; }
+        public string Collection { get; set; }
+        public List<Statement> Body { get; } = new List<Statement>();
+    }
+
+    /// <summary>Loop control. It is an error to use it outside a loop.</summary>
     public sealed class LoopControlStatement : Statement
     {
         public bool IsContinue { get; set; }

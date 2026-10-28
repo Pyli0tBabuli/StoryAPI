@@ -1190,9 +1190,9 @@ namespace StoryAPI.Runtime
         /// into native scalar-evaluation instructions and one guarded collection mutation line.
         /// </summary>
         /// <summary>
-        /// Compiles compound assignments for a simple variable (+=, -=, *=). Collection
-        /// reads on the right-hand side are resolved before the native scalar assignment.
-        /// Indexed targets and other compound operators remain unsupported.
+        /// Compiles compound assignments for a simple variable (+=, -=, *=, /=, %=).
+        /// Collection reads on the right-hand side are resolved before the native scalar assignment.
+        /// Indexed targets are handled by the indexed-assignment pipeline.
         /// </summary>
         public static bool TryCreateCompoundAssignmentLines(string code, string temporaryPrefix,
             string sourcePath, int sourceLine, int blockStart, out List<Line> lines)
@@ -1211,7 +1211,8 @@ namespace StoryAPI.Runtime
 
             SkipWhitespace(code, ref cursor);
             if (cursor + 1 >= code.Length || code[cursor + 1] != '=' ||
-                (code[cursor] != '+' && code[cursor] != '-' && code[cursor] != '*'))
+                (code[cursor] != '+' && code[cursor] != '-' && code[cursor] != '*' &&
+                 code[cursor] != '/' && code[cursor] != '%'))
                 return false;
 
             char operation = code[cursor];
@@ -1376,7 +1377,7 @@ namespace StoryAPI.Runtime
                 }
 
                 if (bracketDepth != 0 || i + 1 >= code.Length || code[i + 1] != '=' ||
-                    (c != '+' && c != '-' && c != '*'))
+                    (c != '+' && c != '-' && c != '*' && c != '/' && c != '%'))
                     continue;
 
                 if (operatorPosition >= 0)

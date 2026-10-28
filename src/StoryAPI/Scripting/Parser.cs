@@ -588,6 +588,11 @@ namespace StoryAPI.Scripting
                 throw new ScriptSyntaxException("Expected 'in' after the loop variable.", Current.Line);
 
             ForStatement statement;
+            if (valueVariable != null)
+                throw new ScriptSyntaxException(
+                    "Tuple targets are currently supported only for 'for key, value in dictionary.items():'.",
+                    Current.Line);
+
             if (Current.Type == TokenType.Identifier && Current.Text == "range" &&
                 Ahead(1).Text == "(")
             {

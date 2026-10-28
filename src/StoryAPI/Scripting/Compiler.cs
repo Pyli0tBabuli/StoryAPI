@@ -61,6 +61,7 @@ namespace StoryAPI.Scripting
         {
             public int Start;
             public readonly List<RenpyGoToLine> Breaks = new List<RenpyGoToLine>();
+            public readonly List<RenpyGoToLine> Continues = new List<RenpyGoToLine>();
         }
         private readonly Stack<LoopContext> _loops = new Stack<LoopContext>();
 
@@ -255,6 +256,7 @@ namespace StoryAPI.Scripting
                 case PythonStatement python: EmitPython(python); break;
                 case IfStatement branch: EmitIf(branch); break;
                 case WhileStatement loop: EmitWhile(loop); break;
+                case ForStatement loop: EmitFor(loop); break;
                 case LoopControlStatement control: EmitLoopControl(control); break;
                 case PassStatement _: break;
                 case MenuStatement menu: EmitMenu(menu); break;
@@ -664,6 +666,52 @@ namespace StoryAPI.Scripting
             int end = _out.Count;
             PatchUnless(condition, guard, end);
             foreach (var jump in loop.Breaks) jump.targetLine = end;
+            foreach (var jump in loop.Continues) jump.targetLine = start;
+            _out.Add(new RenpyNOP());
+        }
+
+        private void EmitFor(ForStatement statement)
+        {
+            string safeLabel = Regex.Replace(_textLabel ?? "label", @"[^A-Za-z0-9_]", "_");
+            string indexName = "_storyapi_for_" + safeLabel + "_" +
+                statement.Line.ToString(CultureInfo.InvariantCulture) + "_index";
+
+            _out.Add(new RenpyOneLinePython("$ " + indexName + " = 0"));
+            int start = _out.Count;
+            string condition = PrepareCondition(
+                indexName + " < len(" + statement.Collection + ")", statement.Line);
+            int guard = EmitUnless(condition);
+
+            Line itemLine;
+            if (!VariableIndexExpressionLine.TryCreateForEachItemLine(
+                statement.Variable, statement.Collection, indexName,
+                _textLabel ?? "unknown", statement.Line, out itemLine))
+                throw new InvalidOperationException(
+                    "for loops require simple variable names and a named list (line " +
+                    statement.Line + ").");
+            _out.Add(itemLine);
+
+            var loop = new LoopContext { Start = start };
+            _loops.Push(loop);
+            try
+            {
+                EmitBody(statement.Body);
+            }
+            finally
+            {
+                _loops.Pop();
+            }
+
+            // In a for loop, continue must run the index increment before checking the
+            // condition again. Patch it to the increment instruction after body emission.
+            int continueTarget = _out.Count;
+            foreach (var jump in loop.Continues) jump.targetLine = continueTarget;
+
+            _out.Add(new RenpyOneLinePython("$ " + indexName + " += 1"));
+            _out.Add(new RenpyGoToLine(start));
+            int end = _out.Count;
+            PatchUnless(condition, guard, end);
+            foreach (var jump in loop.Breaks) jump.targetLine = end;
             _out.Add(new RenpyNOP());
         }
 
@@ -671,12 +719,14 @@ namespace StoryAPI.Scripting
         {
             if (_loops.Count == 0)
                 throw new InvalidOperationException("'" + (statement.IsContinue ? "continue" : "break") +
-                    "' is only valid inside a while loop (line " + statement.Line + ").");
+                    "' is only valid inside a loop (line " + statement.Line + ").");
 
             var loop = _loops.Peek();
             if (statement.IsContinue)
             {
-                _out.Add(new RenpyGoToLine(loop.Start));
+                var jump = new RenpyGoToLine(-1);
+                _out.Add(jump);
+                loop.Continues.Add(jump);
             }
             else
             {

@@ -3217,7 +3217,7 @@ namespace StoryAPI.Runtime
 
         public void Apply(IContext context)
         {
-            if (_state == null || _state.Initialized || _state.Failed) return;
+            if (_state == null || (!_isTemporary && _state.Initialized) || _state.Failed) return;
 
             try
             {
@@ -3265,7 +3265,10 @@ namespace StoryAPI.Runtime
                 if (!GameBridge.TrySetVariableLiteral(_name, current, _isDefault, context))
                     throw new InvalidOperationException("could not write the indexed value");
 
-                _state.Initialized = true;
+                // Temporary indexed reads are emitted at the statement's runtime location.
+                // They may execute repeatedly inside loops and must resolve the current key
+                // each time; only define/default reads are one-shot initializations.
+                if (!_isTemporary) _state.Initialized = true;
                 if (_isTemporary)
                 {
                     Log.Info("Resolved an indexed value for variable '" + _reportedName +

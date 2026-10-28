@@ -2593,7 +2593,7 @@ namespace StoryAPI.Runtime
             string sourcePath, int sourceLine, out Line line)
         {
             return TryCreateForEachPreparationLine(
-                sourceName, destinationName, false, false, sourcePath, sourceLine, out line);
+                sourceName, destinationName, false, false, false, sourcePath, sourceLine, out line);
         }
 
         // Backwards-compatible overload: true means dictionary.items() key/value pairs.
@@ -2601,22 +2601,34 @@ namespace StoryAPI.Runtime
             bool includeDictionaryItems, string sourcePath, int sourceLine, out Line line)
         {
             return TryCreateForEachPreparationLine(
-                sourceName, destinationName, includeDictionaryItems, false,
+                sourceName, destinationName, includeDictionaryItems, false, false,
                 sourcePath, sourceLine, out line);
         }
 
+        // Backwards-compatible overload: the second flag selects dictionary.values().
         public static bool TryCreateForEachPreparationLine(string sourceName, string destinationName,
             bool includeDictionaryItems, bool dictionaryValuesOnly,
             string sourcePath, int sourceLine, out Line line)
         {
+            return TryCreateForEachPreparationLine(
+                sourceName, destinationName, includeDictionaryItems, dictionaryValuesOnly, false,
+                sourcePath, sourceLine, out line);
+        }
+
+        public static bool TryCreateForEachPreparationLine(string sourceName, string destinationName,
+            bool includeDictionaryItems, bool dictionaryValuesOnly, bool dictionaryKeysOnly,
+            string sourcePath, int sourceLine, out Line line)
+        {
             line = null;
+            int selectedModes = (includeDictionaryItems ? 1 : 0) +
+                (dictionaryValuesOnly ? 1 : 0) + (dictionaryKeysOnly ? 1 : 0);
             if (!IsSimpleIdentifier(sourceName) || !IsSimpleIdentifier(destinationName) ||
-                (includeDictionaryItems && dictionaryValuesOnly))
+                selectedModes > 1)
                 return false;
 
             line = new ForEachPreparationLine(
                 sourceName, destinationName, includeDictionaryItems, dictionaryValuesOnly,
-                sourcePath, sourceLine);
+                dictionaryKeysOnly, sourcePath, sourceLine);
             return true;
         }
 
@@ -2663,17 +2675,19 @@ namespace StoryAPI.Runtime
             private readonly string _destinationName;
             private readonly bool _includeDictionaryItems;
             private readonly bool _dictionaryValuesOnly;
+            private readonly bool _dictionaryKeysOnly;
             private readonly string _sourcePath;
             private readonly int _sourceLine;
 
             public ForEachPreparationLine(string sourceName, string destinationName,
-                bool includeDictionaryItems, bool dictionaryValuesOnly,
+                bool includeDictionaryItems, bool dictionaryValuesOnly, bool dictionaryKeysOnly,
                 string sourcePath, int sourceLine)
             {
                 _sourceName = sourceName;
                 _destinationName = destinationName;
                 _includeDictionaryItems = includeDictionaryItems;
                 _dictionaryValuesOnly = dictionaryValuesOnly;
+                _dictionaryKeysOnly = dictionaryKeysOnly;
                 _sourcePath = sourcePath;
                 _sourceLine = sourceLine;
             }
@@ -2715,6 +2729,18 @@ namespace StoryAPI.Runtime
                         foreach (object value in valuesDictionary.Values)
                             values.Add(value);
                         iterationItems = values;
+                    }
+                    else if (_dictionaryKeysOnly)
+                    {
+                        if (!(source is IDictionary keysDictionary))
+                            throw new InvalidOperationException(
+                                "dictionary.keys() requires a dictionary source");
+
+                        // Explicit .keys() iteration always snapshots dictionary keys.
+                        var keys = new List<object>();
+                        foreach (object key in keysDictionary.Keys)
+                            keys.Add(key);
+                        iterationItems = keys;
                     }
                     else if (source is IList items)
                     {

@@ -621,8 +621,10 @@ namespace StoryAPI.Scripting
                 string collection = Advance().Text;
                 bool isDictionaryItems = false;
                 bool isDictionaryValues = false;
+                bool isDictionaryKeys = false;
                 if (Current.Text == "." &&
-                    (Ahead(1).Text == "items" || Ahead(1).Text == "values") &&
+                    (Ahead(1).Text == "items" || Ahead(1).Text == "values" ||
+                     Ahead(1).Text == "keys") &&
                     Ahead(2).Text == "(" && Ahead(3).Text == ")")
                 {
                     string dictionaryMethod = Ahead(1).Text;
@@ -638,9 +640,12 @@ namespace StoryAPI.Scripting
                     {
                         if (valueVariable != null)
                             throw new ScriptSyntaxException(
-                                "dictionary.values() iteration accepts only one loop variable.",
-                                Current.Line);
-                        isDictionaryValues = true;
+                                "dictionary." + dictionaryMethod +
+                                "() iteration accepts only one loop variable.", Current.Line);
+                        if (dictionaryMethod == "values")
+                            isDictionaryValues = true;
+                        else
+                            isDictionaryKeys = true;
                     }
                     _index += 4;
                 }
@@ -652,7 +657,7 @@ namespace StoryAPI.Scripting
 
                 if (Current.Type != TokenType.Colon)
                     throw new ScriptSyntaxException(
-                        "Only a named list, dictionary.items(), or dictionary.values() is supported after 'in'.",
+                        "Only a named list, dictionary.keys(), dictionary.items(), or dictionary.values() is supported after 'in'.",
                         Current.Line);
 
                 ExpectColon();
@@ -663,6 +668,7 @@ namespace StoryAPI.Scripting
                     Collection = collection,
                     IsDictionaryItems = isDictionaryItems,
                     IsDictionaryValues = isDictionaryValues,
+                    IsDictionaryKeys = isDictionaryKeys,
                     Line = line,
                 };
             }

@@ -318,6 +318,7 @@ namespace StoryAPI.Scripting
         public string Collection { get; set; }
         public bool IsDictionaryItems { get; set; }
         public bool IsDictionaryValues { get; set; }
+        public bool IsDictionaryKeys { get; set; }
         public bool IsRange { get; set; }
         public string RangeStart { get; set; }
         public string RangeStop { get; set; }

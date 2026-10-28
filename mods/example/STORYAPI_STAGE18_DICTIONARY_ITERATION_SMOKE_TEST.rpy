@@ -25,7 +25,10 @@ label storyapi_stage18_for_dictionary_smoke:
         elif stage18_key == "gamma":
             $ stage18_seen_gamma = True
 
-    if stage18_probe_count != 3 or stage18_probe_total != 6:
+    if stage18_probe_count != 3:
+        _ "STORYAPI_FOR_DICTIONARY_ITERATION_COUNT_FAIL"
+        return
+    if stage18_probe_total != 6:
         _ "STORYAPI_FOR_DICTIONARY_ITERATION_TOTAL_FAIL"
         return
     if not stage18_seen_alpha or not stage18_seen_beta or not stage18_seen_gamma:

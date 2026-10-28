@@ -206,6 +206,7 @@ namespace StoryAPI.Scripting
                     case "pose": return ParsePose();
                     case "layer": return ParseLayer();
                     case "while": return ParseWhile();
+                    case "for": return ParseFor();
                     case "break": return ParseLoopControl(false);
                     case "continue": return ParseLoopControl(true);
                     case "pass": _index++; FinishLine(); return new PassStatement { Line = line };
@@ -558,6 +559,39 @@ namespace StoryAPI.Scripting
             ExpectColon();
 
             var statement = new WhileStatement { Condition = condition, Line = line };
+            statement.Body.AddRange(ParseBranchBody());
+            return statement;
+        }
+
+        private Statement ParseFor()
+        {
+            int line = Current.Line;
+            _index++; // for
+
+            if (Current.Type != TokenType.Identifier)
+                throw new ScriptSyntaxException("Expected a loop variable after 'for'.", line);
+            string variable = Advance().Text;
+
+            if (!MatchIdentifier("in"))
+                throw new ScriptSyntaxException("Expected 'in' after the loop variable.", Current.Line);
+
+            if (Current.Type != TokenType.Identifier)
+                throw new ScriptSyntaxException(
+                    "Expected a named list after 'in'; range() and other expressions are not supported yet.",
+                    Current.Line);
+            string collection = Advance().Text;
+            if (Current.Type != TokenType.Colon)
+                throw new ScriptSyntaxException(
+                    "Only a named list variable is supported after 'in'; range() and other expressions are not supported yet.",
+                    Current.Line);
+
+            ExpectColon();
+            var statement = new ForStatement
+            {
+                Variable = variable,
+                Collection = collection,
+                Line = line,
+            };
             statement.Body.AddRange(ParseBranchBody());
             return statement;
         }

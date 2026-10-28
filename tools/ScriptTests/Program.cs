@@ -38,6 +38,7 @@ namespace StoryAPI.Tests
             Run("if/elif/else branches", TestConditionalBranches);
             Run("menu choices and nested statements", TestMenuChoices);
             Run("while and loop-control statements", TestWhileAndLoopControl);
+            Run("for-list iteration and loop control", TestForListIteration);
             Run("image/audio asset paths", TestAssetPaths);
             Run("comments and blank lines", TestCommentsAndBlankLines);
             Run("reject malformed scripts", TestMalformedScripts);
@@ -1540,6 +1541,51 @@ namespace StoryAPI.Tests
             Check(!Require<LoopControlStatement>(branch.Branches[1].Body[0],
                 "Expected break.").IsContinue, "Else loop control should be break.");
             Require<PassStatement>(loop.Body[2], "Expected pass.");
+        }
+
+        private static void TestForListIteration()
+        {
+            var statements = Parse(
+                "label for_test:\n" +
+                "    for item in inventory:\n" +
+                "        if item == \"skip\":\n" +
+                "            continue\n" +
+                "        if item == \"stop\":\n" +
+                "            break\n" +
+                "        _ \"[item]\"\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0], "Expected label.");
+            var loop = Require<ForStatement>(label.Body[0], "Expected for loop.");
+            Check(loop.Variable == "item", "for-loop variable mismatch.");
+            Check(loop.Collection == "inventory", "for-loop collection mismatch.");
+            Check(loop.Body.Count == 3, "Expected if/if/dialogue in the for-loop body.");
+            var continueBranch = Require<IfStatement>(loop.Body[0], "Expected first if.");
+            Check(Require<LoopControlStatement>(continueBranch.Branches[0].Body[0],
+                "Expected continue.").IsContinue, "The first branch should continue.");
+            var breakBranch = Require<IfStatement>(loop.Body[1], "Expected second if.");
+            Check(!Require<LoopControlStatement>(breakBranch.Branches[0].Body[0],
+                "Expected break.").IsContinue, "The second branch should break.");
+            Require<SayStatement>(loop.Body[2], "Expected dialogue.");
+
+            var empty = Parse(
+                "label empty_for_test:\n" +
+                "    for item in inventory:\n" +
+                "        pass\n" +
+                "    return\n");
+            var emptyLabel = Require<LabelStatement>(empty[0], "Expected empty-for label.");
+            var emptyLoop = Require<ForStatement>(emptyLabel.Body[0], "Expected empty for loop.");
+            Check(emptyLoop.Body.Count == 1 && emptyLoop.Body[0] is PassStatement,
+                "An empty-list loop body should parse normally.");
+            ExpectSyntaxError(
+                "label malformed_for:\n" +
+                "    for item inventory:\n" +
+                "        pass\n",
+                "Expected 'in'");
+            ExpectSyntaxError(
+                "label unsupported_for_expression:\n" +
+                "    for item in range(3):\n" +
+                "        pass\n",
+                "named list");
         }
 
         private static void TestAssetPaths()

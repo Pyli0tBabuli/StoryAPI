@@ -198,8 +198,11 @@ The call is resolved before the native condition is evaluated, and several lengt
 be used in one condition or combined with indexed reads. Other function calls and nested
 forms such as `len(inventory[0])` remain unsupported.
 
-Within a label, `while`, `break`, `continue`, and `pass` are supported.
-A loop must eventually change its condition or break; infinite loops can stall the game.
+Within a label, `while`, `for item in inventory:`, `break`, `continue`, and `pass` are supported.
+A `for` loop iterates through a named list, assigns each element to the loop variable, and
+supports nested conditions and loop control. `range()`, dictionary iteration, tuple unpacking,
+and other iterable expressions are not yet supported. A `while` loop must eventually change its
+condition or break; infinite loops can stall the game.
 
 ### The base game's own scenes
 

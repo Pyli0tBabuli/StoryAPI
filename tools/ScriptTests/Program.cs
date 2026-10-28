@@ -876,6 +876,18 @@ namespace StoryAPI.Tests
                     out noIndexLines, out unchangedCondition) &&
                 noIndexLines.Count == 0 && unchangedCondition == "score > 0",
                 "Ordinary scalar conditions should remain untouched.");
+
+            const string nonePrefix = "_storyapi_condition_none_test";
+            Check(VariableIndexExpressionLine.TryPrepareCondition(
+                    "optional_value != None and label == \"None\"",
+                    nonePrefix, "condition-test.rpy", 10, out noIndexLines, out unchangedCondition),
+                "A Python None literal in a condition should be prepared for the game evaluator.");
+            Check(unchangedCondition == nonePrefix + "_gate and (optional_value != " +
+                    nonePrefix + "_none_reference and label == \"None\")",
+                "Only the None literal outside a string should be rewritten.");
+            Check(noIndexLines.OfType<RenpyParser.RenpyOneLinePython>().Any(line =>
+                    line.Code == "$ " + nonePrefix + "_none_reference = None"),
+                "Condition preparation should materialize None through a native Python assignment.");
         }
 
         private static void TestListMethodMutations()

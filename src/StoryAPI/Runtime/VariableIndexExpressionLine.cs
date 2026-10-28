@@ -2589,6 +2589,96 @@ namespace StoryAPI.Runtime
             throw new InvalidOperationException("value is not a list or dictionary");
         }
 
+        public static bool TryCreateForEachItemLine(string variableName, string collectionName,
+            string indexName, string sourcePath, int sourceLine, out Line line)
+        {
+            line = null;
+            if (!IsSimpleIdentifier(variableName) || !IsSimpleIdentifier(collectionName) ||
+                !IsSimpleIdentifier(indexName))
+                return false;
+
+            line = new ForEachItemLine(
+                variableName, collectionName, indexName, sourcePath, sourceLine);
+            return true;
+        }
+
+        private sealed class ForEachItemLine : Line, IApply
+        {
+            private readonly string _variableName;
+            private readonly string _collectionName;
+            private readonly string _indexName;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public ForEachItemLine(string variableName, string collectionName, string indexName,
+                string sourcePath, int sourceLine)
+            {
+                _variableName = variableName;
+                _collectionName = collectionName;
+                _indexName = indexName;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_collectionName, context, out object source))
+                        throw new InvalidOperationException("source variable '" + _collectionName +
+                            "' is not an object-backed list");
+                    if (!(source is IList items))
+                    {
+                        // Stop this loop after a single warning instead of repeatedly running
+                        // its body with a stale item variable.
+                        int count = source is IDictionary dictionary ? dictionary.Count :
+                            (source is ICollection collection ? collection.Count : int.MaxValue);
+                        GameBridge.TrySetVariableLiteral(_indexName, count, false, context);
+                        throw new InvalidOperationException(
+                            "for-in currently supports lists, not dictionaries or other values");
+                    }
+
+                    if (!TryGetDynamicIndexValue(_indexName, context, out object rawIndex) ||
+                        !TryConvertListIndex(rawIndex, out int index))
+                        throw new InvalidOperationException("loop index was not an integer scalar");
+
+                    if (index < 0 || index >= items.Count)
+                    {
+                        // A list may change between the length check and this instruction.
+                        GameBridge.TrySetVariableLiteral(_indexName, items.Count, false, context);
+                        throw new InvalidOperationException(
+                            "list changed while resolving the next loop item");
+                    }
+
+                    if (!GameBridge.TrySetVariableLiteral(
+                        _variableName, items[index], false, context))
+                        throw new InvalidOperationException(
+                            "could not assign the current item to '" + _variableName + "'");
+                }
+                catch (Exception e)
+                {
+                    // Force the generated condition to exit on the next check after a
+                    // runtime type/value error, preventing a stuck loop.
+                    if (TryGetObjectBackedVariable(_collectionName, context, out object source))
+                    {
+                        int count = source is IList list ? list.Count :
+                            (source is IDictionary dictionary ? dictionary.Count : int.MaxValue);
+                        GameBridge.TrySetVariableLiteral(_indexName, count, false, context);
+                    }
+                    else
+                    {
+                        GameBridge.TrySetVariableLiteral(_indexName, int.MaxValue, false, context);
+                    }
+
+                    Log.Warn("Could not read the next item from list '" + _collectionName +
+                        "' at " + _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+        }
+
         public static bool TryCreateTemporary(string temporaryName, string chainExpression,
             string sourcePath, int sourceLine, VariableInitializationState declarationState,
             string gateName, string declarationName, out VariableIndexExpressionLine line)

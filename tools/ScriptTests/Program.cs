@@ -548,12 +548,52 @@ namespace StoryAPI.Tests
             Check(Convert.ToSingle(settings["count"]) == 29f,
                 "The dictionary compound assignment should write the computed value.");
 
+            const string dividePrefix = "_storyapi_indexed_compound_divide";
+            Check(VariableIndexExpressionLine.TryCreateIndexedCompoundAssignmentLines(
+                    "inventory[0] /= 4", dividePrefix, sourcePath, 14, 140, out lines),
+                "A list index /= assignment should be recognized.");
+            Check(lines.OfType<RenpyParser.RenpyOneLinePython>().Any(x =>
+                    x.Code == "$ " + dividePrefix + "_value = " +
+                        dividePrefix + "_rhs_index_0 / (4)"),
+                "The indexed compound assignment should divide the current value.");
+            context.SetVariable(dividePrefix + "_value", new SimpleExpressionEngine.DataValue(6f));
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
+            Check(Convert.ToSingle(inventory[0]) == 6f,
+                "The indexed /= assignment should write the divided value.");
+
+            const string moduloPrefix = "_storyapi_indexed_compound_modulo";
+            Check(VariableIndexExpressionLine.TryCreateIndexedCompoundAssignmentLines(
+                    "inventory[0] %= 4", moduloPrefix, sourcePath, 15, 150, out lines),
+                "A list index %= assignment should be recognized.");
+            Check(lines.OfType<RenpyParser.RenpyOneLinePython>().Any(x =>
+                    x.Code == "$ " + moduloPrefix + "_value = 4"),
+                "The indexed %= assignment should evaluate the RHS without using native modulo.");
+            inventory[0] = 18f;
+            context.SetVariable(moduloPrefix + "_value", new SimpleExpressionEngine.DataValue(4f));
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
+            Check(Convert.ToSingle(inventory[0]) == 2f,
+                "The indexed %= assignment should compute and write the remainder at runtime.");
+
+            const string dictionaryModuloPrefix = "_storyapi_indexed_dictionary_modulo";
+            Check(VariableIndexExpressionLine.TryCreateIndexedCompoundAssignmentLines(
+                    "settings[\"count\"] %= 4", dictionaryModuloPrefix, sourcePath, 16, 160, out lines),
+                "A dictionary value %= assignment should be recognized.");
+            Check(lines.OfType<RenpyParser.RenpyOneLinePython>().Any(x =>
+                    x.Code == "$ " + dictionaryModuloPrefix + "_value = 4"),
+                "The dictionary %= assignment should evaluate its RHS without native modulo.");
+            settings["count"] = 10f;
+            context.SetVariable(dictionaryModuloPrefix + "_value",
+                new SimpleExpressionEngine.DataValue(4f));
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
+            Check(Convert.ToSingle(settings["count"]) == 2f,
+                "The dictionary indexed %= assignment should compute and write the remainder.");
+
             Check(!VariableIndexExpressionLine.TryCreateIndexedCompoundAssignmentLines(
                     "coins += 1", "_storyapi_scalar_only", sourcePath, 20, 200, out lines),
                 "This recognizer must not capture scalar-only compound assignments.");
             Check(!VariableIndexExpressionLine.TryCreateIndexedCompoundAssignmentLines(
-                    "inventory[0] /= 2", listPrefix, sourcePath, 21, 210, out lines),
-                "/= remains unsupported for indexed targets.");
+                    "inventory[0] **= 2", listPrefix, sourcePath, 21, 210, out lines),
+                "Unsupported exponent compound assignments must remain rejected.");
             Check(!VariableIndexExpressionLine.TryCreateIndexedCompoundAssignmentLines(
                     "inventory[0] += ", listPrefix, sourcePath, 22, 220, out lines),
                 "An indexed compound assignment must have a RHS.");
@@ -575,6 +615,8 @@ namespace StoryAPI.Tests
                 "label indexed_compound_test:\n" +
                 "    $ inventory[0] += 1\n" +
                 "    $ settings[\"count\"] -= 1\n" +
+                "    $ inventory[1] /= 2\n" +
+                "    $ settings[\"count\"] %= 3\n" +
                 "    return\n");
             var label = Require<LabelStatement>(statements[0],
                 "Expected a label with indexed compound assignments.");
@@ -586,6 +628,14 @@ namespace StoryAPI.Tests
                     "The dictionary indexed compound assignment should parse as Python code.").Code ==
                     "settings[\"count\"] -= 1",
                 "The parser should preserve dictionary compound-assignment syntax.");
+            Check(Require<PythonStatement>(label.Body[2],
+                    "The list indexed /= assignment should parse as Python code.").Code ==
+                    "inventory[1] /= 2",
+                "The parser should preserve indexed /= syntax.");
+            Check(Require<PythonStatement>(label.Body[3],
+                    "The dictionary indexed %= assignment should parse as Python code.").Code ==
+                    "settings[\"count\"] %= 3",
+                "The parser should preserve indexed %= syntax.");
         }
 
         private static void TestCompoundScalarAssignments()
@@ -631,9 +681,21 @@ namespace StoryAPI.Tests
                         "$ score = score + (" + prefix + "_compound_rhs_index_0)",
                 "Indexed RHS values should be resolved and guarded before the assignment.");
 
+            Check(VariableIndexExpressionLine.TryCreateCompoundAssignmentLines(
+                    "coins /= 2", prefix, sourcePath, 15, 150, out lines) &&
+                    ((RenpyParser.RenpyOneLinePython)lines[0]).Code == "$ coins = coins / (2)",
+                "/= should translate to division.");
+            Check(VariableIndexExpressionLine.TryCreateCompoundAssignmentLines(
+                    "coins %= 3", prefix, sourcePath, 16, 160, out lines) &&
+                    lines.Count == 2 &&
+                    lines[0] is RenpyParser.RenpyOneLinePython &&
+                    ((RenpyParser.RenpyOneLinePython)lines[0]).Code ==
+                        "$ " + prefix + "_compound_rhs_value = (3)" &&
+                    lines[1].GetType().Name == "ScalarModuloAssignmentLine",
+                "%= should evaluate its RHS and calculate the modulo in StoryAPI.");
             Check(!VariableIndexExpressionLine.TryCreateCompoundAssignmentLines(
-                    "coins /= 2", prefix, sourcePath, 15, 150, out lines),
-                "/= remains unsupported in this stage.");
+                    "coins **= 2", prefix, sourcePath, 17, 170, out lines),
+                "Unsupported exponent compound assignments must remain rejected.");
             Check(!VariableIndexExpressionLine.TryCreateCompoundAssignmentLines(
                     "inventory[0] += 1", prefix, sourcePath, 16, 160, out lines),
                 "Indexed compound-assignment targets remain unsupported.");
@@ -652,6 +714,8 @@ namespace StoryAPI.Tests
                 "    $ coins += 5\n" +
                 "    $ coins -= 2\n" +
                 "    $ coins *= 3\n" +
+                "    $ coins /= 2\n" +
+                "    $ coins %= 3\n" +
                 "    return\n");
             var label = Require<LabelStatement>(statements[0],
                 "Expected a label containing compound assignments.");
@@ -664,6 +728,12 @@ namespace StoryAPI.Tests
             Check(Require<PythonStatement>(label.Body[2],
                     "The *= statement should parse as Python code.").Code == "coins *= 3",
                 "The parser should preserve *= syntax.");
+            Check(Require<PythonStatement>(label.Body[3],
+                    "The /= statement should parse as Python code.").Code == "coins /= 2",
+                "The parser should preserve /= syntax.");
+            Check(Require<PythonStatement>(label.Body[4],
+                    "The %= statement should parse as Python code.").Code == "coins %= 3",
+                "The parser should preserve %= syntax.");
         }
 
         private static void TestIndexedCollectionAssignments()

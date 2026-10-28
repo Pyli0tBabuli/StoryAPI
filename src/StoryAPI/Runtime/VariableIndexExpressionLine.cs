@@ -1190,9 +1190,9 @@ namespace StoryAPI.Runtime
         /// into native scalar-evaluation instructions and one guarded collection mutation line.
         /// </summary>
         /// <summary>
-        /// Compiles compound assignments for a simple variable (+=, -=, *=). Collection
-        /// reads on the right-hand side are resolved before the native scalar assignment.
-        /// Indexed targets and other compound operators remain unsupported.
+        /// Compiles compound assignments for a simple variable (+=, -=, *=, /=, %=).
+        /// Collection reads on the right-hand side are resolved before the native scalar assignment.
+        /// Indexed targets are handled by the indexed-assignment pipeline.
         /// </summary>
         public static bool TryCreateCompoundAssignmentLines(string code, string temporaryPrefix,
             string sourcePath, int sourceLine, int blockStart, out List<Line> lines)
@@ -1211,7 +1211,8 @@ namespace StoryAPI.Runtime
 
             SkipWhitespace(code, ref cursor);
             if (cursor + 1 >= code.Length || code[cursor + 1] != '=' ||
-                (code[cursor] != '+' && code[cursor] != '-' && code[cursor] != '*'))
+                (code[cursor] != '+' && code[cursor] != '-' && code[cursor] != '*' &&
+                 code[cursor] != '/' && code[cursor] != '%'))
                 return false;
 
             char operation = code[cursor];
@@ -1232,9 +1233,24 @@ namespace StoryAPI.Runtime
 
             string assignment = "$ " + targetName + " = " + targetName + " " +
                 operation + " (" + valueExpression + ")";
+            string moduloRightName = temporaryPrefix + "_compound_rhs_value";
+            string moduloRightAssignment = "$ " + moduloRightName + " = (" +
+                valueExpression + ")";
             if (!hasIndexReads)
             {
-                lines = new List<Line> { new RenpyOneLinePython(assignment) };
+                if (operation == '%')
+                {
+                    lines = new List<Line>
+                    {
+                        new RenpyOneLinePython(moduloRightAssignment),
+                        new ScalarModuloAssignmentLine(targetName, moduloRightName,
+                            sourcePath, sourceLine)
+                    };
+                }
+                else
+                {
+                    lines = new List<Line> { new RenpyOneLinePython(assignment) };
+                }
                 return true;
             }
 
@@ -1250,7 +1266,8 @@ namespace StoryAPI.Runtime
                 rightReadLines.Add(readLine);
             }
 
-            int blockSize = 3 + rightDynamicIndexes.Count + rightReadLines.Count;
+            int blockSize = (operation == '%' ? 4 : 3) +
+                rightDynamicIndexes.Count + rightReadLines.Count;
             int skipTarget = blockStart + blockSize;
             var result = new List<Line>(blockSize);
             result.Add(new RenpyOneLinePython("$ " + gateName + " = True"));
@@ -1259,7 +1276,16 @@ namespace StoryAPI.Runtime
                     "$ " + dynamicIndex.Key + " = " + dynamicIndex.Value));
             result.AddRange(rightReadLines);
             result.Add(new RenpyGoToLineUnless(gateName, skipTarget));
-            result.Add(new RenpyOneLinePython(assignment));
+            if (operation == '%')
+            {
+                result.Add(new RenpyOneLinePython(moduloRightAssignment));
+                result.Add(new ScalarModuloAssignmentLine(targetName, moduloRightName,
+                    sourcePath, sourceLine));
+            }
+            else
+            {
+                result.Add(new RenpyOneLinePython(assignment));
+            }
             lines = result;
             return true;
         }
@@ -1322,8 +1348,16 @@ namespace StoryAPI.Runtime
                 targetIndices.Count == 0)
                 return false;
 
-            // Reuse the standard assignment pipeline: it snapshots the current indexed value,
-            // resolves any indexed values on the RHS, guards failed reads, then mutates in-place.
+            // Modulo is computed by StoryAPI at runtime because DDLC+'s scalar expression
+            // evaluator does not reliably execute the native % operator. Keep RHS resolution
+            // and the guarded collection mutation pipeline, but let the mutation line combine
+            // the existing target value with the resolved RHS.
+            if (operation == '%')
+                return TryCreateAssignmentLines(targetExpression + " = " + rightExpression,
+                    temporaryPrefix, sourcePath, sourceLine, blockStart, out lines, '%');
+
+            // Reuse the standard assignment pipeline: it resolves any indexed values on the
+            // RHS, guards failed reads, then mutates in-place.
             string expandedAssignment = targetExpression + " = " + targetExpression + " " +
                 operation + " (" + rightExpression + ")";
             return TryCreateAssignmentLines(expandedAssignment, temporaryPrefix, sourcePath,
@@ -1376,7 +1410,7 @@ namespace StoryAPI.Runtime
                 }
 
                 if (bracketDepth != 0 || i + 1 >= code.Length || code[i + 1] != '=' ||
-                    (c != '+' && c != '-' && c != '*'))
+                    (c != '+' && c != '-' && c != '*' && c != '/' && c != '%'))
                     continue;
 
                 if (operatorPosition >= 0)
@@ -1401,7 +1435,8 @@ namespace StoryAPI.Runtime
         }
 
         public static bool TryCreateAssignmentLines(string code, string temporaryPrefix,
-            string sourcePath, int sourceLine, int blockStart, out List<Line> lines)
+            string sourcePath, int sourceLine, int blockStart, out List<Line> lines,
+            char compoundOperation = '\0')
         {
             lines = null;
             if (string.IsNullOrWhiteSpace(code) || string.IsNullOrWhiteSpace(temporaryPrefix))
@@ -1462,7 +1497,8 @@ namespace StoryAPI.Runtime
                     "$ " + dynamicIndex.Key + " = " + dynamicIndex.Value));
 
             result.Add(new CollectionMutationLine(
-                rootName, targetIndices, valueName, sourcePath, sourceLine, state));
+                rootName, targetIndices, valueName, sourcePath, sourceLine, state,
+                compoundOperation));
 
             lines = result;
             return true;
@@ -2369,6 +2405,68 @@ namespace StoryAPI.Runtime
                 value is float || value is double || value is decimal;
         }
 
+        private static float CalculatePythonModulo(object left, object right)
+        {
+            if (!IsNumericScalar(left) || !IsNumericScalar(right))
+                throw new InvalidOperationException("modulo operands must be numeric scalars");
+
+            double dividend = Convert.ToDouble(left, CultureInfo.InvariantCulture);
+            double divisor = Convert.ToDouble(right, CultureInfo.InvariantCulture);
+            if (double.IsNaN(dividend) || double.IsInfinity(dividend) ||
+                double.IsNaN(divisor) || double.IsInfinity(divisor))
+                throw new InvalidOperationException("modulo operands must be finite numbers");
+            if (divisor == 0d)
+                throw new DivideByZeroException("modulo by zero");
+
+            double remainder = dividend % divisor;
+            // Python/Ren'Py modulo follows the sign of the divisor; C# remainder follows
+            // the dividend, so adjust non-zero results when their signs differ.
+            if (remainder != 0d && ((remainder < 0d) != (divisor < 0d)))
+                remainder += divisor;
+            return (float)remainder;
+        }
+
+        private sealed class ScalarModuloAssignmentLine : Line, IApply
+        {
+            private readonly string _targetName;
+            private readonly string _rightValueName;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public ScalarModuloAssignmentLine(string targetName, string rightValueName,
+                string sourcePath, int sourceLine)
+            {
+                _targetName = targetName;
+                _rightValueName = rightValueName;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (!TryGetDynamicIndexValue(_targetName, context, out object left))
+                        throw new InvalidOperationException("target must be a supported numeric scalar");
+                    if (!TryGetDynamicIndexValue(_rightValueName, context, out object right))
+                        throw new InvalidOperationException("right-hand value must be a supported numeric scalar");
+
+                    float result = CalculatePythonModulo(left, right);
+                    if (!GameBridge.TrySetVariableLiteral(_targetName, result, false, context))
+                        throw new InvalidOperationException("could not write the modulo result");
+
+                    Log.Info("Applied scalar %= assignment to '" + _targetName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not apply scalar %= assignment to '" + _targetName +
+                        "' at " + _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+        }
+
         private sealed class CollectionMutationLine : Line, IApply
         {
             private readonly string _rootName;
@@ -2377,10 +2475,11 @@ namespace StoryAPI.Runtime
             private readonly string _sourcePath;
             private readonly int _sourceLine;
             private readonly VariableInitializationState _state;
+            private readonly char _compoundOperation;
 
             public CollectionMutationLine(string rootName, List<object> indices,
                 string valueName, string sourcePath, int sourceLine,
-                VariableInitializationState state)
+                VariableInitializationState state, char compoundOperation = '\0')
             {
                 _rootName = rootName;
                 _indices = indices;
@@ -2388,6 +2487,7 @@ namespace StoryAPI.Runtime
                 _sourcePath = sourcePath;
                 _sourceLine = sourceLine;
                 _state = state;
+                _compoundOperation = compoundOperation;
             }
 
             public void Apply(IContext context)
@@ -2413,6 +2513,9 @@ namespace StoryAPI.Runtime
                     }
 
                     object finalKey = ResolveMutationKey(_indices[_indices.Count - 1], context);
+                    if (_compoundOperation == '%')
+                        value = CalculatePythonModulo(ReadContainerItem(current, finalKey), value);
+
                     if (current is IList list)
                     {
                         if (!TryConvertListIndex(finalKey, out int index))

@@ -1365,9 +1365,9 @@ namespace StoryAPI.Tests
             Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
                     "settings.pop()", sourcePath, 22, out lines),
                 "dict.pop() should reject a missing key.");
-            Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+            Check(VariableIndexExpressionLine.TryCreateDictionaryPopLines(
                     "settings.pop(\"sound\", \"off\")", sourcePath, 23, out lines),
-                "dict.pop() should reject a default-value argument in this subset.");
+                "dict.pop() should accept a literal default argument.");
             Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
                     "settings.pop(key_name)", sourcePath, 24, out lines),
                 "dict.pop() should require a quoted string key.");

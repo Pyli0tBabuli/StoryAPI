@@ -672,6 +672,17 @@ namespace StoryAPI.Scripting
 
         private void EmitFor(ForStatement statement)
         {
+            if (statement.IsRange)
+            {
+                EmitForRange(statement);
+                return;
+            }
+
+            EmitForList(statement);
+        }
+
+        private void EmitForList(ForStatement statement)
+        {
             string safeLabel = Regex.Replace(_textLabel ?? "label", @"[^A-Za-z0-9_]", "_");
             string indexName = "_storyapi_for_" + safeLabel + "_" +
                 statement.Line.ToString(CultureInfo.InvariantCulture) + "_index";
@@ -714,6 +725,66 @@ namespace StoryAPI.Scripting
             foreach (var jump in loop.Continues) jump.targetLine = continueTarget;
 
             _out.Add(new RenpyOneLinePython("$ " + indexName + " += 1"));
+            _out.Add(new RenpyGoToLine(start));
+            int end = _out.Count;
+            PatchUnless(condition, guard, end);
+            foreach (var jump in loop.Breaks) jump.targetLine = end;
+            _out.Add(new RenpyNOP());
+        }
+
+        private void EmitForRange(ForStatement statement)
+        {
+            string safeLabel = Regex.Replace(_textLabel ?? "label", @"[^A-Za-z0-9_]", "_");
+            string prefix = "_storyapi_for_" + safeLabel + "_" +
+                statement.Line.ToString(CultureInfo.InvariantCulture) + "_range";
+            string startName = prefix + "_start";
+            string stopName = prefix + "_stop";
+            string stepName = prefix + "_step";
+            string valueName = prefix + "_value";
+            string validName = prefix + "_valid";
+
+            // Evaluate range arguments exactly once, as Python/Ren'Py does.
+            _out.Add(new RenpyOneLinePython("$ " + startName + " = (" + statement.RangeStart + ")"));
+            _out.Add(new RenpyOneLinePython("$ " + stopName + " = (" + statement.RangeStop + ")"));
+            _out.Add(new RenpyOneLinePython("$ " + stepName + " = (" + statement.RangeStep + ")"));
+            _out.Add(new RenpyOneLinePython("$ " + validName + " = True"));
+
+            Line validationLine;
+            if (!VariableIndexExpressionLine.TryCreateForRangeValidationLine(
+                startName, stopName, stepName, validName,
+                _textLabel ?? "unknown", statement.Line, out validationLine))
+                throw new InvalidOperationException(
+                    "Could not create range() argument validation (line " + statement.Line + ").");
+            _out.Add(validationLine);
+
+            _out.Add(new RenpyOneLinePython("$ " + valueName + " = " + startName));
+            int start = _out.Count;
+            string condition = PrepareCondition(
+                validName + " and ((" + stepName + " > 0 and " + valueName + " < " + stopName +
+                ") or (" + stepName + " < 0 and " + valueName + " > " + stopName + "))",
+                statement.Line);
+            int guard = EmitUnless(condition);
+
+            // Assign the current range value before the body. No list is allocated, so
+            // large and descending ranges do not need a temporary collection.
+            _out.Add(new RenpyOneLinePython("$ " + statement.Variable + " = " + valueName));
+
+            var loop = new LoopContext { Start = start };
+            _loops.Push(loop);
+            try
+            {
+                EmitBody(statement.Body);
+            }
+            finally
+            {
+                _loops.Pop();
+            }
+
+            // continue must advance the range value before checking the condition again.
+            int continueTarget = _out.Count;
+            foreach (var jump in loop.Continues) jump.targetLine = continueTarget;
+
+            _out.Add(new RenpyOneLinePython("$ " + valueName + " += " + stepName));
             _out.Add(new RenpyGoToLine(start));
             int end = _out.Count;
             PatchUnless(condition, guard, end);

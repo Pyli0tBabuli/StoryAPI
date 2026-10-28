@@ -1803,10 +1803,10 @@ namespace StoryAPI.Tests
         private static void TestForDictionaryKeysMethodIteration()
         {
             var statements = Parse(
-                "label for_dict_keys_method_test:\\n" +
-                "    for key in settings.keys():\\n" +
-                "        pass\\n" +
-                "    return\\n");
+                "label for_dict_keys_method_test:\n" +
+                "    for key in settings.keys():\n" +
+                "        pass\n" +
+                "    return\n");
             var label = Require<LabelStatement>(statements[0], "Expected dictionary-keys label.");
             var loop = Require<ForStatement>(label.Body[0], "Expected dictionary.keys() loop.");
             Check(loop.Variable == "key" && loop.ValueVariable == null,
@@ -1816,9 +1816,9 @@ namespace StoryAPI.Tests
                 "Dictionary.keys() should be represented as an explicit keys-only loop.");
 
             ExpectSyntaxError(
-                "label dict_keys_two_names:\\n" +
-                "    for key, value in settings.keys():\\n" +
-                "        pass\\n",
+                "label dict_keys_two_names:\n" +
+                "    for key, value in settings.keys():\n" +
+                "        pass\n",
                 "accepts only one loop variable");
 
             const string sourcePath = "dictionary-keys-runtime-test.rpy";

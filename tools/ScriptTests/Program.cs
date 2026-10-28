@@ -39,6 +39,7 @@ namespace StoryAPI.Tests
             Run("menu choices and nested statements", TestMenuChoices);
             Run("while and loop-control statements", TestWhileAndLoopControl);
             Run("for-list iteration and loop control", TestForListIteration);
+            Run("range() for-loop arguments", TestForRangeIteration);
             Run("image/audio asset paths", TestAssetPaths);
             Run("comments and blank lines", TestCommentsAndBlankLines);
             Run("reject malformed scripts", TestMalformedScripts);
@@ -1581,11 +1582,80 @@ namespace StoryAPI.Tests
                 "    for item inventory:\n" +
                 "        pass\n",
                 "Expected 'in'");
+        }
+
+        private static void TestForRangeIteration()
+        {
+            var oneArgument = Parse(
+                "label range_one:\n" +
+                "    for i in range(5):\n" +
+                "        pass\n" +
+                "    return\n");
+            var one = Require<ForStatement>(
+                Require<LabelStatement>(oneArgument[0], "Expected one-arg range label.").Body[0],
+                "Expected one-arg range loop.");
+            Check(one.IsRange && one.RangeStart == "0" && one.RangeStop == "5" && one.RangeStep == "1",
+                "range(stop) should normalize to start=0 and step=1.");
+
+            var twoArgument = Parse(
+                "label range_two:\n" +
+                "    for i in range(2, 8):\n" +
+                "        pass\n" +
+                "    return\n");
+            var two = Require<ForStatement>(
+                Require<LabelStatement>(twoArgument[0], "Expected two-arg range label.").Body[0],
+                "Expected two-arg range loop.");
+            Check(two.IsRange && two.RangeStart == "2" && two.RangeStop == "8" && two.RangeStep == "1",
+                "range(start, stop) arguments mismatch.");
+
+            var threeArgument = Parse(
+                "label range_three:\n" +
+                "    for i in range(8, 1, -2):\n" +
+                "        pass\n" +
+                "    return\n");
+            var three = Require<ForStatement>(
+                Require<LabelStatement>(threeArgument[0], "Expected three-arg range label.").Body[0],
+                "Expected three-arg range loop.");
+            Check(three.IsRange && three.RangeStart == "8" && three.RangeStop == "1" &&
+                three.RangeStep == "-2", "range(start, stop, negative_step) arguments mismatch.");
+
+            var expressions = Parse(
+                "label range_expressions:\n" +
+                "    for i in range(base + 1, limit * 2, -stride):\n" +
+                "        pass\n" +
+                "    return\n");
+            var expressionLoop = Require<ForStatement>(
+                Require<LabelStatement>(expressions[0], "Expected expression range label.").Body[0],
+                "Expected expression range loop.");
+            Check(expressionLoop.RangeStart == "base + 1" && expressionLoop.RangeStop == "limit * 2" &&
+                expressionLoop.RangeStep == "-stride", "Scalar range expressions should be preserved.");
+
+            var emptyRange = Parse(
+                "label range_empty:\n" +
+                "    for i in range(0):\n" +
+                "        pass\n" +
+                "    return\n");
+            var empty = Require<ForStatement>(
+                Require<LabelStatement>(emptyRange[0], "Expected empty range label.").Body[0],
+                "Expected empty range loop.");
+            Check(empty.RangeStart == "0" && empty.RangeStop == "0",
+                "range(0) should preserve the empty [0, 0) interval.");
+
             ExpectSyntaxError(
-                "label unsupported_for_expression:\n" +
-                "    for item in range(3):\n" +
+                "label range_zero_args:\n" +
+                "    for i in range():\n" +
                 "        pass\n",
-                "named list");
+                "requires one, two, or three");
+            ExpectSyntaxError(
+                "label range_four_args:\n" +
+                "    for i in range(1, 2, 3, 4):\n" +
+                "        pass\n",
+                "requires one, two, or three");
+            ExpectSyntaxError(
+                "label range_missing_arg:\n" +
+                "    for i in range(1, , 3):\n" +
+                "        pass\n",
+                "cannot be empty");
         }
 
         private static void TestAssetPaths()

@@ -575,25 +575,111 @@ namespace StoryAPI.Scripting
             if (!MatchIdentifier("in"))
                 throw new ScriptSyntaxException("Expected 'in' after the loop variable.", Current.Line);
 
-            if (Current.Type != TokenType.Identifier)
-                throw new ScriptSyntaxException(
-                    "Expected a named list after 'in'; range() and other expressions are not supported yet.",
-                    Current.Line);
-            string collection = Advance().Text;
-            if (Current.Type != TokenType.Colon)
-                throw new ScriptSyntaxException(
-                    "Only a named list variable is supported after 'in'; range() and other expressions are not supported yet.",
-                    Current.Line);
-
-            ExpectColon();
-            var statement = new ForStatement
+            ForStatement statement;
+            if (Current.Type == TokenType.Identifier && Current.Text == "range" &&
+                Ahead(1).Text == "(")
             {
-                Variable = variable,
-                Collection = collection,
-                Line = line,
-            };
+                string rangeSource = ReadRestOfLine();
+                string[] rangeArguments = ParseRangeArguments(rangeSource, line);
+                ExpectColon();
+
+                string start = rangeArguments.Length == 1 ? "0" : rangeArguments[0];
+                string stop = rangeArguments.Length == 1 ? rangeArguments[0] : rangeArguments[1];
+                string step = rangeArguments.Length < 3 ? "1" : rangeArguments[2];
+                statement = new ForStatement
+                {
+                    Variable = variable,
+                    IsRange = true,
+                    RangeStart = start,
+                    RangeStop = stop,
+                    RangeStep = step,
+                    Line = line,
+                };
+            }
+            else
+            {
+                if (Current.Type != TokenType.Identifier)
+                    throw new ScriptSyntaxException(
+                        "Expected a named list or range(start, stop[, step]) after 'in'.", Current.Line);
+                string collection = Advance().Text;
+                if (Current.Type != TokenType.Colon)
+                    throw new ScriptSyntaxException(
+                        "Only a named list or range(start, stop[, step]) is supported after 'in'.", Current.Line);
+
+                ExpectColon();
+                statement = new ForStatement
+                {
+                    Variable = variable,
+                    Collection = collection,
+                    Line = line,
+                };
+            }
+
             statement.Body.AddRange(ParseBranchBody());
             return statement;
+        }
+
+        private static string[] ParseRangeArguments(string source, int line)
+        {
+            string text = (source ?? string.Empty).Trim();
+            int open = text.IndexOf('(');
+            if (open < 0 || text.Substring(0, open).Trim() != "range" ||
+                text.Length == 0 || text[text.Length - 1] != ')')
+                throw new ScriptSyntaxException(
+                    "Expected range(start), range(start, stop), or range(start, stop, step).", line);
+
+            string inner = text.Substring(open + 1, text.Length - open - 2);
+            var arguments = new List<string>();
+            int depth = 0;
+            int start = 0;
+            char quote = '\0';
+            bool escaped = false;
+
+            for (int i = 0; i < inner.Length; i++)
+            {
+                char c = inner[i];
+                if (quote != '\0')
+                {
+                    if (escaped) { escaped = false; continue; }
+                    if (c == '\\') { escaped = true; continue; }
+                    if (c == quote) quote = '\0';
+                    continue;
+                }
+
+                if (c == '"' || c == '\'')
+                {
+                    quote = c;
+                    continue;
+                }
+                if (c == '(') depth++;
+                else if (c == ')')
+                {
+                    depth--;
+                    if (depth < 0)
+                        throw new ScriptSyntaxException("Unbalanced parentheses in range() arguments.", line);
+                }
+                else if (c == ',' && depth == 0)
+                {
+                    string argument = inner.Substring(start, i - start).Trim();
+                    if (argument.Length == 0)
+                        throw new ScriptSyntaxException("range() arguments cannot be empty.", line);
+                    arguments.Add(argument);
+                    start = i + 1;
+                }
+            }
+
+            if (depth != 0 || quote != '\0')
+                throw new ScriptSyntaxException("Unbalanced parentheses or quotes in range() arguments.", line);
+
+            string finalArgument = inner.Substring(start).Trim();
+            if (finalArgument.Length == 0 && inner.Trim().Length > 0)
+                throw new ScriptSyntaxException("range() arguments cannot be empty.", line);
+            if (finalArgument.Length > 0) arguments.Add(finalArgument);
+
+            if (arguments.Count < 1 || arguments.Count > 3)
+                throw new ScriptSyntaxException("range() requires one, two, or three arguments.", line);
+
+            return arguments.ToArray();
         }
 
         private Statement ParseLoopControl(bool isContinue)

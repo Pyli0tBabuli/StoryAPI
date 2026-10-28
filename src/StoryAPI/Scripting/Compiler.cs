@@ -743,10 +743,23 @@ namespace StoryAPI.Scripting
             string valueName = prefix + "_value";
             string validName = prefix + "_valid";
 
-            // Evaluate range arguments exactly once, as Python/Ren'Py does.
-            _out.Add(new RenpyOneLinePython("$ " + startName + " = (" + statement.RangeStart + ")"));
-            _out.Add(new RenpyOneLinePython("$ " + stopName + " = (" + statement.RangeStop + ")"));
-            _out.Add(new RenpyOneLinePython("$ " + stepName + " = (" + statement.RangeStep + ")"));
+            // Evaluate range arguments exactly once, as Python/Ren'Py does. Route them
+            // through the normal assignment pipeline so supported indexed reads are rewritten.
+            EmitPython(new PythonStatement
+            {
+                Code = startName + " = (" + statement.RangeStart + ")",
+                Line = statement.Line,
+            });
+            EmitPython(new PythonStatement
+            {
+                Code = stopName + " = (" + statement.RangeStop + ")",
+                Line = statement.Line,
+            });
+            EmitPython(new PythonStatement
+            {
+                Code = stepName + " = (" + statement.RangeStep + ")",
+                Line = statement.Line,
+            });
             _out.Add(new RenpyOneLinePython("$ " + validName + " = True"));
 
             Line validationLine;

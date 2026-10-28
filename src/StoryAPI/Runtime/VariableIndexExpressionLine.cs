@@ -804,6 +804,117 @@ namespace StoryAPI.Runtime
         }
 
         /// <summary>
+        /// Recognizes update(other_dict) on a named object-backed dictionary. The argument
+        /// must be another simple variable name; expressions and nested targets are unsupported.
+        /// </summary>
+        public static bool TryCreateDictionaryUpdateLine(string code, string sourcePath,
+            int sourceLine, out Line line)
+        {
+            line = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int targetStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string targetName = code.Substring(targetStart, cursor - targetStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '.') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int methodStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            if (!string.Equals(code.Substring(methodStart, cursor - methodStart),
+                "update", StringComparison.Ordinal))
+                return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '(') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int sourceStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string sourceName = code.Substring(sourceStart, cursor - sourceStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != ')') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor != code.Length) return false;
+
+            line = new DictionaryUpdateLine(targetName, sourceName, sourcePath, sourceLine);
+            return true;
+        }
+
+        /// <summary>
+        /// Recognizes dictionary.pop("key"), optionally assigning the removed value to a
+        /// simple variable. Keys must be quoted string literals in this supported subset.
+        /// </summary>
+        public static bool TryCreateDictionaryPopLines(string code, string sourcePath,
+            int sourceLine, out List<Line> lines)
+        {
+            lines = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int firstStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string firstName = code.Substring(firstStart, cursor - firstStart);
+            int afterFirstName = cursor;
+            SkipWhitespace(code, ref cursor);
+
+            string destinationName = null;
+            string rootName;
+            if (cursor < code.Length && code[cursor] == '=' &&
+                (cursor + 1 >= code.Length || code[cursor + 1] != '='))
+            {
+                destinationName = firstName;
+                cursor++;
+                SkipWhitespace(code, ref cursor);
+                if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+                int rootStart = cursor++;
+                while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+                rootName = code.Substring(rootStart, cursor - rootStart);
+            }
+            else
+            {
+                rootName = firstName;
+                cursor = afterFirstName;
+            }
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '.') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor + 3 > code.Length ||
+                string.Compare(code, cursor, "pop", 0, 3, StringComparison.Ordinal) != 0)
+                return false;
+            cursor += 3;
+            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '(') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || (code[cursor] != '"' && code[cursor] != '\''))
+                return false;
+
+            string key;
+            if (!TryReadString(code, ref cursor, out key)) return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != ')') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor != code.Length) return false;
+
+            lines = new List<Line>
+            {
+                new DictionaryPopLine(rootName, destinationName, key, sourcePath, sourceLine)
+            };
+            return true;
+        }
+
+        /// <summary>
         /// Compiles a restricted list.insert(index, value) call. Index expressions must be
         /// scalar expressions without collection reads; value expressions may use supported
         /// collection reads, which are resolved before the mutation.
@@ -1558,6 +1669,107 @@ namespace StoryAPI.Runtime
                     Log.Warn("Could not apply list.extend on '" + _rootName + "' using '" +
                         _sourceName + "' at " + _sourcePath + ":" + _sourceLine + ": " +
                         e.GetBaseException().Message);
+                }
+            }
+        }
+
+        private sealed class DictionaryUpdateLine : Line, IApply
+        {
+            private readonly string _targetName;
+            private readonly string _sourceName;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public DictionaryUpdateLine(string targetName, string sourceName,
+                string sourcePath, int sourceLine)
+            {
+                _targetName = targetName;
+                _sourceName = sourceName;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_targetName, context, out object target) ||
+                        !(target is IDictionary targetDictionary))
+                        throw new InvalidOperationException("dict.update() requires a dictionary target");
+                    if (targetDictionary.IsReadOnly || targetDictionary.IsFixedSize)
+                        throw new InvalidOperationException("dict.update() target is not mutable");
+                    if (!TryGetObjectBackedVariable(_sourceName, context, out object source) ||
+                        !(source is IDictionary sourceDictionary))
+                        throw new InvalidOperationException("dict.update() argument must be a dictionary");
+
+                    // Snapshot entries first so self-update is safe and iteration remains stable.
+                    var entries = new List<DictionaryEntry>();
+                    foreach (DictionaryEntry entry in sourceDictionary)
+                        entries.Add(entry);
+
+                    foreach (DictionaryEntry entry in entries)
+                        targetDictionary[entry.Key] = entry.Value;
+
+                    Log.Info("Applied dict.update on '" + _targetName + "' using '" +
+                        _sourceName + "' at " + _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not apply dict.update on '" + _targetName + "' using '" +
+                        _sourceName + "' at " + _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+        }
+
+        private sealed class DictionaryPopLine : Line, IApply
+        {
+            private readonly string _rootName;
+            private readonly string _destinationName;
+            private readonly string _key;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public DictionaryPopLine(string rootName, string destinationName, string key,
+                string sourcePath, int sourceLine)
+            {
+                _rootName = rootName;
+                _destinationName = destinationName;
+                _key = key;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object target) ||
+                        !(target is IDictionary dictionary))
+                        throw new InvalidOperationException("dict.pop() requires a dictionary target");
+                    if (dictionary.IsReadOnly || dictionary.IsFixedSize)
+                        throw new InvalidOperationException("dict.pop() target is not mutable");
+                    if (!dictionary.Contains(_key))
+                        throw new InvalidOperationException("dictionary key '" + _key + "' was not found");
+
+                    object removed = dictionary[_key];
+                    if (_destinationName != null &&
+                        !GameBridge.TrySetVariableLiteral(_destinationName, removed, false, context))
+                        throw new InvalidOperationException(
+                            "could not assign the popped value to '" + _destinationName + "'");
+
+                    dictionary.Remove(_key);
+                    Log.Info("Applied dict.pop on '" + _rootName + "' for key '" + _key +
+                        "' at " + _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not apply dict.pop on '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " + e.GetBaseException().Message);
                 }
             }
         }

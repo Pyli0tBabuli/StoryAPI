@@ -175,7 +175,12 @@ to insert a scalar or supported value at an index; indexes are integers, and neg
 indexes are clamped like Python's `list.insert()`. Lists also support `$ item = inventory.pop()`
 and `$ item = inventory.pop(0)`; `pop()` removes the final item by default or the item at the
 provided integer index, and can assign the removed scalar to a variable. Invalid/empty pops log
-a warning without changing the list. Both lists and dictionaries support the no-argument method
+a warning without changing the list. Dictionaries support `$ settings.update(overrides)`, which
+adds missing keys and replaces values for keys already present; the argument must be a simple
+variable referring to another dictionary. Dictionaries also support `$ settings.pop("theme")`
+and `$ old_theme = settings.pop("theme")`; this removes the named key and can assign its value
+to a variable. The key must be a quoted string literal, and a missing key logs a warning without
+changing the dictionary. Both lists and dictionaries support the no-argument method
 `$ inventory.clear()` or `$ settings.clear()`, which empties the existing collection in-place.
 Other list/dictionary methods and arbitrary Python calls remain unsupported.
 

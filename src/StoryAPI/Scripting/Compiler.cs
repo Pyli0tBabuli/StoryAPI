@@ -682,14 +682,19 @@ namespace StoryAPI.Scripting
                 indexName + " < len(" + statement.Collection + ")", statement.Line);
             int guard = EmitUnless(condition);
 
+            string itemGateName = indexName + "_item_valid";
+            _out.Add(new RenpyOneLinePython("$ " + itemGateName + " = True"));
+
             Line itemLine;
             if (!VariableIndexExpressionLine.TryCreateForEachItemLine(
-                statement.Variable, statement.Collection, indexName,
+                statement.Variable, statement.Collection, indexName, itemGateName,
                 _textLabel ?? "unknown", statement.Line, out itemLine))
                 throw new InvalidOperationException(
                     "for loops require simple variable names and a named list (line " +
                     statement.Line + ").");
             _out.Add(itemLine);
+            int itemGuard = _out.Count;
+            _out.Add(new RenpyGoToLineUnless(itemGateName, -1));
 
             var loop = new LoopContext { Start = start };
             _loops.Push(loop);
@@ -705,6 +710,7 @@ namespace StoryAPI.Scripting
             // In a for loop, continue must run the index increment before checking the
             // condition again. Patch it to the increment instruction after body emission.
             int continueTarget = _out.Count;
+            PatchUnless(itemGateName, itemGuard, continueTarget);
             foreach (var jump in loop.Continues) jump.targetLine = continueTarget;
 
             _out.Add(new RenpyOneLinePython("$ " + indexName + " += 1"));

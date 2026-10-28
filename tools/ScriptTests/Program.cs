@@ -39,6 +39,7 @@ namespace StoryAPI.Tests
             Run("menu choices and nested statements", TestMenuChoices);
             Run("while and loop-control statements", TestWhileAndLoopControl);
             Run("for-list iteration and loop control", TestForListIteration);
+            Run("for-dictionary key iteration", TestForDictionaryIteration);
             Run("range() for-loop arguments", TestForRangeIteration);
             Run("image/audio asset paths", TestAssetPaths);
             Run("comments and blank lines", TestCommentsAndBlankLines);
@@ -1582,6 +1583,25 @@ namespace StoryAPI.Tests
                 "    for item inventory:\n" +
                 "        pass\n",
                 "Expected 'in'");
+        }
+
+        private static void TestForDictionaryIteration()
+        {
+            var statements = Parse(
+                "label for_dict_test:\\n" +
+                "    for key in settings:\\n" +
+                "        if key in settings:\\n" +
+                "            pass\\n" +
+                "        _ \"[key]\"\\n" +
+                "    return\\n");
+            var label = Require<LabelStatement>(statements[0], "Expected dictionary-loop label.");
+            var loop = Require<ForStatement>(label.Body[0], "Expected dictionary for loop.");
+            Check(loop.Variable == "key", "Dictionary loop variable mismatch.");
+            Check(loop.Collection == "settings", "Dictionary loop collection mismatch.");
+            Check(!loop.IsRange, "Dictionary loop should not parse as a range.");
+            Check(loop.Body.Count == 2, "Expected membership check and dialogue in dictionary loop.");
+            Require<IfStatement>(loop.Body[0], "Expected dictionary membership condition.");
+            Require<SayStatement>(loop.Body[1], "Expected dialogue in dictionary loop.");
         }
 
         private static void TestForRangeIteration()

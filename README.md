@@ -163,9 +163,9 @@ Collection element assignment is supported for existing list indexes and diction
 example `$ inventory[0] = 10`, `$ settings["count"] = 5`, or
 `$ settings["meta"]["count"] = settings["count"] + 1`. The target may use literal indexes or
 the same restricted dynamic scalar indexes supported by reads. Assignment values may use scalar
-expressions; collection reads on the right-hand side are resolved before the assignment. The
-initial implementation does not support compound assignments such as `+=`, slices,
-or assigning a new value beyond the end of a list. Lists support one-argument scalar
+expressions; collection reads on the right-hand side are resolved before the assignment. Compound assignments to simple scalar variables support `+=`, `-=`, and `*=`; their right-hand
+side may use supported scalar expressions and collection index reads. Indexed targets, `/=`,
+slices, and assigning a new value beyond the end of a list remain unsupported. Lists support one-argument scalar
 method calls `$ inventory.append("battery")` and `$ inventory.remove("key")`; `remove`
 deletes the first matching item. Lists also support `$ inventory.extend(rewards)`, which
 appends the items from another named list in order without changing the source list. The

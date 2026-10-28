@@ -580,6 +580,10 @@ namespace StoryAPI.Scripting
                     "Expected a named list after 'in'; range() and other expressions are not supported yet.",
                     Current.Line);
             string collection = Advance().Text;
+            if (Current.Type != TokenType.Colon)
+                throw new ScriptSyntaxException(
+                    "Only a named list variable is supported after 'in'; range() and other expressions are not supported yet.",
+                    Current.Line);
 
             ExpectColon();
             var statement = new ForStatement

@@ -33,6 +33,7 @@ namespace StoryAPI.Tests
             Run("list extend method", TestListExtendMethod);
             Run("list insert and pop methods", TestListInsertAndPopMethods);
             Run("dictionary update and pop methods", TestDictionaryUpdateAndPopMethods);
+            Run("compound scalar assignments", TestCompoundScalarAssignments);
             Run("if/elif/else branches", TestConditionalBranches);
             Run("menu choices and nested statements", TestMenuChoices);
             Run("while and loop-control statements", TestWhileAndLoopControl);
@@ -478,6 +479,84 @@ namespace StoryAPI.Tests
             success = (bool)reader.Invoke(null, arguments);
             Check(success && arguments[2] is string && (string)arguments[2] == "answer",
                 "A string DataValue should read stringVal using the discriminator.");
+        }
+
+        private static void TestCompoundScalarAssignments()
+        {
+            const string prefix = "_storyapi_compound_test";
+            const string sourcePath = "compound-assignment-test.rpy";
+            List<RenPyParser.Line> lines;
+
+            Check(VariableIndexExpressionLine.TryCreateCompoundAssignmentLines(
+                    "coins += 5", prefix, sourcePath, 10, 100, out lines),
+                "A simple += assignment should be recognized.");
+            Check(lines.Count == 1 &&
+                    lines[0] is RenpyParser.RenpyOneLinePython &&
+                    ((RenpyParser.RenpyOneLinePython)lines[0]).Code == "$ coins = coins + (5)",
+                "+= should translate to a parenthesized scalar expression.");
+
+            Check(VariableIndexExpressionLine.TryCreateCompoundAssignmentLines(
+                    "coins -= 2", prefix, sourcePath, 11, 110, out lines) &&
+                    ((RenpyParser.RenpyOneLinePython)lines[0]).Code == "$ coins = coins - (2)",
+                "-= should translate to subtraction.");
+            Check(VariableIndexExpressionLine.TryCreateCompoundAssignmentLines(
+                    "coins *= 3", prefix, sourcePath, 12, 120, out lines) &&
+                    ((RenpyParser.RenpyOneLinePython)lines[0]).Code == "$ coins = coins * (3)",
+                "*= should translate to multiplication.");
+
+            Check(VariableIndexExpressionLine.TryCreateCompoundAssignmentLines(
+                    "coins += 2 * (bonus + 1)", prefix, sourcePath, 13, 130, out lines) &&
+                    ((RenpyParser.RenpyOneLinePython)lines[0]).Code ==
+                        "$ coins = coins + (2 * (bonus + 1))",
+                "The right-hand expression should retain its precedence with parentheses.");
+
+            Check(VariableIndexExpressionLine.TryCreateCompoundAssignmentLines(
+                    "score += inventory[0]", prefix, sourcePath, 14, 140, out lines),
+                "Compound RHS expressions may read supported collection indexes.");
+            Check(lines.Count == 4 &&
+                    lines[0] is RenpyParser.RenpyOneLinePython &&
+                    ((RenpyParser.RenpyOneLinePython)lines[0]).Code ==
+                        "$ " + prefix + "_compound_gate = True" &&
+                    lines[1].GetType().Name == "VariableIndexExpressionLine" &&
+                    lines[2] is RenpyParser.RenpyGoToLineUnless &&
+                    lines[3] is RenpyParser.RenpyOneLinePython &&
+                    ((RenpyParser.RenpyOneLinePython)lines[3]).Code ==
+                        "$ score = score + (" + prefix + "_compound_rhs_index_0)",
+                "Indexed RHS values should be resolved and guarded before the assignment.");
+
+            Check(!VariableIndexExpressionLine.TryCreateCompoundAssignmentLines(
+                    "coins /= 2", prefix, sourcePath, 15, 150, out lines),
+                "/= remains unsupported in this stage.");
+            Check(!VariableIndexExpressionLine.TryCreateCompoundAssignmentLines(
+                    "inventory[0] += 1", prefix, sourcePath, 16, 160, out lines),
+                "Indexed compound-assignment targets remain unsupported.");
+            Check(!VariableIndexExpressionLine.TryCreateCompoundAssignmentLines(
+                    "coins += ", prefix, sourcePath, 17, 170, out lines),
+                "A compound assignment must have a right-hand expression.");
+            Check(!VariableIndexExpressionLine.TryCreateCompoundAssignmentLines(
+                    "coins += 5; coins += 1", prefix, sourcePath, 18, 180, out lines),
+                "Multiple statements must not be accepted as one compound assignment.");
+            Check(!VariableIndexExpressionLine.TryCreateCompoundAssignmentLines(
+                    "coins == 5", prefix, sourcePath, 19, 190, out lines),
+                "Comparison expressions must not be interpreted as compound assignments.");
+
+            var statements = Parse(
+                "label compound_test:\n" +
+                "    $ coins += 5\n" +
+                "    $ coins -= 2\n" +
+                "    $ coins *= 3\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing compound assignments.");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The += statement should parse as Python code.").Code == "coins += 5",
+                "The parser should preserve += syntax.");
+            Check(Require<PythonStatement>(label.Body[1],
+                    "The -= statement should parse as Python code.").Code == "coins -= 2",
+                "The parser should preserve -= syntax.");
+            Check(Require<PythonStatement>(label.Body[2],
+                    "The *= statement should parse as Python code.").Code == "coins *= 3",
+                "The parser should preserve *= syntax.");
         }
 
         private static void TestIndexedCollectionAssignments()

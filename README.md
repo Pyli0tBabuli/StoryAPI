@@ -199,13 +199,13 @@ be used in one condition or combined with indexed reads. Other function calls an
 forms such as `len(inventory[0])` remain unsupported.
 
 Within a label, `while`, `for item in inventory:`, `for key in settings:`,
-`for key, value in settings.items():`, `for value in settings.values():`,
-`for i in range(...):`, `break`, `continue`, and `pass` are supported. List loops assign each
-element to the loop variable and support nested conditions and loop control. Dictionary key loops assign
-each key to the loop variable; dictionary value loops assign each value to one variable, and dictionary
-items loops assign each key and matching value to two variables. Dictionary keys, values, and key/value
-pairs are snapshotted at loop entry, so dictionary edits in the loop body do not change the active
-iteration sequence. Range loops support `range(stop)`, `range(start, stop)`,
+`for key in settings.keys():`, `for key, value in settings.items():`, and
+`for value in settings.values():`, `for i in range(...):`, `break`, `continue`, and `pass` are
+supported. List loops assign each element to the loop variable and support nested conditions and loop
+control. Dictionary key loops assign each key to the loop variable; value loops assign each value to one
+variable, and items loops assign each key and matching value to two variables. Dictionary keys, values,
+and key/value pairs are snapshotted at loop entry, so dictionary edits in the loop body do not change the
+active iteration sequence. Explicit `.keys()`, `.values()`, and `.items()` loops require a dictionary. Range loops support `range(stop)`, `range(start, stop)`,
 and `range(start, stop, step)`, including negative steps and empty ranges. Range arguments are
 evaluated once at loop entry and must resolve to 32-bit integers; a zero step or invalid argument logs
 a warning and skips the loop body. Range iteration does not allocate a list. Other iterable expressions

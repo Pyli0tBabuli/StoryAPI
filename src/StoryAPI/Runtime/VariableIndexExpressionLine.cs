@@ -2592,24 +2592,43 @@ namespace StoryAPI.Runtime
         public static bool TryCreateForEachPreparationLine(string sourceName, string destinationName,
             string sourcePath, int sourceLine, out Line line)
         {
+            return TryCreateForEachPreparationLine(
+                sourceName, destinationName, false, sourcePath, sourceLine, out line);
+        }
+
+        public static bool TryCreateForEachPreparationLine(string sourceName, string destinationName,
+            bool includeDictionaryValues, string sourcePath, int sourceLine, out Line line)
+        {
             line = null;
             if (!IsSimpleIdentifier(sourceName) || !IsSimpleIdentifier(destinationName))
                 return false;
 
-            line = new ForEachPreparationLine(sourceName, destinationName, sourcePath, sourceLine);
+            line = new ForEachPreparationLine(
+                sourceName, destinationName, includeDictionaryValues, sourcePath, sourceLine);
             return true;
         }
 
         public static bool TryCreateForEachItemLine(string variableName, string collectionName,
             string indexName, string gateName, string sourcePath, int sourceLine, out Line line)
         {
+            return TryCreateForEachItemLine(
+                variableName, null, collectionName, indexName, gateName, sourcePath, sourceLine, out line);
+        }
+
+        public static bool TryCreateForEachItemLine(string variableName, string valueVariableName,
+            string collectionName, string indexName, string gateName, string sourcePath,
+            int sourceLine, out Line line)
+        {
             line = null;
-            if (!IsSimpleIdentifier(variableName) || !IsSimpleIdentifier(collectionName) ||
-                !IsSimpleIdentifier(indexName) || !IsSimpleIdentifier(gateName))
+            if (!IsSimpleIdentifier(variableName) ||
+                (valueVariableName != null && !IsSimpleIdentifier(valueVariableName)) ||
+                !IsSimpleIdentifier(collectionName) || !IsSimpleIdentifier(indexName) ||
+                !IsSimpleIdentifier(gateName))
                 return false;
 
             line = new ForEachItemLine(
-                variableName, collectionName, indexName, gateName, sourcePath, sourceLine);
+                variableName, valueVariableName, collectionName, indexName,
+                gateName, sourcePath, sourceLine);
             return true;
         }
 
@@ -2630,14 +2649,16 @@ namespace StoryAPI.Runtime
         {
             private readonly string _sourceName;
             private readonly string _destinationName;
+            private readonly bool _includeDictionaryValues;
             private readonly string _sourcePath;
             private readonly int _sourceLine;
 
             public ForEachPreparationLine(string sourceName, string destinationName,
-                string sourcePath, int sourceLine)
+                bool includeDictionaryValues, string sourcePath, int sourceLine)
             {
                 _sourceName = sourceName;
                 _destinationName = destinationName;
+                _includeDictionaryValues = includeDictionaryValues;
                 _sourcePath = sourcePath;
                 _sourceLine = sourceLine;
             }
@@ -2653,7 +2674,21 @@ namespace StoryAPI.Runtime
                             "' is not an object-backed list or dictionary");
 
                     object iterationItems;
-                    if (source is IList items)
+                    if (_includeDictionaryValues)
+                    {
+                        if (!(source is IDictionary entryDictionary))
+                            throw new InvalidOperationException(
+                                "dictionary.items() requires a dictionary source");
+                        
+                        // Snapshot pairs so dictionary edits within the loop do not invalidate
+                        // iteration. Each internal item is a two-slot object array; it is never
+                        // exposed as a Ren'Py scalar and is unpacked by ForEachItemLine.
+                        var entries = new List<object>();
+                        foreach (object key in entryDictionary.Keys)
+                            entries.Add(new object[] { key, entryDictionary[key] });
+                        iterationItems = entries;
+                    }
+                    else if (source is IList items)
                     {
                         // Keep list iteration live: appends and indexed changes remain visible.
                         iterationItems = items;
@@ -2692,16 +2727,19 @@ namespace StoryAPI.Runtime
         private sealed class ForEachItemLine : Line, IApply
         {
             private readonly string _variableName;
+            private readonly string _valueVariableName;
             private readonly string _collectionName;
             private readonly string _indexName;
             private readonly string _gateName;
             private readonly string _sourcePath;
             private readonly int _sourceLine;
 
-            public ForEachItemLine(string variableName, string collectionName, string indexName,
-                string gateName, string sourcePath, int sourceLine)
+            public ForEachItemLine(string variableName, string valueVariableName,
+                string collectionName, string indexName, string gateName,
+                string sourcePath, int sourceLine)
             {
                 _variableName = variableName;
+                _valueVariableName = valueVariableName;
                 _collectionName = collectionName;
                 _indexName = indexName;
                 _gateName = gateName;
@@ -2736,17 +2774,32 @@ namespace StoryAPI.Runtime
 
                     if (index < 0 || index >= items.Count)
                     {
-                        // A list may change between the length check and this instruction.
+                        // The collection can change between the length check and this instruction.
                         GameBridge.TrySetVariableLiteral(_indexName, items.Count, false, context);
                         GameBridge.TrySetVariableLiteral(_gateName, false, false, context);
                         throw new InvalidOperationException(
-                            "list changed while resolving the next loop item");
+                            "collection changed while resolving the next loop item");
                     }
 
-                    if (!GameBridge.TrySetVariableLiteral(
-                        _variableName, items[index], false, context))
+                    object item = items[index];
+                    if (_valueVariableName != null)
+                    {
+                        if (!(item is object[] pair) || pair.Length != 2)
+                            throw new InvalidOperationException(
+                                "dictionary.items() yielded an invalid key/value pair");
+                        if (!GameBridge.TrySetVariableLiteral(
+                                _variableName, pair[0], false, context) ||
+                            !GameBridge.TrySetVariableLiteral(
+                                _valueVariableName, pair[1], false, context))
+                            throw new InvalidOperationException(
+                                "could not assign the current dictionary key/value pair");
+                    }
+                    else if (!GameBridge.TrySetVariableLiteral(
+                        _variableName, item, false, context))
+                    {
                         throw new InvalidOperationException(
                             "could not assign the current item to '" + _variableName + "'");
+                    }
                 }
                 catch (Exception e)
                 {

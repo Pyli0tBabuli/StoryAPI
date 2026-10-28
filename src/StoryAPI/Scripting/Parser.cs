@@ -571,11 +571,28 @@ namespace StoryAPI.Scripting
             if (Current.Type != TokenType.Identifier)
                 throw new ScriptSyntaxException("Expected a loop variable after 'for'.", line);
             string variable = Advance().Text;
+            string valueVariable = null;
+
+            // A two-name target is accepted only for dictionary .items() iteration.
+            if (Current.Text == ",")
+            {
+                _index++;
+                if (Current.Type != TokenType.Identifier)
+                    throw new ScriptSyntaxException("Expected a second loop variable after ','.", Current.Line);
+                valueVariable = Advance().Text;
+                if (Current.Text == ",")
+                    throw new ScriptSyntaxException("Only two loop variables are supported for dictionary items.", Current.Line);
+            }
 
             if (!MatchIdentifier("in"))
                 throw new ScriptSyntaxException("Expected 'in' after the loop variable.", Current.Line);
 
             ForStatement statement;
+            if (valueVariable != null &&
+                Current.Type == TokenType.Identifier && Current.Text == "range" &&
+                Ahead(1).Text == "(")
+                throw new ScriptSyntaxException("range() loops accept only one loop variable.", line);
+
             if (Current.Type == TokenType.Identifier && Current.Text == "range" &&
                 Ahead(1).Text == "(")
             {
@@ -602,15 +619,34 @@ namespace StoryAPI.Scripting
                     throw new ScriptSyntaxException(
                         "Expected a named list or range(start, stop[, step]) after 'in'.", Current.Line);
                 string collection = Advance().Text;
+                bool isDictionaryItems = false;
+                if (Current.Text == "." && Ahead(1).Text == "items" &&
+                    Ahead(2).Text == "(" && Ahead(3).Text == ")")
+                {
+                    if (valueVariable == null)
+                        throw new ScriptSyntaxException(
+                            "dictionary.items() iteration requires 'for key, value in dictionary.items():'.",
+                            Current.Line);
+                    _index += 4;
+                    isDictionaryItems = true;
+                }
+                else if (valueVariable != null)
+                {
+                    throw new ScriptSyntaxException(
+                        "Two loop variables require dictionary.items() iteration.", Current.Line);
+                }
+
                 if (Current.Type != TokenType.Colon)
                     throw new ScriptSyntaxException(
-                        "Only a named list or range(start, stop[, step]) is supported after 'in'.", Current.Line);
+                        "Only a named list or dictionary.items() is supported after 'in'.", Current.Line);
 
                 ExpectColon();
                 statement = new ForStatement
                 {
                     Variable = variable,
+                    ValueVariable = valueVariable,
                     Collection = collection,
+                    IsDictionaryItems = isDictionaryItems,
                     Line = line,
                 };
             }

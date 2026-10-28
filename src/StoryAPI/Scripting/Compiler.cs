@@ -692,7 +692,7 @@ namespace StoryAPI.Scripting
             // Lists are reused; dictionaries are converted into a snapshot of their keys.
             Line preparationLine;
             if (!VariableIndexExpressionLine.TryCreateForEachPreparationLine(
-                statement.Collection, iterationCollectionName,
+                statement.Collection, iterationCollectionName, statement.IsDictionaryItems,
                 _textLabel ?? "unknown", statement.Line, out preparationLine))
                 throw new InvalidOperationException(
                     "for loops require a simple collection variable name (line " +
@@ -710,8 +710,8 @@ namespace StoryAPI.Scripting
 
             Line itemLine;
             if (!VariableIndexExpressionLine.TryCreateForEachItemLine(
-                statement.Variable, iterationCollectionName, indexName, itemGateName,
-                _textLabel ?? "unknown", statement.Line, out itemLine))
+                statement.Variable, statement.ValueVariable, iterationCollectionName,
+                indexName, itemGateName, _textLabel ?? "unknown", statement.Line, out itemLine))
                 throw new InvalidOperationException(
                     "for loops require simple variable names and a named list or dictionary (line " +
                     statement.Line + ").");

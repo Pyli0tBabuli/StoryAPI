@@ -24,6 +24,7 @@ namespace StoryAPI.Tests
             Run("container index expressions", TestContainerIndexExpressions);
             Run("runtime index expression rewriting", TestRuntimeIndexExpressionRewriting);
             Run("dynamic index scalar value extraction", TestDynamicIndexScalarValueExtraction);
+            Run("re-evaluate indexed reads on repeated execution", TestRepeatedIndexedTemporaryReads);
             Run("indexed collection assignment", TestIndexedCollectionAssignments);
             Run("list append and remove methods", TestListMethodMutations);
             Run("indexed collection conditions", TestIndexedCollectionConditions);
@@ -39,6 +40,7 @@ namespace StoryAPI.Tests
             Run("menu choices and nested statements", TestMenuChoices);
             Run("while and loop-control statements", TestWhileAndLoopControl);
             Run("for-list iteration and loop control", TestForListIteration);
+            Run("for-dictionary key iteration", TestForDictionaryIteration);
             Run("range() for-loop arguments", TestForRangeIteration);
             Run("image/audio asset paths", TestAssetPaths);
             Run("comments and blank lines", TestCommentsAndBlankLines);
@@ -736,6 +738,41 @@ namespace StoryAPI.Tests
             Check(Require<PythonStatement>(label.Body[4],
                     "The %= statement should parse as Python code.").Code == "coins %= 3",
                 "The parser should preserve %= syntax.");
+        }
+
+        private static void TestRepeatedIndexedTemporaryReads()
+        {
+            const string sourcePath = "repeated-indexed-read-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var settings = new Dictionary<string, object>
+            {
+                { "alpha", 1f },
+                { "beta", 2f }
+            };
+            context.SetVariable("settings", new SimpleExpressionEngine.DataValue((object)settings));
+            context.SetVariable("key", new SimpleExpressionEngine.DataValue("alpha"));
+
+            VariableIndexExpressionLine line;
+            Check(VariableIndexExpressionLine.TryCreateTemporary(
+                    "temporary_value", "settings[key]", sourcePath, 10,
+                    new VariableInitializationState(), "_repeated_read_gate",
+                    "assignment_target", out line),
+                "A dynamic dictionary read should produce a temporary runtime line.");
+
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            object first;
+            Check(GameBridge.TryGetLastTestLiteral("temporary_value", out first) &&
+                    Math.Abs(Convert.ToSingle(first) - 1f) < 0.001f,
+                "The first execution should read the value for key 'alpha'.");
+
+            // The same instruction object is revisited when the assignment is inside a loop.
+            // It must use the current key rather than a one-time cached value.
+            context.SetVariable("key", new SimpleExpressionEngine.DataValue("beta"));
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            object second;
+            Check(GameBridge.TryGetLastTestLiteral("temporary_value", out second) &&
+                    Math.Abs(Convert.ToSingle(second) - 2f) < 0.001f,
+                "A repeated execution should re-read the value for the updated key 'beta'.");
         }
 
         private static void TestIndexedCollectionAssignments()
@@ -1582,6 +1619,25 @@ namespace StoryAPI.Tests
                 "    for item inventory:\n" +
                 "        pass\n",
                 "Expected 'in'");
+        }
+
+        private static void TestForDictionaryIteration()
+        {
+            var statements = Parse(
+                "label for_dict_test:\n" +
+                "    for key in settings:\n" +
+                "        if key in settings:\n" +
+                "            pass\n" +
+                "        _ \"[key]\"\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0], "Expected dictionary-loop label.");
+            var loop = Require<ForStatement>(label.Body[0], "Expected dictionary for loop.");
+            Check(loop.Variable == "key", "Dictionary loop variable mismatch.");
+            Check(loop.Collection == "settings", "Dictionary loop collection mismatch.");
+            Check(!loop.IsRange, "Dictionary loop should not parse as a range.");
+            Check(loop.Body.Count == 2, "Expected membership check and dialogue in dictionary loop.");
+            Require<IfStatement>(loop.Body[0], "Expected dictionary membership condition.");
+            Require<SayStatement>(loop.Body[1], "Expected dialogue in dictionary loop.");
         }
 
         private static void TestForRangeIteration()

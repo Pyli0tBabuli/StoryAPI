@@ -4164,6 +4164,29 @@ namespace StoryAPI.Game
         {
             value = default(DataValue);
             Type targetType = typeof(DataValue);
+
+            // A null script value represents Ren'Py's None, not a null string. Prefer
+            // the game's object-backed DataValue constructor so it can preserve that
+            // distinction instead of selecting DataValue(string) for a null reference.
+            if (source == null)
+            {
+                ConstructorInfo objectConstructor = targetType.GetConstructor(
+                    Instance, null, new[] { typeof(object) }, null);
+                if (objectConstructor != null)
+                {
+                    try
+                    {
+                        value = (DataValue)objectConstructor.Invoke(new object[] { null });
+                        return true;
+                    }
+                    catch
+                    {
+                        // Fall through to the ordinary conversions if this build's
+                        // object constructor cannot represent None.
+                    }
+                }
+            }
+
             Type sourceType = source == null ? typeof(string) : source.GetType();
 
             // Prefer an implicit conversion supplied by the game, then try a public

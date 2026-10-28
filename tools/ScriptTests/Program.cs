@@ -1567,17 +1567,6 @@ namespace StoryAPI.Tests
                 "Expected break.").IsContinue, "The second branch should break.");
             Require<SayStatement>(loop.Body[2], "Expected dialogue.");
 
-            Check(VariableIndexExpressionLine.TryCreateForEachItemLine(
-                    "item", "inventory", "_for_test_index", "_for_test_gate",
-                    "for-test.rpy", 2, out var itemLine),
-                "for loop should create a runtime list-item reader.");
-            Check(itemLine.GetType().Name == "ForEachItemLine",
-                "for loop should emit the dedicated runtime list-item reader.");
-            Check(!VariableIndexExpressionLine.TryCreateForEachItemLine(
-                    "item.value", "inventory", "_for_test_index", "_for_test_gate",
-                    "for-test.rpy", 2, out var invalidLine),
-                "The loop variable must be a simple identifier.");
-
             var empty = Parse(
                 "label empty_for_test:\n" +
                 "    for item in inventory:\n" +

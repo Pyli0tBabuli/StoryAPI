@@ -2771,6 +2771,8 @@ namespace StoryAPI.Runtime
 
             public void Apply(IContext context)
             {
+                Log.Info("Starting min() assignment for '" + _rootName + "' at " +
+                    _sourcePath + ":" + _sourceLine + ".");
                 try
                 {
                     if (context == null)
@@ -2804,9 +2806,15 @@ namespace StoryAPI.Runtime
                             minimum = value;
                     }
 
-                    if (!GameBridge.TrySetVariableLiteral(_destinationName, minimum, false, context))
+                    // Normalize numeric results to Single like sum(), avoiding relying on a
+                    // game-build-specific implicit conversion for boxed integer/double items.
+                    object result = numbers
+                        ? (object)Convert.ToSingle(minimum, CultureInfo.InvariantCulture)
+                        : minimum;
+                    if (!GameBridge.TrySetVariableLiteral(_destinationName, result, false, context))
                         throw new InvalidOperationException(
-                            "could not assign min() result to '" + _destinationName + "'");
+                            "could not assign min() result to '" + _destinationName + "'. Result type: " +
+                            result.GetType().FullName);
 
                     Log.Info("Applied min() to '" + _rootName + "' at " +
                         _sourcePath + ":" + _sourceLine + ".");

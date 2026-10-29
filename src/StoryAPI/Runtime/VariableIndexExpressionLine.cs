@@ -4896,6 +4896,78 @@ namespace StoryAPI.Runtime
             return true;
         }
 
+        public static bool TryCreateForZipPreparationLine(
+            string firstSourceName, string secondSourceName, string destinationName,
+            string sourcePath, int sourceLine, out Line line)
+        {
+            line = null;
+            if (!IsSimpleIdentifier(firstSourceName) || !IsSimpleIdentifier(secondSourceName) ||
+                !IsSimpleIdentifier(destinationName))
+                return false;
+
+            line = new ForZipPreparationLine(
+                firstSourceName, secondSourceName, destinationName, sourcePath, sourceLine);
+            return true;
+        }
+
+        private sealed class ForZipPreparationLine : Line, IApply
+        {
+            private readonly string _firstSourceName;
+            private readonly string _secondSourceName;
+            private readonly string _destinationName;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public ForZipPreparationLine(string firstSourceName, string secondSourceName,
+                string destinationName, string sourcePath, int sourceLine)
+            {
+                _firstSourceName = firstSourceName;
+                _secondSourceName = secondSourceName;
+                _destinationName = destinationName;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_firstSourceName, context, out object firstSource) ||
+                        !(firstSource is IList firstList))
+                        throw new InvalidOperationException(
+                            "first zip() argument '" + _firstSourceName + "' is not a list");
+                    if (!TryGetObjectBackedVariable(_secondSourceName, context, out object secondSource) ||
+                        !(secondSource is IList secondList))
+                        throw new InvalidOperationException(
+                            "second zip() argument '" + _secondSourceName + "' is not a list");
+
+                    // Like zip(), pairs stop at the shorter input. We snapshot pairs at loop
+                    // entry so structural list changes in the body cannot invalidate iteration.
+                    int count = Math.Min(firstList.Count, secondList.Count);
+                    var pairs = new List<object>(count);
+                    for (int i = 0; i < count; i++)
+                        pairs.Add(new object[] { firstList[i], secondList[i] });
+
+                    if (!GameBridge.TrySetVariableLiteral(_destinationName, pairs, false, context))
+                        throw new InvalidOperationException(
+                            "could not prepare zipped loop collection '" + _destinationName + "'");
+
+                    Log.Info("Prepared zip() loop from '" + _firstSourceName + "' and '" +
+                        _secondSourceName + "' at " + _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    GameBridge.TrySetVariableLiteral(
+                        _destinationName, new List<object>(), false, context);
+                    Log.Warn("Could not prepare zip() loop for '" + _firstSourceName + "' and '" +
+                        _secondSourceName + "' at " + _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+        }
+
         private sealed class ForEachPreparationLine : Line, IApply
         {
             private readonly string _sourceName;

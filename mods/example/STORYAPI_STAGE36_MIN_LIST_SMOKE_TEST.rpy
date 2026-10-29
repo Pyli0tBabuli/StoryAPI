@@ -4,6 +4,8 @@ define stage36_probe_numbers = [2, -3, 4, 0]
 define stage36_probe_strings = ["pear", "apple", "Apple", "banana"]
 
 label storyapi_stage36_min_list_smoke:
+    _ "STORYAPI_MIN_SMOKE_STARTED"
+
     $ stage36_lowest_number = min(stage36_probe_numbers)
     if stage36_lowest_number != -3:
         _ "STORYAPI_MIN_NUMBERS_FAIL"

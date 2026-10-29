@@ -815,8 +815,10 @@ namespace StoryAPI.Scripting
                         throw new ScriptSyntaxException(
                             "reversed() accepts a named list/dictionary or dictionary.values()/items() source.", Current.Line);
                     _index++; // )
-                    if (thirdVariable != null ||
-                        (valueVariable != null && !enumerateDictionaryItems) ||
+                    if (thirdVariable != null)
+                        throw new ScriptSyntaxException(
+                            "Three loop variables require enumerate(reversed(dictionary.items())) iteration.", line);
+                    if ((valueVariable != null && !enumerateDictionaryItems) ||
                         (valueVariable == null && enumerateDictionaryItems))
                         throw new ScriptSyntaxException(
                             "reversed() over a list, dictionary, or dictionary.values() accepts one loop variable; dictionary.items() requires 'for key, value'.",

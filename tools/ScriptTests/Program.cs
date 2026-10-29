@@ -35,6 +35,7 @@ namespace StoryAPI.Tests
             Run("list reverse method", TestListReverseMethod);
             Run("list sort method", TestListSortMethod);
             Run("sorted() builtin", TestSortedListBuiltin);
+            Run("sum() builtin", TestSumListBuiltin);
             Run("list count method", TestListCountMethod);
             Run("list index method", TestListIndexMethod);
             Run("list copy method", TestListCopyMethod);
@@ -1990,6 +1991,89 @@ namespace StoryAPI.Tests
                     "The index() call should parse as a Python statement.").Code ==
                     "battery_index = inventory.index(\"battery\")",
                 "The parser should preserve list index assignments.");
+        }
+
+        private static void TestSumListBuiltin()
+        {
+            const string sourcePath = "sum-list-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+
+            var numbers = new List<object> { 2f, 3f, -1f, 4.5f };
+            context.SetVariable("numbers",
+                new SimpleExpressionEngine.DataValue((object)numbers));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateSumListAssignmentLine(
+                    "total = sum(numbers)", sourcePath, 3, out line),
+                "sum(numbers) assignment should be recognized.");
+            Check(line.GetType().Name == "SumListAssignmentLine",
+                "sum() should emit a dedicated list-sum instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("total", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 8.5f) < 0.001f,
+                "sum() should add numeric list values.");
+            Check(numbers.SequenceEqual(new object[] { 2f, 3f, -1f, 4.5f }),
+                "sum() should leave the source list unchanged.");
+
+            var empty = new List<object>();
+            context.SetVariable("empty_numbers",
+                new SimpleExpressionEngine.DataValue((object)empty));
+            Check(VariableIndexExpressionLine.TryCreateSumListAssignmentLine(
+                    "empty_total = sum(empty_numbers)", sourcePath, 4, out line),
+                "sum() should recognize an empty list.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("empty_total", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed)) < 0.001f,
+                "sum() of an empty list should return numeric zero.");
+
+            var integers = new List<object> { 1, 2, 3 };
+            context.SetVariable("integer_numbers",
+                new SimpleExpressionEngine.DataValue((object)integers));
+            Check(VariableIndexExpressionLine.TryCreateSumListAssignmentLine(
+                    "integer_total = sum(integer_numbers)", sourcePath, 5, out line),
+                "sum() should accept integral scalar types.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("integer_total", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 6f) < 0.001f,
+                "sum() should total integral values.");
+
+            var mixed = new List<object> { 2f, "three" };
+            context.SetVariable("mixed", new SimpleExpressionEngine.DataValue((object)mixed));
+            context.SetVariable("unchanged_total", new SimpleExpressionEngine.DataValue(77f));
+            GameBridge.TrySetVariableLiteral("unchanged_total", 77f, false, context);
+            Check(VariableIndexExpressionLine.TryCreateSumListAssignmentLine(
+                    "unchanged_total = sum(mixed)", sourcePath, 6, out line),
+                "sum() should recognize a list even if it has unsupported members.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("unchanged_total", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 77f) < 0.001f,
+                "sum() should leave the destination unchanged for unsupported list items.");
+
+            Check(!VariableIndexExpressionLine.TryCreateSumListAssignmentLine(
+                    "total = sum(numbers, 10)", sourcePath, 20, out line),
+                "The restricted sum() form should reject extra arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateSumListAssignmentLine(
+                    "total = sum(numbers[0])", sourcePath, 21, out line),
+                "sum() should reject indexed source expressions.");
+            Check(!VariableIndexExpressionLine.TryCreateSumListAssignmentLine(
+                    "sum(numbers)", sourcePath, 22, out line),
+                "The restricted sum() form should require an assignment target.");
+            Check(!VariableIndexExpressionLine.TryCreateSumListAssignmentLine(
+                    "total = sum(numbers); total = 0", sourcePath, 23, out line),
+                "sum() should reject multiple statements.");
+
+            var statements = Parse(
+                "label sum_list_test:\n" +
+                "    $ total = sum(numbers)\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing sum().");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The sum() assignment should parse as a Python statement.").Code ==
+                    "total = sum(numbers)",
+                "The parser should preserve sum() assignments.");
         }
 
         private static void TestSortedListBuiltin()

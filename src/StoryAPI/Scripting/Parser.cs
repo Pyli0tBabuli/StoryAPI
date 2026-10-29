@@ -616,8 +616,27 @@ namespace StoryAPI.Scripting
             else
             {
                 bool isReversed = false;
+                bool isEnumerate = false;
                 string collection;
-                if (Current.Type == TokenType.Identifier && Current.Text == "reversed" &&
+                if (Current.Type == TokenType.Identifier && Current.Text == "enumerate" &&
+                    Ahead(1).Text == "(")
+                {
+                    if (valueVariable == null)
+                        throw new ScriptSyntaxException(
+                            "enumerate() iteration requires 'for index, value in enumerate(list):'.",
+                            Current.Line);
+                    _index += 2; // enumerate(
+                    if (Current.Type != TokenType.Identifier)
+                        throw new ScriptSyntaxException(
+                            "enumerate() requires a named list variable.", Current.Line);
+                    collection = Advance().Text;
+                    if (Current.Text != ")")
+                        throw new ScriptSyntaxException(
+                            "enumerate() accepts exactly one named list variable.", Current.Line);
+                    _index++; // )
+                    isEnumerate = true;
+                }
+                else if (Current.Type == TokenType.Identifier && Current.Text == "reversed" &&
                     Ahead(1).Text == "(")
                 {
                     if (valueVariable != null)
@@ -645,7 +664,7 @@ namespace StoryAPI.Scripting
                 bool isDictionaryItems = false;
                 bool isDictionaryValues = false;
                 bool isDictionaryKeys = false;
-                if (!isReversed && Current.Text == "." &&
+                if (!isReversed && !isEnumerate && Current.Text == "." &&
                     (Ahead(1).Text == "items" || Ahead(1).Text == "values" ||
                      Ahead(1).Text == "keys") &&
                     Ahead(2).Text == "(" && Ahead(3).Text == ")")
@@ -672,15 +691,15 @@ namespace StoryAPI.Scripting
                     }
                     _index += 4;
                 }
-                else if (valueVariable != null)
+                else if (valueVariable != null && !isEnumerate)
                 {
                     throw new ScriptSyntaxException(
-                        "Two loop variables require dictionary.items() iteration.", Current.Line);
+                        "Two loop variables require dictionary.items() or enumerate(list) iteration.", Current.Line);
                 }
 
                 if (Current.Type != TokenType.Colon)
                     throw new ScriptSyntaxException(
-                        "Only a named list, reversed(list), dictionary.keys(), dictionary.items(), or dictionary.values() is supported after 'in'.",
+                        "Only a named list, reversed(list), enumerate(list), dictionary.keys(), dictionary.items(), or dictionary.values() is supported after 'in'.",
                         Current.Line);
 
                 ExpectColon();
@@ -690,6 +709,7 @@ namespace StoryAPI.Scripting
                     ValueVariable = valueVariable,
                     Collection = collection,
                     IsReversed = isReversed,
+                    IsEnumerate = isEnumerate,
                     IsDictionaryItems = isDictionaryItems,
                     IsDictionaryValues = isDictionaryValues,
                     IsDictionaryKeys = isDictionaryKeys,

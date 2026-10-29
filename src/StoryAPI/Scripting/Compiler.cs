@@ -814,7 +814,7 @@ namespace StoryAPI.Scripting
             if (!VariableIndexExpressionLine.TryCreateForEachPreparationLine(
                 statement.Collection, iterationCollectionName, statement.IsDictionaryItems,
                 statement.IsDictionaryValues, statement.IsDictionaryKeys, statement.IsReversed,
-                _textLabel ?? "unknown", statement.Line, out preparationLine))
+                statement.IsEnumerate, _textLabel ?? "unknown", statement.Line, out preparationLine))
                 throw new InvalidOperationException(
                     "for loops require a simple collection variable name (line " +
                     statement.Line + ").");
@@ -832,7 +832,8 @@ namespace StoryAPI.Scripting
             Line itemLine;
             if (!VariableIndexExpressionLine.TryCreateForEachItemLine(
                 statement.Variable, statement.ValueVariable, iterationCollectionName,
-                indexName, itemGateName, _textLabel ?? "unknown", statement.Line, out itemLine))
+                indexName, itemGateName, statement.IsEnumerate,
+                _textLabel ?? "unknown", statement.Line, out itemLine))
                 throw new InvalidOperationException(
                     "for loops require simple variable names and a named list or dictionary (line " +
                     statement.Line + ").");

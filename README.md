@@ -271,7 +271,10 @@ and key/value pairs are snapshotted at loop entry, so dictionary edits in the lo
 active iteration sequence. Explicit `.keys()`, `.values()`, and `.items()` loops require a dictionary.
 Reverse list iteration is available as `for item in reversed(inventory):`; it snapshots the named list
 from last item to first and leaves the source list unchanged. `reversed()` currently accepts only a named
-list and only one loop variable. Range loops support `range(stop)`, `range(start, stop)`,
+list and only one loop variable. Indexed list iteration is available as
+`for index, item in enumerate(inventory):`. The index starts at zero, the list is read live as the loop
+advances, and the loop accepts a simple named list with exactly two loop variables. Dictionary sources and
+a custom start index are not supported. Range loops support `range(stop)`, `range(start, stop)`,
 and `range(start, stop, step)`, including negative steps and empty ranges. Range arguments are
 evaluated once at loop entry and must resolve to 32-bit integers; a zero step or invalid argument logs
 a warning and skips the loop body. Range iteration does not allocate a list. Other iterable expressions

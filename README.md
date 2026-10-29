@@ -269,13 +269,16 @@ control. Dictionary key loops assign each key to the loop variable; value loops 
 variable, and items loops assign each key and matching value to two variables. Dictionary keys, values,
 and key/value pairs are snapshotted at loop entry, so dictionary edits in the loop body do not change the
 active iteration sequence. Explicit `.keys()`, `.values()`, and `.items()` loops require a dictionary.
-Reverse list iteration is available as `for item in reversed(inventory):`; it snapshots the named list
-from last item to first and leaves the source list unchanged. `reversed()` currently accepts only a named
-list and only one loop variable. Indexed iteration is available as
-`for index, item in enumerate(inventory):`. The index starts at zero, list iteration reads the list live
-as the loop advances, and exactly two loop variables are required. Reverse-order indexed iteration is also
-supported as `for index, item in enumerate(reversed(inventory), start):`; it snapshots the list in reverse
-order at loop entry while the enumerate index begins at zero (or the provided start value). Dictionary keys can be enumerated with
+Reverse iteration is available as `for item in reversed(inventory):`; it snapshots the named list
+from last item to first and leaves the source list unchanged. Dictionaries can also be traversed in reverse
+insertion order with `for key in reversed(settings):`; this snapshots the dictionary keys from last inserted
+to first and leaves the dictionary unchanged. `reversed()` accepts one named list or dictionary and only one
+loop variable. Indexed iteration is available as `for index, item in enumerate(inventory):`. The index
+starts at zero, ordinary list iteration reads the list live as the loop advances, and exactly two loop
+variables are required. Reverse-order indexed iteration is supported for lists and dictionary keys, for
+example `for index, item in enumerate(reversed(inventory), start):` or
+`for index, key in enumerate(reversed(settings), start):`. These forms snapshot the reversed iteration
+sequence at loop entry, while the enumerate index increases from zero (or the provided start value). Dictionary keys can be enumerated with
 `for index, key in enumerate(settings):`; dictionary values can be enumerated with
 `for index, value in enumerate(settings.values()):`; and dictionary entries can be enumerated with three
 targets, as in `for index, key, value in enumerate(settings.items()):`. Dictionary keys, values, and

@@ -808,6 +808,19 @@ namespace StoryAPI.Scripting
                 statement.Line.ToString(CultureInfo.InvariantCulture);
             string indexName = prefix + "_index";
             string iterationCollectionName = prefix + "_items";
+            string enumerateStartName = null;
+
+            // Match range(): evaluate a dynamic enumerate() start exactly once at loop entry.
+            if (statement.IsEnumerate &&
+                !string.IsNullOrWhiteSpace(statement.EnumerateStartExpression))
+            {
+                enumerateStartName = prefix + "_enumerate_start";
+                EmitPython(new PythonStatement
+                {
+                    Code = enumerateStartName + " = (" + statement.EnumerateStartExpression + ")",
+                    Line = statement.Line,
+                });
+            }
 
             // Lists are reused; dictionaries are converted into a snapshot of their keys.
             Line preparationLine;
@@ -833,7 +846,7 @@ namespace StoryAPI.Scripting
             if (!VariableIndexExpressionLine.TryCreateForEachItemLine(
                 statement.Variable, statement.ValueVariable, iterationCollectionName,
                 indexName, itemGateName, statement.IsEnumerate, statement.EnumerateStart,
-                _textLabel ?? "unknown", statement.Line, out itemLine))
+                enumerateStartName, _textLabel ?? "unknown", statement.Line, out itemLine))
                 throw new InvalidOperationException(
                     "for loops require simple variable names and a named list or dictionary (line " +
                     statement.Line + ").");

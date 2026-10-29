@@ -166,7 +166,11 @@ the same restricted dynamic scalar indexes supported by reads. Assignment values
 expressions; collection reads on the right-hand side are resolved before the assignment. Compound assignments to simple scalar variables and indexed list/dictionary entries support
 `+=`, `-=`, `*=`, `/=`, and `%=`; their right-hand side may use supported scalar expressions and
 collection index reads. Other compound operators such as `**=`, slices, and assigning a new value
-beyond the end of a list remain unsupported. The built-in assignment form `$ sorted_inventory = sorted(inventory)` creates a new list; 
+beyond the end of a list remain unsupported. The restricted assignment `$ total = sum(inventory)` adds values from a named list of numeric scalars
+and assigns the total. An empty list returns `0`. The source list is unchanged. Lists containing
+non-numeric values log a warning and leave the destination unchanged; extra arguments and indexed
+source expressions are not supported.
+The built-in assignment form `$ sorted_inventory = sorted(inventory)` creates a new list; 
 `$ sorted_inventory = sorted(inventory, reverse=True)` sorts it in descending order. Homogeneous
 strings use ordinal ordering and homogeneous numbers use numeric ordering. `reverse` accepts only
 the literal `True` or `False`; `False` is the default. The source list is not modified. Mixed or

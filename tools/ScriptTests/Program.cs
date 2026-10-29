@@ -3247,10 +3247,10 @@ namespace StoryAPI.Tests
                 "enumerate(inventory, -2) should allow a negative integer start.");
 
             var variableStartStatements = Parse(
-                "label enumerate_variable_start:\\n" +
-                "    for index, item in enumerate(inventory, start_index):\\n" +
-                "        pass\\n" +
-                "    return\\n");
+                "label enumerate_variable_start:\n" +
+                "    for index, item in enumerate(inventory, start_index):\n" +
+                "        pass\n" +
+                "    return\n");
             var variableStartLoop = Require<ForStatement>(
                 Require<LabelStatement>(variableStartStatements[0],
                     "Expected variable-start enumerate label.").Body[0],
@@ -3259,10 +3259,10 @@ namespace StoryAPI.Tests
                 "enumerate() should preserve a variable start expression.");
 
             var arithmeticStartStatements = Parse(
-                "label enumerate_arithmetic_start:\\n" +
-                "    for index, item in enumerate(inventory, start_index + 2):\\n" +
-                "        pass\\n" +
-                "    return\\n");
+                "label enumerate_arithmetic_start:\n" +
+                "    for index, item in enumerate(inventory, start_index + 2):\n" +
+                "        pass\n" +
+                "    return\n");
             var arithmeticStartLoop = Require<ForStatement>(
                 Require<LabelStatement>(arithmeticStartStatements[0],
                     "Expected arithmetic-start enumerate label.").Body[0],

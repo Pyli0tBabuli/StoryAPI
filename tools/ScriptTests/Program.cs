@@ -57,6 +57,7 @@ namespace StoryAPI.Tests
             Run("while and loop-control statements", TestWhileAndLoopControl);
             Run("for-list iteration and loop control", TestForListIteration);
             Run("for-reversed-list iteration", TestForReversedListIteration);
+            Run("for-enumerate-list iteration", TestForEnumerateListIteration);
             Run("for-dictionary key iteration", TestForDictionaryIteration);
             Run("for-dictionary key/value iteration", TestForDictionaryItemsIteration);
             Run("for-dictionary values iteration", TestForDictionaryValuesIteration);
@@ -3205,6 +3206,89 @@ namespace StoryAPI.Tests
                     "settings", "_stage40_invalid", true, false, false, true,
                     sourcePath, 6, out preparation),
                 "reversed() should not be combined with a dictionary-items iteration mode.");
+        }
+
+        private static void TestForEnumerateListIteration()
+        {
+            const string sourcePath = "enumerate-list-test.rpy";
+            var statements = Parse(
+                "label enumerate_list_test:\\n" +
+                "    for index, item in enumerate(inventory):\\n" +
+                "        pass\\n" +
+                "    return\\n");
+            var label = Require<LabelStatement>(statements[0], "Expected enumerate-list label.");
+            var loop = Require<ForStatement>(label.Body[0], "Expected enumerate() loop.");
+            Check(loop.IsEnumerate && loop.Variable == "index" &&
+                    loop.ValueVariable == "item" && loop.Collection == "inventory" && !loop.IsRange,
+                "enumerate(inventory) should bind a zero-based index and each value.");
+
+            ExpectSyntaxError(
+                "label enumerate_one_name:\\n" +
+                "    for item in enumerate(inventory):\\n" +
+                "        pass\\n",
+                "requires 'for index, value");
+            ExpectSyntaxError(
+                "label enumerate_extra_argument:\\n" +
+                "    for index, item in enumerate(inventory, 1):\\n" +
+                "        pass\\n",
+                "exactly one named list variable");
+
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var values = new List<object> { 10f, 20f, 30f };
+            context.SetVariable("inventory", new SimpleExpressionEngine.DataValue((object)values));
+
+            RenPyParser.Line preparation;
+            Check(VariableIndexExpressionLine.TryCreateForEachPreparationLine(
+                    "inventory", "_stage41_items", false, false, false, false, true,
+                    sourcePath, 5, out preparation),
+                "The runtime should create an enumerate-list preparation line.");
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
+            object preparedValue;
+            Check(GameBridge.TryGetLastTestLiteral("_stage41_items", out preparedValue) &&
+                    ReferenceEquals(preparedValue, values),
+                "enumerate() should keep the source list live rather than copy it.");
+
+            RenPyParser.Line itemLine;
+            Check(VariableIndexExpressionLine.TryCreateForEachItemLine(
+                    "index", "item", "_stage41_items", "_stage41_index", "_stage41_gate",
+                    true, sourcePath, 6, out itemLine),
+                "The runtime should create an enumerate() item instruction.");
+            context.SetVariable("_stage41_index", new SimpleExpressionEngine.DataValue(0f));
+            ((RenPyParser.Images.IApply)itemLine).Apply(context);
+            object observedIndex, observedItem;
+            Check(GameBridge.TryGetLastTestLiteral("index", out observedIndex) &&
+                    Math.Abs(Convert.ToSingle(observedIndex, CultureInfo.InvariantCulture)) < 0.0001f,
+                "The first enumerate() index should be zero.");
+            Check(GameBridge.TryGetLastTestLiteral("item", out observedItem) &&
+                    Math.Abs(Convert.ToSingle(observedItem, CultureInfo.InvariantCulture) - 10f) < 0.0001f,
+                "The first enumerate() value should be the first list item.");
+
+            context.SetVariable("_stage41_index", new SimpleExpressionEngine.DataValue(1f));
+            ((RenPyParser.Images.IApply)itemLine).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("index", out observedIndex) &&
+                    Math.Abs(Convert.ToSingle(observedIndex, CultureInfo.InvariantCulture) - 1f) < 0.0001f,
+                "enumerate() indexes should increase from zero.");
+            Check(GameBridge.TryGetLastTestLiteral("item", out observedItem) &&
+                    Math.Abs(Convert.ToSingle(observedItem, CultureInfo.InvariantCulture) - 20f) < 0.0001f,
+                "enumerate() should yield values in list order.");
+
+            values.Add(40f);
+            context.SetVariable("_stage41_index", new SimpleExpressionEngine.DataValue(3f));
+            ((RenPyParser.Images.IApply)itemLine).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("item", out observedItem) &&
+                    Math.Abs(Convert.ToSingle(observedItem, CultureInfo.InvariantCulture) - 40f) < 0.0001f,
+                "enumerate() should observe list appends while its live loop is running.");
+
+            var dictionary = new Dictionary<string, object> { { "alpha", 1f } };
+            context.SetVariable("dictionary", new SimpleExpressionEngine.DataValue((object)dictionary));
+            Check(VariableIndexExpressionLine.TryCreateForEachPreparationLine(
+                    "dictionary", "_stage41_invalid", false, false, false, false, true,
+                    sourcePath, 7, out preparation),
+                "The enumerate() prep instruction should be constructible to validate runtime source type.");
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("_stage41_invalid", out preparedValue) &&
+                    !(preparedValue is IList),
+                "enumerate() must reject dictionary sources rather than iterate keys.");
         }
 
         private static void TestForDictionaryIteration()

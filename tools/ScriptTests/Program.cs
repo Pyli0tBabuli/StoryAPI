@@ -39,6 +39,7 @@ namespace StoryAPI.Tests
             Run("min() builtin", TestMinListBuiltin);
             Run("max() builtin", TestMaxListBuiltin);
             Run("any() builtin", TestAnyListBuiltin);
+            Run("all() builtin", TestAllListBuiltin);
             Run("list count method", TestListCountMethod);
             Run("list index method", TestListIndexMethod);
             Run("list copy method", TestListCopyMethod);
@@ -2301,6 +2302,98 @@ namespace StoryAPI.Tests
                     "The any() assignment should parse as a Python statement.").Code ==
                     "found = any(mixed)",
                 "The parser should preserve any() assignments.");
+        }
+
+        private static void TestAllListBuiltin()
+        {
+            const string sourcePath = "all-list-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+
+            var truthyValues = new List<object> { true, 1, "active", 2f };
+            context.SetVariable("truthy_values", new SimpleExpressionEngine.DataValue((object)truthyValues));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateAllListAssignmentLine(
+                    "all_truthy = all(truthy_values)", sourcePath, 3, out line),
+                "all(truthy_values) assignment should be recognized.");
+            Check(line.GetType().Name == "AllListAssignmentLine",
+                "all() should emit a dedicated truthiness instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("all_truthy", out observed) &&
+                    observed is bool everyTruthy && everyTruthy,
+                "all() should return true when every supported scalar is truthy.");
+            Check(truthyValues.SequenceEqual(new object[] { true, 1, "active", 2f }),
+                "all() should leave the source list unchanged.");
+
+            var falseyValues = new List<object> { true, 1, 0, new object() };
+            context.SetVariable("falsey_values",
+                new SimpleExpressionEngine.DataValue((object)falseyValues));
+            Check(VariableIndexExpressionLine.TryCreateAllListAssignmentLine(
+                    "all_values = all(falsey_values)", sourcePath, 4, out line),
+                "all() should recognize lists that contain a falsey value.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("all_values", out observed) &&
+                    observed is bool notAll && !notAll,
+                "all() should short-circuit to false at the first falsey value.");
+
+            var empty = new List<object>();
+            context.SetVariable("empty", new SimpleExpressionEngine.DataValue((object)empty));
+            Check(VariableIndexExpressionLine.TryCreateAllListAssignmentLine(
+                    "empty_all = all(empty)", sourcePath, 5, out line),
+                "all() should recognize an empty list.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("empty_all", out observed) &&
+                    observed is bool emptyResult && emptyResult,
+                "all() of an empty list should return true.");
+
+            var singleton = new List<object> { "x" };
+            context.SetVariable("singleton",
+                new SimpleExpressionEngine.DataValue((object)singleton));
+            Check(VariableIndexExpressionLine.TryCreateAllListAssignmentLine(
+                    "single_all = all(singleton)", sourcePath, 6, out line),
+                "all() should recognize one-item lists.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("single_all", out observed) &&
+                    observed is bool singleResult && singleResult,
+                "all() should return true for a one-item truthy list.");
+
+            var unsupported = new List<object> { new object(), true };
+            context.SetVariable("unsupported", new SimpleExpressionEngine.DataValue((object)unsupported));
+            context.SetVariable("preserved_all", new SimpleExpressionEngine.DataValue(true));
+            GameBridge.TrySetVariableLiteral("preserved_all", true, false, context);
+            Check(VariableIndexExpressionLine.TryCreateAllListAssignmentLine(
+                    "preserved_all = all(unsupported)", sourcePath, 7, out line),
+                "all() should recognize lists with unsupported members.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("preserved_all", out observed) &&
+                    observed is bool preserved && preserved,
+                "all() should leave the destination unchanged when a list item is unsupported.");
+
+            Check(!VariableIndexExpressionLine.TryCreateAllListAssignmentLine(
+                    "all_truthy = all(truthy_values, True)", sourcePath, 20, out line),
+                "all() should reject additional arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateAllListAssignmentLine(
+                    "all_truthy = all(truthy_values[0])", sourcePath, 21, out line),
+                "all() should reject indexed source expressions.");
+            Check(!VariableIndexExpressionLine.TryCreateAllListAssignmentLine(
+                    "all(truthy_values)", sourcePath, 22, out line),
+                "The restricted all() form should require an assignment target.");
+            Check(!VariableIndexExpressionLine.TryCreateAllListAssignmentLine(
+                    "all_truthy = all(truthy_values); all_truthy = False", sourcePath, 23, out line),
+                "all() should reject multiple statements.");
+
+            var statements = Parse(
+                "label all_list_test:\n" +
+                "    $ all_truthy = all(truthy_values)\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing all().");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The all() assignment should parse as a Python statement.").Code ==
+                    "all_truthy = all(truthy_values)",
+                "The parser should preserve all() assignments.");
         }
 
         private static void TestSumListBuiltin()

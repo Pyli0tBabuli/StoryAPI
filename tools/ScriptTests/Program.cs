@@ -56,6 +56,7 @@ namespace StoryAPI.Tests
             Run("menu choices and nested statements", TestMenuChoices);
             Run("while and loop-control statements", TestWhileAndLoopControl);
             Run("for-list iteration and loop control", TestForListIteration);
+            Run("for-reversed-list iteration", TestForReversedListIteration);
             Run("for-dictionary key iteration", TestForDictionaryIteration);
             Run("for-dictionary key/value iteration", TestForDictionaryItemsIteration);
             Run("for-dictionary values iteration", TestForDictionaryValuesIteration);
@@ -3158,6 +3159,59 @@ namespace StoryAPI.Tests
                 "    for item inventory:\n" +
                 "        pass\n",
                 "Expected 'in'");
+        }
+
+        private static void TestForReversedListIteration()
+        {
+            const string sourcePath = "reversed-list-test.rpy";
+            var statements = Parse(
+                "label reversed_list_test:\\n" +
+                "    for item in reversed(inventory):\\n" +
+                "        pass\\n" +
+                "    return\\n");
+            var label = Require<LabelStatement>(statements[0], "Expected reversed-list label.");
+            var loop = Require<ForStatement>(label.Body[0], "Expected reversed-list loop.");
+            Check(loop.IsReversed && loop.Collection == "inventory" && !loop.IsRange,
+                "reversed(inventory) should be represented as reverse iteration over inventory.");
+
+            ExpectSyntaxError(
+                "label reversed_two_names:\\n" +
+                "    for key, value in reversed(inventory):\\n" +
+                "        pass\\n",
+                "one loop variable");
+
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var values = new List<object> { 1f, 2f, 3f };
+            context.SetVariable("inventory", new SimpleExpressionEngine.DataValue((object)values));
+
+            RenPyParser.Line preparation;
+            Check(VariableIndexExpressionLine.TryCreateForEachPreparationLine(
+                    "inventory", "_stage40_items", false, false, false, true,
+                    sourcePath, 5, out preparation),
+                "The runtime should create a reversed-list preparation line.");
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
+
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("_stage40_items", out observed) &&
+                    observed is List<object>,
+                "reversed() should prepare an iterable list snapshot.");
+            var prepared = (List<object>)observed;
+            Check(prepared.SequenceEqual(new object[] { 3f, 2f, 1f }),
+                "reversed() iteration should visit list elements from last to first.");
+            Check(values.SequenceEqual(new object[] { 1f, 2f, 3f }),
+                "reversed() iteration must not mutate the source list.");
+
+            var dictionary = new Dictionary<string, object> { { "one", 1f } };
+            context.SetVariable("settings", new SimpleExpressionEngine.DataValue((object)dictionary));
+            GameBridge.TrySetVariableLiteral("_stage40_preserved", 17f, false, context);
+            Check(VariableIndexExpressionLine.TryCreateForEachPreparationLine(
+                    "settings", "_stage40_preserved", false, false, false, true,
+                    sourcePath, 6, out preparation),
+                "The reverse-loop instruction should be constructible for runtime type validation.");
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("_stage40_preserved", out observed) &&
+                    observed is float unchanged && Math.Abs(unchanged - 17f) < 0.0001f,
+                "reversed() should reject dictionaries without overwriting the destination.");
         }
 
         private static void TestForDictionaryIteration()

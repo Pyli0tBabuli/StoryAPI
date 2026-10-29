@@ -3279,7 +3279,7 @@ namespace StoryAPI.Tests
                 "label enumerate_extra_argument:\n" +
                 "    for index, item in enumerate(inventory, 1, 2):\n" +
                 "        pass\n",
-                "optional integer start");
+                "only one optional start argument");
             ExpectSyntaxError(
                 "label enumerate_non_integer_start:\n" +
                 "    for index, item in enumerate(inventory, 1.5):\n" +

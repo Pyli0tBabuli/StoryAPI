@@ -831,7 +831,7 @@ namespace StoryAPI.Scripting
                 if (thirdVariable != null &&
                     (!isEnumerate || (!enumerateDictionaryItems && !isZip)))
                     throw new ScriptSyntaxException(
-                        "Only two loop variables are supported except enumerate(dictionary.items()) or enumerate(zip(list, list)), which require three.",
+                        "Only two loop variables are supported generally. Three loop variables require enumerate(dictionary.items()) or enumerate(zip(list, list)) iteration.",
                         line);
                 if (isEnumerate && enumerateDictionaryItems && thirdVariable == null)
                     throw new ScriptSyntaxException(

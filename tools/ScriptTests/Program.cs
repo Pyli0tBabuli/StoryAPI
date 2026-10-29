@@ -3376,10 +3376,10 @@ namespace StoryAPI.Tests
             context.SetVariable("dictionary", new SimpleExpressionEngine.DataValue((object)dictionary));
 
             var dictionaryStatements = Parse(
-                "label enumerate_dictionary_test:\\n" +
-                "    for index, key in enumerate(dictionary, 4):\\n" +
-                "        pass\\n" +
-                "    return\\n");
+                "label enumerate_dictionary_test:\n" +
+                "    for index, key in enumerate(dictionary, 4):\n" +
+                "        pass\n" +
+                "    return\n");
             var dictionaryLoop = Require<ForStatement>(
                 Require<LabelStatement>(dictionaryStatements[0],
                     "Expected enumerate dictionary label.").Body[0],

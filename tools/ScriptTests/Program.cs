@@ -3395,10 +3395,12 @@ namespace StoryAPI.Tests
                 "The enumerate() prep instruction should support dictionary sources.");
             ((RenPyParser.Images.IApply)preparation).Apply(context);
             Check(GameBridge.TryGetLastTestLiteral("_stage44_items", out preparedValue) &&
-                    preparedValue is List<object> dictionaryKeys &&
-                    dictionaryKeys.Count == 2 &&
-                    dictionaryKeys.Contains("alpha") && dictionaryKeys.Contains("beta"),
+                    preparedValue is List<object>,
                 "enumerate(dictionary) should snapshot its keys into a list.");
+            var dictionaryKeys = preparedValue as List<object>;
+            Check(dictionaryKeys != null && dictionaryKeys.Count == 2 &&
+                    dictionaryKeys.Contains("alpha") && dictionaryKeys.Contains("beta"),
+                "enumerate(dictionary) should retain all initial keys.");
             dictionary["gamma"] = 3f;
             Check(dictionaryKeys.Count == 2 && !dictionaryKeys.Contains("gamma"),
                 "Dictionary keys added after preparation should not enter the active enumerate snapshot.");

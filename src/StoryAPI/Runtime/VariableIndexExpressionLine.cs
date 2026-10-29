@@ -4922,12 +4922,26 @@ namespace StoryAPI.Runtime
                     object iterationItems;
                     if (_enumerateList)
                     {
-                        if (!(source is IList enumerateSource))
+                        if (source is IList enumerateSource)
+                        {
+                            // Keep lists live while iterating, matching Stage 41 behavior.
+                            iterationItems = enumerateSource;
+                        }
+                        else if (source is IDictionary enumerateDictionary)
+                        {
+                            // Python's enumerate(dict) visits keys. Snapshot the keys so that
+                            // mutating the dictionary in the loop body does not invalidate this
+                            // loop's active sequence, consistent with other dictionary loops.
+                            var enumerateKeys = new List<object>();
+                            foreach (object key in enumerateDictionary.Keys)
+                                enumerateKeys.Add(key);
+                            iterationItems = enumerateKeys;
+                        }
+                        else
+                        {
                             throw new InvalidOperationException(
-                                "enumerate() iteration requires a list source");
-                        // Keep the original list live; the item instruction pairs each current
-                        // element with the current zero-based loop counter.
-                        iterationItems = enumerateSource;
+                                "enumerate() iteration requires a list or dictionary source");
+                        }
                     }
                     else if (_reverseList)
                     {

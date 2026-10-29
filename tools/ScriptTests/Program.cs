@@ -3212,10 +3212,10 @@ namespace StoryAPI.Tests
         {
             const string sourcePath = "enumerate-list-test.rpy";
             var statements = Parse(
-                "label enumerate_list_test:\\n" +
-                "    for index, item in enumerate(inventory):\\n" +
-                "        pass\\n" +
-                "    return\\n");
+                "label enumerate_list_test:\n" +
+                "    for index, item in enumerate(inventory):\n" +
+                "        pass\n" +
+                "    return\n");
             var label = Require<LabelStatement>(statements[0], "Expected enumerate-list label.");
             var loop = Require<ForStatement>(label.Body[0], "Expected enumerate() loop.");
             Check(loop.IsEnumerate && loop.Variable == "index" &&
@@ -3223,14 +3223,14 @@ namespace StoryAPI.Tests
                 "enumerate(inventory) should bind a zero-based index and each value.");
 
             ExpectSyntaxError(
-                "label enumerate_one_name:\\n" +
-                "    for item in enumerate(inventory):\\n" +
-                "        pass\\n",
+                "label enumerate_one_name:\n" +
+                "    for item in enumerate(inventory):\n" +
+                "        pass\n",
                 "requires 'for index, value");
             ExpectSyntaxError(
-                "label enumerate_extra_argument:\\n" +
-                "    for index, item in enumerate(inventory, 1):\\n" +
-                "        pass\\n",
+                "label enumerate_extra_argument:\n" +
+                "    for index, item in enumerate(inventory, 1):\n" +
+                "        pass\n",
                 "exactly one named list variable");
 
             var context = new RenpyParser.DynamicIndexTestContext();
@@ -3287,8 +3287,8 @@ namespace StoryAPI.Tests
                 "The enumerate() prep instruction should be constructible to validate runtime source type.");
             ((RenPyParser.Images.IApply)preparation).Apply(context);
             Check(GameBridge.TryGetLastTestLiteral("_stage41_invalid", out preparedValue) &&
-                    !(preparedValue is IList),
-                "enumerate() must reject dictionary sources rather than iterate keys.");
+                    preparedValue is IList rejectedItems && rejectedItems.Count == 0,
+                "enumerate() must skip dictionary sources rather than iterate their keys.");
         }
 
         private static void TestForDictionaryIteration()

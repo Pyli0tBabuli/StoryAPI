@@ -776,7 +776,7 @@ namespace StoryAPI.Scripting
 
                 if (thirdVariable != null && (!isEnumerate || !enumerateDictionaryItems))
                     throw new ScriptSyntaxException(
-                        "Three loop variables require enumerate(dictionary.items()) iteration.", line);
+                        "Only two loop variables are supported outside enumerate(dictionary.items()) iteration.", line);
                 if (isEnumerate && enumerateDictionaryItems && thirdVariable == null)
                     throw new ScriptSyntaxException(
                         "enumerate(dictionary.items()) requires 'for index, key, value'.", line);

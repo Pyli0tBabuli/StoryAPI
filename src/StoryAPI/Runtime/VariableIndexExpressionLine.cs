@@ -4806,9 +4806,11 @@ namespace StoryAPI.Runtime
             line = null;
             int selectedModes = (includeDictionaryItems ? 1 : 0) +
                 (dictionaryValuesOnly ? 1 : 0) + (dictionaryKeysOnly ? 1 : 0);
+            bool enumeratedDictionaryItems = enumerateList && includeDictionaryItems &&
+                !dictionaryValuesOnly && !dictionaryKeysOnly && !reverseList;
             if (!IsSimpleIdentifier(sourceName) || !IsSimpleIdentifier(destinationName) ||
                 selectedModes > 1 ||
-                ((reverseList || enumerateList) && selectedModes != 0) ||
+                ((reverseList || enumerateList) && selectedModes != 0 && !enumeratedDictionaryItems) ||
                 (reverseList && enumerateList))
                 return false;
 
@@ -4854,17 +4856,29 @@ namespace StoryAPI.Runtime
             string collectionName, string indexName, string gateName, bool enumerateItems,
             int enumerateStart, string enumerateStartName, string sourcePath, int sourceLine, out Line line)
         {
+            return TryCreateForEachItemLine(variableName, valueVariableName, null,
+                collectionName, indexName, gateName, enumerateItems, enumerateStart,
+                enumerateStartName, sourcePath, sourceLine, out line);
+        }
+
+        public static bool TryCreateForEachItemLine(string variableName, string valueVariableName,
+            string thirdVariableName, string collectionName, string indexName, string gateName,
+            bool enumerateItems, int enumerateStart, string enumerateStartName,
+            string sourcePath, int sourceLine, out Line line)
+        {
             line = null;
             if (!IsSimpleIdentifier(variableName) ||
                 (valueVariableName != null && !IsSimpleIdentifier(valueVariableName)) ||
+                (thirdVariableName != null && !IsSimpleIdentifier(thirdVariableName)) ||
                 (enumerateItems && valueVariableName == null) ||
+                (thirdVariableName != null && (!enumerateItems || valueVariableName == null)) ||
                 !IsSimpleIdentifier(collectionName) || !IsSimpleIdentifier(indexName) ||
                 !IsSimpleIdentifier(gateName) ||
                 (enumerateStartName != null && !IsSimpleIdentifier(enumerateStartName)))
                 return false;
 
             line = new ForEachItemLine(
-                variableName, valueVariableName, collectionName, indexName,
+                variableName, valueVariableName, thirdVariableName, collectionName, indexName,
                 gateName, enumerateItems, enumerateStart, enumerateStartName, sourcePath, sourceLine);
             return true;
         }
@@ -4920,7 +4934,19 @@ namespace StoryAPI.Runtime
                             "' is not an object-backed list or dictionary");
 
                     object iterationItems;
-                    if (_enumerateList)
+                    if (_enumerateList && _includeDictionaryItems)
+                    {
+                        if (!(source is IDictionary enumerateItemsDictionary))
+                            throw new InvalidOperationException(
+                                "enumerate(dictionary.items()) requires a dictionary source");
+
+                        // Capture key/value pairs at loop entry, just like dictionary.items().
+                        var enumerateEntries = new List<object>();
+                        foreach (object key in enumerateItemsDictionary.Keys)
+                            enumerateEntries.Add(new object[] { key, enumerateItemsDictionary[key] });
+                        iterationItems = enumerateEntries;
+                    }
+                    else if (_enumerateList)
                     {
                         if (source is IList enumerateSource)
                         {
@@ -5034,6 +5060,7 @@ namespace StoryAPI.Runtime
         {
             private readonly string _variableName;
             private readonly string _valueVariableName;
+            private readonly string _thirdVariableName;
             private readonly string _collectionName;
             private readonly string _indexName;
             private readonly string _gateName;
@@ -5044,12 +5071,13 @@ namespace StoryAPI.Runtime
             private readonly int _sourceLine;
 
             public ForEachItemLine(string variableName, string valueVariableName,
-                string collectionName, string indexName, string gateName,
+                string thirdVariableName, string collectionName, string indexName, string gateName,
                 bool enumerateItems, int enumerateStart, string enumerateStartName,
                 string sourcePath, int sourceLine)
             {
                 _variableName = variableName;
                 _valueVariableName = valueVariableName;
+                _thirdVariableName = thirdVariableName;
                 _collectionName = collectionName;
                 _indexName = indexName;
                 _gateName = gateName;
@@ -5106,7 +5134,21 @@ namespace StoryAPI.Runtime
                                 throw new InvalidOperationException(
                                     "enumerate() start must evaluate to a signed 32-bit integer scalar");
 
-                            if (!GameBridge.TrySetVariableLiteral(
+                            if (_thirdVariableName != null)
+                            {
+                                if (!(item is object[] pair) || pair.Length != 2)
+                                    throw new InvalidOperationException(
+                                        "enumerate(dictionary.items()) yielded an invalid key/value pair");
+                                if (!GameBridge.TrySetVariableLiteral(
+                                        _variableName, (float)((long)index + enumerateStart), false, context) ||
+                                    !GameBridge.TrySetVariableLiteral(
+                                        _valueVariableName, pair[0], false, context) ||
+                                    !GameBridge.TrySetVariableLiteral(
+                                        _thirdVariableName, pair[1], false, context))
+                                    throw new InvalidOperationException(
+                                        "could not assign enumerate() index, dictionary key, and value");
+                            }
+                            else if (!GameBridge.TrySetVariableLiteral(
                                     _variableName, (float)((long)index + enumerateStart), false, context) ||
                                 !GameBridge.TrySetVariableLiteral(
                                     _valueVariableName, item, false, context))

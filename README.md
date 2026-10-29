@@ -275,8 +275,9 @@ list and only one loop variable. Indexed iteration is available as
 `for index, item in enumerate(inventory):`. The index starts at zero, list iteration reads the list live
 as the loop advances, and exactly two loop variables are required. Dictionary keys can be enumerated with
 `for index, key in enumerate(settings):`; dictionary values can be enumerated with
-`for index, value in enumerate(settings.values()):`. Dictionary keys and values are snapshotted at loop
-entry, so additions during the loop do not change the active sequence. An optional signed integer literal
+`for index, value in enumerate(settings.values()):`; and dictionary entries can be enumerated with three
+targets, as in `for index, key, value in enumerate(settings.items()):`. Dictionary keys, values, and
+key/value pairs are snapshotted at loop entry, so additions during the loop do not change the active sequence. An optional signed integer literal
 or supported scalar expression can set the initial index, as in `enumerate(inventory, 1)`,
 `enumerate(inventory, start_index)`, or `enumerate(inventory, start_index + 2)`. A dynamic start
 expression is evaluated once at loop entry and must resolve to a signed 32-bit integer; invalid runtime

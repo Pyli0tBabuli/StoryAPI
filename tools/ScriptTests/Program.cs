@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -3287,7 +3288,7 @@ namespace StoryAPI.Tests
                 "The enumerate() prep instruction should be constructible to validate runtime source type.");
             ((RenPyParser.Images.IApply)preparation).Apply(context);
             Check(GameBridge.TryGetLastTestLiteral("_stage41_invalid", out preparedValue) &&
-                    preparedValue is IList rejectedItems && rejectedItems.Count == 0,
+                    preparedValue is List<object> rejectedItems && rejectedItems.Count == 0,
                 "enumerate() must skip dictionary sources rather than iterate their keys.");
         }
 

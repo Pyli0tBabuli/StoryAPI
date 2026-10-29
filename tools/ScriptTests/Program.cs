@@ -59,6 +59,7 @@ namespace StoryAPI.Tests
             Run("for-list iteration and loop control", TestForListIteration);
             Run("for-reversed-list iteration", TestForReversedListIteration);
             Run("for-reversed-dictionary iteration", TestForReversedDictionaryIteration);
+            Run("for-reversed-dictionary values iteration", TestForReversedDictionaryValuesIteration);
             Run("for-zip-list iteration", TestForZipListIteration);
             Run("for-enumerate-zip-list iteration", TestForEnumerateZipListIteration);
             Run("for-enumerate-reversed-list iteration", TestForEnumerateReversedListIteration);
@@ -3315,6 +3316,109 @@ namespace StoryAPI.Tests
                     GameBridge.TryGetLastTestLiteral("key", out observedKey) &&
                     Equals(observedKey, "beta"),
                 "The next enumerate(reversed(dictionary)) item should advance its index and key.");
+        }
+
+        private static void TestForReversedDictionaryValuesIteration()
+        {
+            const string sourcePath = "reversed-dictionary-values-test.rpy";
+            var statements = Parse(
+                "label reversed_dictionary_values_test:\n" +
+                "    for value in reversed(settings.values()):\n" +
+                "        pass\n" +
+                "    for index, value in enumerate(reversed(settings.values()), start_index):\n" +
+                "        pass\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected reversed-dictionary-values label.");
+            var reverseLoop = Require<ForStatement>(label.Body[0],
+                "Expected reversed dictionary-values loop.");
+            Check(reverseLoop.IsReversed && reverseLoop.IsDictionaryValues &&
+                    reverseLoop.Collection == "settings" && reverseLoop.ValueVariable == null,
+                "reversed(settings.values()) should iterate dictionary values in reverse order.");
+
+            var enumerateLoop = Require<ForStatement>(label.Body[1],
+                "Expected enumerated reversed dictionary-values loop.");
+            Check(enumerateLoop.IsEnumerate && enumerateLoop.IsReversed &&
+                    enumerateLoop.IsDictionaryValues && enumerateLoop.Collection == "settings" &&
+                    enumerateLoop.Variable == "index" && enumerateLoop.ValueVariable == "value" &&
+                    enumerateLoop.EnumerateStartExpression == "start_index",
+                "enumerate(reversed(settings.values()), start) should bind reverse-ordered values and indexes.");
+
+            ExpectSyntaxError(
+                "label reversed_values_two_targets:\n" +
+                "    for key, value in reversed(settings.values()):\n" +
+                "        pass\n",
+                "one loop variable");
+
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var settings = new Dictionary<string, object>
+            {
+                { "alpha", 10f },
+                { "beta", 20f },
+                { "gamma", 30f }
+            };
+            context.SetVariable("settings",
+                new SimpleExpressionEngine.DataValue((object)settings));
+            context.SetVariable("start_index", new SimpleExpressionEngine.DataValue(5f));
+
+            RenPyParser.Line preparation;
+            Check(VariableIndexExpressionLine.TryCreateForEachPreparationLine(
+                    "settings", "_stage51_reversed_values", false, true, false, true, false,
+                    sourcePath, 10, out preparation),
+                "The runtime should create a reversed dictionary-values preparation line.");
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("_stage51_reversed_values", out observed) &&
+                    observed is List<object>,
+                "reversed(dictionary.values()) should prepare a list snapshot.");
+            var reverseValues = (List<object>)observed;
+            Check(reverseValues.SequenceEqual(new object[] { 30f, 20f, 10f }),
+                "reversed(dictionary.values()) should visit last inserted values first.");
+
+            Check(VariableIndexExpressionLine.TryCreateForEachPreparationLine(
+                    "settings", "_stage51_enumerated_values", false, true, false, true, false,
+                    sourcePath, 11, out preparation),
+                "The runtime should prepare enumerated reversed dictionary values.");
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("_stage51_enumerated_values", out observed) &&
+                    observed is List<object>,
+                "enumerate(reversed(dictionary.values())) should prepare a value snapshot.");
+            var enumeratedValues = (List<object>)observed;
+            Check(enumeratedValues.SequenceEqual(new object[] { 30f, 20f, 10f }),
+                "enumerate(reversed(dictionary.values())) should preserve reverse value order.");
+
+            settings["gamma"] = 99f;
+            settings.Add("delta", 40f);
+            Check(reverseValues.SequenceEqual(new object[] { 30f, 20f, 10f }) &&
+                    enumeratedValues.SequenceEqual(new object[] { 30f, 20f, 10f }),
+                "Reversed dictionary values should remain snapshotted after source mutations.");
+
+            context.SetVariable("_stage51_enumerated_values",
+                new SimpleExpressionEngine.DataValue((object)enumeratedValues));
+            context.SetVariable("_stage51_index", new SimpleExpressionEngine.DataValue(0f));
+            context.SetVariable("_stage51_gate", new SimpleExpressionEngine.DataValue(true));
+            RenPyParser.Line itemLine;
+            Check(VariableIndexExpressionLine.TryCreateForEachItemLine(
+                    "index", "value", "_stage51_enumerated_values", "_stage51_index", "_stage51_gate",
+                    true, 0, "start_index", sourcePath, 12, out itemLine),
+                "The runtime should create the enumerated value assignment line.");
+            ((RenPyParser.Images.IApply)itemLine).Apply(context);
+            object observedIndex, observedValue;
+            Check(GameBridge.TryGetLastTestLiteral("index", out observedIndex) &&
+                    Math.Abs(Convert.ToSingle(observedIndex, CultureInfo.InvariantCulture) - 5f) < 0.0001f,
+                "The first reversed value should use the requested enumerate start.");
+            Check(GameBridge.TryGetLastTestLiteral("value", out observedValue) &&
+                    Math.Abs(Convert.ToSingle(observedValue, CultureInfo.InvariantCulture) - 30f) < 0.0001f,
+                "The first enumerated reversed value should be the last dictionary value.");
+
+            context.SetVariable("_stage51_index", new SimpleExpressionEngine.DataValue(1f));
+            context.SetVariable("_stage51_gate", new SimpleExpressionEngine.DataValue(true));
+            ((RenPyParser.Images.IApply)itemLine).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("index", out observedIndex) &&
+                    Math.Abs(Convert.ToSingle(observedIndex, CultureInfo.InvariantCulture) - 6f) < 0.0001f &&
+                    GameBridge.TryGetLastTestLiteral("value", out observedValue) &&
+                    Math.Abs(Convert.ToSingle(observedValue, CultureInfo.InvariantCulture) - 20f) < 0.0001f,
+                "The next enumerated reversed value should advance the index and value.");
         }
 
         private static void TestForZipListIteration()

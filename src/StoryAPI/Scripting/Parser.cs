@@ -679,9 +679,15 @@ namespace StoryAPI.Scripting
                             throw new ScriptSyntaxException(
                                 "reversed() inside enumerate() requires a named list variable.", Current.Line);
                         collection = Advance().Text;
+                        if (Current.Text == "." && Ahead(1).Text == "values" &&
+                            Ahead(2).Text == "(" && Ahead(3).Text == ")")
+                        {
+                            _index += 4; // .values()
+                            enumerateDictionaryValues = true;
+                        }
                         if (Current.Text != ")")
                             throw new ScriptSyntaxException(
-                                "reversed() inside enumerate() accepts exactly one named list variable.", Current.Line);
+                                "reversed() inside enumerate() accepts a named list or dictionary.values() source.", Current.Line);
                         _index++; // )
                         isReversed = true;
                     }
@@ -792,9 +798,15 @@ namespace StoryAPI.Scripting
                         throw new ScriptSyntaxException(
                             "reversed() requires a named list or dictionary variable.", Current.Line);
                     collection = Advance().Text;
+                    if (Current.Text == "." && Ahead(1).Text == "values" &&
+                        Ahead(2).Text == "(" && Ahead(3).Text == ")")
+                    {
+                        _index += 4; // .values()
+                        enumerateDictionaryValues = true;
+                    }
                     if (Current.Text != ")")
                         throw new ScriptSyntaxException(
-                            "reversed() accepts exactly one named list variable.", Current.Line);
+                            "reversed() accepts one named list or dictionary.values() source.", Current.Line);
                     _index++; // )
                     isReversed = true;
                 }

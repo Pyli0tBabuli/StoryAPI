@@ -36,6 +36,7 @@ namespace StoryAPI.Tests
             Run("list sort method", TestListSortMethod);
             Run("sorted() builtin", TestSortedListBuiltin);
             Run("sum() builtin", TestSumListBuiltin);
+            Run("min() builtin", TestMinListBuiltin);
             Run("list count method", TestListCountMethod);
             Run("list index method", TestListIndexMethod);
             Run("list copy method", TestListCopyMethod);
@@ -1991,6 +1992,100 @@ namespace StoryAPI.Tests
                     "The index() call should parse as a Python statement.").Code ==
                     "battery_index = inventory.index(\"battery\")",
                 "The parser should preserve list index assignments.");
+        }
+
+        private static void TestMinListBuiltin()
+        {
+            const string sourcePath = "min-list-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+
+            var numbers = new List<object> { 2f, -3f, 4.5f, 0f };
+            context.SetVariable("numbers",
+                new SimpleExpressionEngine.DataValue((object)numbers));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateMinListAssignmentLine(
+                    "lowest = min(numbers)", sourcePath, 3, out line),
+                "min(numbers) assignment should be recognized.");
+            Check(line.GetType().Name == "MinListAssignmentLine",
+                "min() should emit a dedicated minimum-selection instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("lowest", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - (-3f)) < 0.001f,
+                "min() should return the smallest numeric value.");
+            Check(numbers.SequenceEqual(new object[] { 2f, -3f, 4.5f, 0f }),
+                "min() should leave the source list unchanged.");
+
+            var strings = new List<object> { "pear", "apple", "Apple", "banana" };
+            context.SetVariable("strings",
+                new SimpleExpressionEngine.DataValue((object)strings));
+            Check(VariableIndexExpressionLine.TryCreateMinListAssignmentLine(
+                    "first_string = min(strings)", sourcePath, 4, out line),
+                "min() should recognize string lists.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("first_string", out observed) &&
+                    Equals(observed, "Apple"),
+                "min() should use ordinal ordering for homogeneous string lists.");
+
+            var singleton = new List<object> { 7f };
+            context.SetVariable("singleton", new SimpleExpressionEngine.DataValue((object)singleton));
+            Check(VariableIndexExpressionLine.TryCreateMinListAssignmentLine(
+                    "single_min = min(singleton)", sourcePath, 5, out line),
+                "min() should recognize one-item lists.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("single_min", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 7f) < 0.001f,
+                "min() of a one-item list should return that item.");
+
+            var mixed = new List<object> { 2f, "three" };
+            context.SetVariable("mixed", new SimpleExpressionEngine.DataValue((object)mixed));
+            context.SetVariable("unchanged_min", new SimpleExpressionEngine.DataValue(77f));
+            GameBridge.TrySetVariableLiteral("unchanged_min", 77f, false, context);
+            Check(VariableIndexExpressionLine.TryCreateMinListAssignmentLine(
+                    "unchanged_min = min(mixed)", sourcePath, 6, out line),
+                "min() should recognize lists with unsupported members.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("unchanged_min", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 77f) < 0.001f,
+                "min() should leave the destination unchanged for mixed lists.");
+
+            var empty = new List<object>();
+            context.SetVariable("empty", new SimpleExpressionEngine.DataValue((object)empty));
+            context.SetVariable("empty_min", new SimpleExpressionEngine.DataValue(55f));
+            GameBridge.TrySetVariableLiteral("empty_min", 55f, false, context);
+            Check(VariableIndexExpressionLine.TryCreateMinListAssignmentLine(
+                    "empty_min = min(empty)", sourcePath, 7, out line),
+                "min() should recognize an empty list call.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("empty_min", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 55f) < 0.001f,
+                "min() on an empty list should leave the destination unchanged.");
+
+            Check(!VariableIndexExpressionLine.TryCreateMinListAssignmentLine(
+                    "lowest = min(numbers, 0)", sourcePath, 20, out line),
+                "min() should reject additional arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateMinListAssignmentLine(
+                    "lowest = min(numbers[0])", sourcePath, 21, out line),
+                "min() should reject indexed source expressions.");
+            Check(!VariableIndexExpressionLine.TryCreateMinListAssignmentLine(
+                    "min(numbers)", sourcePath, 22, out line),
+                "The restricted min() form should require an assignment target.");
+            Check(!VariableIndexExpressionLine.TryCreateMinListAssignmentLine(
+                    "lowest = min(numbers); lowest = 0", sourcePath, 23, out line),
+                "min() should reject multiple statements.");
+
+            var statements = Parse(
+                "label min_list_test:\n" +
+                "    $ lowest = min(numbers)\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing min().");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The min() assignment should parse as a Python statement.").Code ==
+                    "lowest = min(numbers)",
+                "The parser should preserve min() assignments.");
         }
 
         private static void TestSumListBuiltin()

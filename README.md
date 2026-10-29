@@ -271,14 +271,15 @@ and key/value pairs are snapshotted at loop entry, so dictionary edits in the lo
 active iteration sequence. Explicit `.keys()`, `.values()`, and `.items()` loops require a dictionary.
 Reverse list iteration is available as `for item in reversed(inventory):`; it snapshots the named list
 from last item to first and leaves the source list unchanged. `reversed()` currently accepts only a named
-list and only one loop variable. Indexed list iteration is available as
-`for index, item in enumerate(inventory):`. The index starts at zero, the list is read live as the loop
-advances, and the loop accepts a simple named list with exactly two loop variables. An optional signed
-integer literal or supported scalar expression can set the initial index, as in
-`enumerate(inventory, 1)`, `enumerate(inventory, start_index)`, or
-`enumerate(inventory, start_index + 2)`. A dynamic start expression is evaluated once at loop entry
-and must resolve to a signed 32-bit integer; invalid runtime values log a warning and skip the loop body.
-Decimal literals, extra arguments, and dictionary sources are unsupported. Range loops support `range(stop)`,
+list and only one loop variable. Indexed iteration is available as
+`for index, item in enumerate(inventory):`. The index starts at zero, list iteration reads the list live
+as the loop advances, and exactly two loop variables are required. Dictionary iteration is available as
+`for index, key in enumerate(settings):` and walks a snapshot of the dictionary's keys, so additions
+during the loop do not change the active sequence. An optional signed integer literal or supported scalar
+expression can set the initial index, as in `enumerate(inventory, 1)`,
+`enumerate(inventory, start_index)`, or `enumerate(inventory, start_index + 2)`. A dynamic start
+expression is evaluated once at loop entry and must resolve to a signed 32-bit integer; invalid runtime
+values log a warning and skip the loop body. Decimal literals and extra arguments are unsupported. Range loops support `range(stop)`,
 `range(start, stop)`, and `range(start, stop, step)`, including negative steps and empty ranges. Range
 arguments are evaluated once at loop entry and must resolve to 32-bit integers; a zero step or invalid
 argument logs a warning and skips the loop body. Range iteration does not allocate a list. Other iterable

@@ -172,9 +172,11 @@ The optional `reverse` keyword accepts only the literal `True` or `False`; `True
 descending order and `False` (the default) sorts in ascending order. Mixed or unsupported item
 types are left unchanged with a warning. Lists also support `$ inventory.reverse()`, which
 reverses the existing list in place and accepts no arguments. Assignment from `$ item_index = inventory.index("battery")` is supported for a quoted string,
-number, `True`, `False`, or `None` literal. It returns the first matching zero-based index;
-if no item matches, StoryAPI logs a warning and leaves the destination unchanged. This restricted
-form requires one scalar literal argument, a simple list variable, and a simple destination.
+number, `True`, `False`, or `None` literal. Optional integer `start` and `stop` bounds are also
+supported, as in `$ item_index = inventory.index("battery", 1, 4)`; the start is inclusive, stop
+is exclusive, and negative bounds are normalized like Python. If no matching item exists in the
+requested range, StoryAPI logs a warning and leaves the destination unchanged. Variable search
+values, non-integer bounds, indexed targets, and more than three arguments remain unsupported.
 Assignment from
 `$ copied_inventory = inventory.copy()` is supported as a shallow list copy: the new list can
 be changed without adding or removing items in the source list, while nested objects remain shared.

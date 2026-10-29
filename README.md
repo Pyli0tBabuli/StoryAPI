@@ -173,6 +173,8 @@ unchanged; extra arguments and indexed source expressions are not supported.
 
 The restricted assignment `$ has_active = any(items)` returns `True` when the named list contains a truthy scalar and `False` when it is empty or all supported scalar items are falsey. It supports `None`, booleans, numbers and strings, and leaves the source list unchanged. Nested collections and other unsupported item types log a warning and leave the destination unchanged; extra arguments and indexed source expressions are not supported.
 
+The restricted assignment `$ all_active = all(items)` returns `True` when every supported scalar item is truthy. An empty list also returns `True`, matching Python's `all()` behavior. It supports `None`, booleans, numbers and strings and leaves the source list unchanged. The operation stops at the first falsey item; unsupported item types encountered before that point log a warning and leave the destination unchanged. Extra arguments and indexed source expressions are not supported.
+
 The restricted assignment `$ highest = max(inventory)` selects the largest scalar from a named list.
 It supports homogeneous string lists (ordinal ordering) and homogeneous numeric lists (numeric ordering).
 The source list is unchanged. Empty lists or mixed/unsupported values log a warning and leave the destination

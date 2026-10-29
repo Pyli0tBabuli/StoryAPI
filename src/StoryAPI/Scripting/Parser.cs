@@ -632,6 +632,8 @@ namespace StoryAPI.Scripting
                 bool isReversed = false;
                 bool isEnumerate = false;
                 bool isZip = false;
+                bool isSorted = false;
+                bool sortReverse = false;
                 string zipSecondCollection = null;
                 bool enumerateDictionaryValues = false;
                 int enumerateStart = 0;
@@ -695,6 +697,35 @@ namespace StoryAPI.Scripting
                                 "reversed() inside enumerate() accepts a named list/dictionary or dictionary.values()/items() source.", Current.Line);
                         _index++; // )
                         isReversed = true;
+                    }
+                    else if (Current.Type == TokenType.Identifier && Current.Text == "sorted" &&
+                        Ahead(1).Text == "(")
+                    {
+                        if (thirdVariable != null)
+                            throw new ScriptSyntaxException(
+                                "enumerate(sorted()) accepts only index and item loop variables.", line);
+                        _index += 2; // sorted(
+                        if (Current.Type != TokenType.Identifier)
+                            throw new ScriptSyntaxException("sorted() requires a named list variable.", Current.Line);
+                        collection = Advance().Text;
+                        if (Current.Text == ",")
+                        {
+                            _index++;
+                            if (!MatchIdentifier("reverse") || Current.Text != "=")
+                                throw new ScriptSyntaxException(
+                                    "sorted() accepts only the reverse=True/False option.", Current.Line);
+                            _index++;
+                            if (Current.Text == "True") sortReverse = true;
+                            else if (Current.Text == "False") sortReverse = false;
+                            else throw new ScriptSyntaxException(
+                                "sorted() reverse must be the literal True or False.", Current.Line);
+                            _index++;
+                        }
+                        if (Current.Text != ")")
+                            throw new ScriptSyntaxException(
+                                "sorted() accepts a named list and optional reverse=True/False.", Current.Line);
+                        _index++; // )
+                        isSorted = true;
                     }
                     else if (Current.Type == TokenType.Identifier && Current.Text == "zip" &&
                         Ahead(1).Text == "(")
@@ -791,6 +822,35 @@ namespace StoryAPI.Scripting
                             "enumerate() accepts a named list or dictionary.values() and an optional scalar start expression.", Current.Line);
                     _index++; // )
                     isEnumerate = true;
+                }
+                else if (Current.Type == TokenType.Identifier && Current.Text == "sorted" &&
+                    Ahead(1).Text == "(")
+                {
+                    if (valueVariable != null || thirdVariable != null)
+                        throw new ScriptSyntaxException(
+                            "sorted() loops accept only one loop variable.", line);
+                    _index += 2; // sorted(
+                    if (Current.Type != TokenType.Identifier)
+                        throw new ScriptSyntaxException("sorted() requires a named list variable.", Current.Line);
+                    collection = Advance().Text;
+                    if (Current.Text == ",")
+                    {
+                        _index++;
+                        if (!MatchIdentifier("reverse") || Current.Text != "=")
+                            throw new ScriptSyntaxException(
+                                "sorted() accepts only the reverse=True/False option.", Current.Line);
+                        _index++;
+                        if (Current.Text == "True") sortReverse = true;
+                        else if (Current.Text == "False") sortReverse = false;
+                        else throw new ScriptSyntaxException(
+                            "sorted() reverse must be the literal True or False.", Current.Line);
+                        _index++;
+                    }
+                    if (Current.Text != ")")
+                        throw new ScriptSyntaxException(
+                            "sorted() accepts a named list and optional reverse=True/False.", Current.Line);
+                    _index++; // )
+                    isSorted = true;
                 }
                 else if (Current.Type == TokenType.Identifier && Current.Text == "reversed" &&
                     Ahead(1).Text == "(")
@@ -892,6 +952,8 @@ namespace StoryAPI.Scripting
                     Collection = collection,
                     ZipSecondCollection = zipSecondCollection,
                     IsZip = isZip,
+                    IsSorted = isSorted,
+                    SortReverse = sortReverse,
                     IsReversed = isReversed,
                     IsEnumerate = isEnumerate,
                     EnumerateStart = enumerateStart,

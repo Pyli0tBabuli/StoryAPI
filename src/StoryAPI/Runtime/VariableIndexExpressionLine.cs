@@ -4896,6 +4896,116 @@ namespace StoryAPI.Runtime
             return true;
         }
 
+        public static bool TryCreateSortedForEachPreparationLine(
+            string sourceName, string destinationName, bool reverse,
+            string sourcePath, int sourceLine, out Line line)
+        {
+            line = null;
+            if (!IsSimpleIdentifier(sourceName) || !IsSimpleIdentifier(destinationName))
+                return false;
+
+            line = new SortedForEachPreparationLine(
+                sourceName, destinationName, reverse, sourcePath, sourceLine);
+            return true;
+        }
+
+        private sealed class SortedForEachPreparationLine : Line, IApply
+        {
+            private readonly string _sourceName;
+            private readonly string _destinationName;
+            private readonly bool _reverse;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public SortedForEachPreparationLine(string sourceName, string destinationName,
+                bool reverse, string sourcePath, int sourceLine)
+            {
+                _sourceName = sourceName;
+                _destinationName = destinationName;
+                _reverse = reverse;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_sourceName, context, out object source) ||
+                        !(source is IList sourceList))
+                        throw new InvalidOperationException("sorted() requires a list variable");
+
+                    var sorted = new List<object>(sourceList.Count);
+                    for (int i = 0; i < sourceList.Count; i++)
+                        sorted.Add(sourceList[i]);
+
+                    if (sorted.Count > 1)
+                    {
+                        bool strings = sorted[0] is string;
+                        bool numbers = IsNumericSortableScalar(sorted[0]);
+                        if (!strings && !numbers)
+                            throw new InvalidOperationException(
+                                "sorted() supports homogeneous string or numeric lists only");
+
+                        for (int i = 1; i < sorted.Count; i++)
+                        {
+                            if ((strings && !(sorted[i] is string)) ||
+                                (numbers && !IsNumericSortableScalar(sorted[i])))
+                                throw new InvalidOperationException(
+                                    "sorted() requires all items to have the same sortable scalar type");
+                        }
+
+                        sorted.Sort(delegate(object left, object right)
+                        {
+                            if (strings)
+                                return string.CompareOrdinal((string)left, (string)right);
+                            return Convert.ToDouble(left, CultureInfo.InvariantCulture).CompareTo(
+                                Convert.ToDouble(right, CultureInfo.InvariantCulture));
+                        });
+                        if (_reverse)
+                            sorted.Reverse();
+                    }
+
+                    if (!GameBridge.TrySetVariableLiteral(_destinationName, sorted, false, context))
+                        throw new InvalidOperationException(
+                            "could not prepare sorted() iteration for '" + _sourceName + "'");
+
+                    Log.Info("Prepared sorted() iteration over '" + _sourceName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    GameBridge.TrySetVariableLiteral(_destinationName, new List<object>(), false, context);
+                    Log.Warn("Could not prepare sorted() iteration for '" + _sourceName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " + e.GetBaseException().Message);
+                }
+            }
+
+            private static bool IsNumericSortableScalar(object value)
+            {
+                if (value == null) return false;
+                switch (Type.GetTypeCode(value.GetType()))
+                {
+                    case TypeCode.SByte:
+                    case TypeCode.Byte:
+                    case TypeCode.Int16:
+                    case TypeCode.UInt16:
+                    case TypeCode.Int32:
+                    case TypeCode.UInt32:
+                    case TypeCode.Int64:
+                    case TypeCode.UInt64:
+                    case TypeCode.Single:
+                    case TypeCode.Double:
+                    case TypeCode.Decimal:
+                        return true;
+                    default:
+                        return false;
+                }
+            }
+        }
+
         public static bool TryCreateForZipPreparationLine(
             string firstSourceName, string secondSourceName, string destinationName,
             string sourcePath, int sourceLine, out Line line)

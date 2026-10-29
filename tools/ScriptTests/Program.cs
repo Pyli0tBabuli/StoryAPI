@@ -2018,6 +2018,20 @@ namespace StoryAPI.Tests
             Check(numbers.SequenceEqual(new object[] { 2f, -3f, 4.5f, 0f }),
                 "min() should leave the source list unchanged.");
 
+            // Ren'Py list literals made only of whole numbers may yield integral boxed values.
+            // The bridge should still assign a numeric result consistently as a float.
+            var integerNumbers = new List<object> { 2, -3, 4, 0 };
+            context.SetVariable("integer_numbers",
+                new SimpleExpressionEngine.DataValue((object)integerNumbers));
+            Check(VariableIndexExpressionLine.TryCreateMinListAssignmentLine(
+                    "integer_lowest = min(integer_numbers)", sourcePath, 4, out line),
+                "min() should recognize lists with integral numeric literals.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("integer_lowest", out observed) &&
+                    observed is float integerMinimum &&
+                    Math.Abs(integerMinimum - (-3f)) < 0.001f,
+                "min() should normalize integer-list results to the numeric assignment representation.");
+
             var strings = new List<object> { "pear", "apple", "Apple", "banana" };
             context.SetVariable("strings",
                 new SimpleExpressionEngine.DataValue((object)strings));

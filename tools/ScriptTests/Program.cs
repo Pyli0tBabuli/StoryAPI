@@ -37,6 +37,7 @@ namespace StoryAPI.Tests
             Run("sorted() builtin", TestSortedListBuiltin);
             Run("sum() builtin", TestSumListBuiltin);
             Run("min() builtin", TestMinListBuiltin);
+            Run("max() builtin", TestMaxListBuiltin);
             Run("list count method", TestListCountMethod);
             Run("list index method", TestListIndexMethod);
             Run("list copy method", TestListCopyMethod);
@@ -2100,6 +2101,114 @@ namespace StoryAPI.Tests
                     "The min() assignment should parse as a Python statement.").Code ==
                     "lowest = min(numbers)",
                 "The parser should preserve min() assignments.");
+        }
+
+        private static void TestMaxListBuiltin()
+        {
+            const string sourcePath = "max-list-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+
+            var numbers = new List<object> { 2f, -3f, 4.5f, 0f };
+            context.SetVariable("numbers",
+                new SimpleExpressionEngine.DataValue((object)numbers));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
+                    "lowest = max(numbers)", sourcePath, 3, out line),
+                "max(numbers) assignment should be recognized.");
+            Check(line.GetType().Name == "MaxListAssignmentLine",
+                "max() should emit a dedicated maximum-selection instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("lowest", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 4.5f) < 0.001f,
+                "max() should return the smallest numeric value.");
+            Check(numbers.SequenceEqual(new object[] { 2f, -3f, 4.5f, 0f }),
+                "max() should leave the source list unchanged.");
+
+            // Ren'Py list literals made only of whole numbers may yield integral boxed values.
+            // The bridge should still assign a numeric result consistently as a float.
+            var integerNumbers = new List<object> { 2, -3, 4, 0 };
+            context.SetVariable("integer_numbers",
+                new SimpleExpressionEngine.DataValue((object)integerNumbers));
+            Check(VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
+                    "integer_lowest = max(integer_numbers)", sourcePath, 4, out line),
+                "max() should recognize lists with integral numeric literals.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("integer_lowest", out observed) &&
+                    observed is float integerMaximum &&
+                    Math.Abs(integerMaximum - 4f) < 0.001f,
+                "max() should normalize integer-list results to the numeric assignment representation.");
+
+            var strings = new List<object> { "pear", "apple", "Apple", "banana" };
+            context.SetVariable("strings",
+                new SimpleExpressionEngine.DataValue((object)strings));
+            Check(VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
+                    "first_string = max(strings)", sourcePath, 4, out line),
+                "max() should recognize string lists.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("first_string", out observed) &&
+                    Equals(observed, "pear"),
+                "max() should use ordinal ordering for homogeneous string lists.");
+
+            var singleton = new List<object> { 7f };
+            context.SetVariable("singleton", new SimpleExpressionEngine.DataValue((object)singleton));
+            Check(VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
+                    "single_max = max(singleton)", sourcePath, 5, out line),
+                "max() should recognize one-item lists.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("single_max", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 7f) < 0.001f,
+                "max() of a one-item list should return that item.");
+
+            var mixed = new List<object> { 2f, "three" };
+            context.SetVariable("mixed", new SimpleExpressionEngine.DataValue((object)mixed));
+            context.SetVariable("unchanged_max", new SimpleExpressionEngine.DataValue(77f));
+            GameBridge.TrySetVariableLiteral("unchanged_max", 77f, false, context);
+            Check(VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
+                    "unchanged_max = max(mixed)", sourcePath, 6, out line),
+                "max() should recognize lists with unsupported members.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("unchanged_max", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 77f) < 0.001f,
+                "max() should leave the destination unchanged for mixed lists.");
+
+            var empty = new List<object>();
+            context.SetVariable("empty", new SimpleExpressionEngine.DataValue((object)empty));
+            context.SetVariable("empty_max", new SimpleExpressionEngine.DataValue(55f));
+            GameBridge.TrySetVariableLiteral("empty_max", 55f, false, context);
+            Check(VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
+                    "empty_max = max(empty)", sourcePath, 7, out line),
+                "max() should recognize an empty list call.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("empty_max", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 55f) < 0.001f,
+                "max() on an empty list should leave the destination unchanged.");
+
+            Check(!VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
+                    "lowest = max(numbers, 0)", sourcePath, 20, out line),
+                "max() should reject additional arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
+                    "lowest = max(numbers[0])", sourcePath, 21, out line),
+                "max() should reject indexed source expressions.");
+            Check(!VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
+                    "max(numbers)", sourcePath, 22, out line),
+                "The restricted max() form should require an assignment target.");
+            Check(!VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
+                    "lowest = max(numbers); lowest = 0", sourcePath, 23, out line),
+                "max() should reject multiple statements.");
+
+            var statements = Parse(
+                "label max_list_test:\n" +
+                "    $ lowest = max(numbers)\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing max().");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The max() assignment should parse as a Python statement.").Code ==
+                    "lowest = max(numbers)",
+                "The parser should preserve max() assignments.");
         }
 
         private static void TestSumListBuiltin()

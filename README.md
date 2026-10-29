@@ -269,6 +269,14 @@ control. Dictionary key loops assign each key to the loop variable; value loops 
 variable, and items loops assign each key and matching value to two variables. Dictionary keys, values,
 and key/value pairs are snapshotted at loop entry, so dictionary edits in the loop body do not change the
 active iteration sequence. Explicit `.keys()`, `.values()`, and `.items()` loops require a dictionary.
+Sorted-list iteration is available as `for item in sorted(inventory):` and
+`for item in sorted(inventory, reverse=True):`. It sorts a snapshot of a named list rather than modifying
+the source list; homogeneous strings are ordered ordinally and homogeneous numeric values are ordered
+numerically. The optional `reverse` argument accepts only the literal `True` or `False`, and invalid/mixed
+sortable values log a warning and skip the loop body. The indexed form
+`for index, item in enumerate(sorted(inventory), start):` is also supported, including
+`sorted(inventory, reverse=True)`.
+
 Reverse iteration is available as `for item in reversed(inventory):`; it snapshots the named list
 from last item to first and leaves the source list unchanged. Dictionaries can also be traversed in reverse
 insertion order with `for key in reversed(settings):`; this snapshots the dictionary keys from last inserted

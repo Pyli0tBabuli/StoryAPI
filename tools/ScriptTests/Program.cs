@@ -2020,6 +2020,17 @@ namespace StoryAPI.Tests
             Check(inventory.SequenceEqual(new object[] { "pear", "apple", "banana", "Apple" }),
                 "sorted() must leave the source list unchanged.");
 
+            Check(VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "reverse_sorted_inventory = sorted(inventory, reverse=True)", sourcePath, 4, out line),
+                "sorted(inventory, reverse=True) should be recognized.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("reverse_sorted_inventory", out observed) &&
+                    observed is List<object> reverseSorted &&
+                    reverseSorted.SequenceEqual(new object[] { "pear", "banana", "apple", "Apple" }),
+                "sorted(reverse=True) should sort strings in descending ordinal order.");
+            Check(inventory.SequenceEqual(new object[] { "pear", "apple", "banana", "Apple" }),
+                "Descending sorted() must leave the source list unchanged.");
+
             var numbers = new List<object> { 9f, -2f, 3f, 0f };
             context.SetVariable("numbers",
                 new SimpleExpressionEngine.DataValue((object)numbers));
@@ -2031,6 +2042,24 @@ namespace StoryAPI.Tests
                     observed is List<object> sortedNumbers &&
                     sortedNumbers.SequenceEqual(new object[] { -2f, 0f, 3f, 9f }),
                 "sorted() should return ascending numeric order.");
+
+            Check(VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "reverse_sorted_numbers = sorted(numbers, reverse=True)", sourcePath, 5, out line),
+                "sorted(numbers, reverse=True) should recognize numeric lists.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("reverse_sorted_numbers", out observed) &&
+                    observed is List<object> reverseSortedNumbers &&
+                    reverseSortedNumbers.SequenceEqual(new object[] { 9f, 3f, 0f, -2f }),
+                "sorted(reverse=True) should return descending numeric order.");
+
+            Check(VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "false_sorted_numbers = sorted(numbers, reverse=False)", sourcePath, 6, out line),
+                "sorted(reverse=False) should be recognized.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("false_sorted_numbers", out observed) &&
+                    observed is List<object> falseSortedNumbers &&
+                    falseSortedNumbers.SequenceEqual(new object[] { -2f, 0f, 3f, 9f }),
+                "sorted(reverse=False) should return ascending numeric order.");
 
             var mixed = new List<object> { "battery", 2f };
             context.SetVariable("mixed",
@@ -2060,8 +2089,20 @@ namespace StoryAPI.Tests
                 "sorted() on an empty list should return a new empty list.");
 
             Check(!VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
-                    "sorted_inventory = sorted(inventory, reverse=True)", sourcePath, 20, out line),
-                "The initial sorted() form should reject keyword arguments.");
+                    "sorted_inventory = sorted(inventory, reverse=1)", sourcePath, 20, out line),
+                "sorted() should reject non-boolean reverse values.");
+            Check(!VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "sorted_inventory = sorted(inventory, reverse=descending)", sourcePath, 21, out line),
+                "sorted() should reject variable reverse values.");
+            Check(!VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "sorted_inventory = sorted(inventory, unknown=True)", sourcePath, 22, out line),
+                "sorted() should reject unknown keyword arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "sorted_inventory = sorted(inventory, True)", sourcePath, 23, out line),
+                "sorted() should reject positional arguments after the list.");
+            Check(!VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "sorted_inventory = sorted(inventory, reverse=True, reverse=False)", sourcePath, 24, out line),
+                "sorted() should reject multiple keyword arguments.");
             Check(!VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
                     "sorted_inventory = sorted(inventory, other_list)", sourcePath, 21, out line),
                 "sorted() should reject additional arguments.");

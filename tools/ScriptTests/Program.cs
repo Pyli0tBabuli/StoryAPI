@@ -3285,6 +3285,33 @@ namespace StoryAPI.Tests
                     dictionaryValuesLoop.EnumerateStartExpression == "offset",
                 "enumerate(settings.values(), offset) should enumerate dictionary values.");
 
+            var dictionaryItemsStatements = Parse(
+                "label enumerate_dictionary_items_test:\n" +
+                "    for index, key, value in enumerate(settings.items(), offset):\n" +
+                "        pass\n" +
+                "    return\n");
+            var dictionaryItemsLoop = Require<ForStatement>(
+                Require<LabelStatement>(dictionaryItemsStatements[0],
+                    "Expected enumerate dictionary-items label.").Body[0],
+                "Expected enumerate(settings.items()) loop.");
+            Check(dictionaryItemsLoop.IsEnumerate && dictionaryItemsLoop.IsDictionaryItems &&
+                    dictionaryItemsLoop.Collection == "settings" &&
+                    dictionaryItemsLoop.ValueVariable == "key" &&
+                    dictionaryItemsLoop.ThirdVariable == "value" &&
+                    dictionaryItemsLoop.EnumerateStartExpression == "offset",
+                "enumerate(settings.items(), offset) should yield index, key, and value.");
+
+            ExpectSyntaxError(
+                "label enumerate_items_missing_third:\\n" +
+                "    for index, key in enumerate(settings.items()):\\n" +
+                "        pass\\n",
+                "requires 'for index, key, value'");
+            ExpectSyntaxError(
+                "label enumerate_list_three_targets:\\n" +
+                "    for index, item, extra in enumerate(inventory):\\n" +
+                "        pass\\n",
+                "Three loop variables require enumerate(dictionary.items())");
+
             ExpectSyntaxError(
                 "label enumerate_one_name:\n" +
                 "    for item in enumerate(inventory):\n" +
@@ -3495,6 +3522,65 @@ namespace StoryAPI.Tests
             Check(GameBridge.TryGetLastTestLiteral("value", out observedItem) &&
                     Math.Abs(Convert.ToSingle(observedItem, CultureInfo.InvariantCulture) - 30f) < 0.0001f,
                 "enumerate(dictionary.values()) should yield the last original value.");
+
+            var itemsDictionary = new Dictionary<string, object>
+            {
+                { "alpha", 1f },
+                { "beta", 2f },
+                { "gamma", 3f }
+            };
+            context.SetVariable("enumerate_items_dictionary",
+                new SimpleExpressionEngine.DataValue((object)itemsDictionary));
+            Check(VariableIndexExpressionLine.TryCreateForEachPreparationLine(
+                    "enumerate_items_dictionary", "_stage46_items",
+                    true, false, false, false, true, sourcePath, 14, out preparation),
+                "The runtime should prepare enumerate(dictionary.items()) snapshots.");
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("_stage46_items", out preparedValue) &&
+                    preparedValue is List<object>,
+                "enumerate(dictionary.items()) should prepare an iterable list.");
+            var enumeratedPairs = preparedValue as List<object>;
+            Check(enumeratedPairs != null && enumeratedPairs.Count == 3 &&
+                    enumeratedPairs.All(entry => entry is object[] pair && pair.Length == 2),
+                "Each enumerated dictionary item should be a two-value key/value pair.");
+            itemsDictionary["delta"] = 4f;
+            Check(enumeratedPairs.Count == 3,
+                "Dictionary entries added after preparation should not enter the active enumeration.");
+            context.SetVariable("_stage46_items",
+                new SimpleExpressionEngine.DataValue((object)enumeratedPairs));
+
+            RenPyParser.Line dictionaryItemsItemLine;
+            Check(VariableIndexExpressionLine.TryCreateForEachItemLine(
+                    "index", "key", "value", "_stage46_items",
+                    "_stage46_index", "_stage46_gate", true, 3, null,
+                    sourcePath, 15, out dictionaryItemsItemLine),
+                "The runtime should create an enumerate-items line with three target variables.");
+            context.SetVariable("_stage46_index", new SimpleExpressionEngine.DataValue(0f));
+            context.SetVariable("_stage46_gate", new SimpleExpressionEngine.DataValue(true));
+            ((RenPyParser.Images.IApply)dictionaryItemsItemLine).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("index", out observedIndex) &&
+                    Math.Abs(Convert.ToSingle(observedIndex, CultureInfo.InvariantCulture) - 3f) < 0.0001f,
+                "enumerate(dictionary.items(), 3) should assign the initial index.");
+            Check(GameBridge.TryGetLastTestLiteral("key", out observedItem) &&
+                    Equals(observedItem, ((object[])enumeratedPairs[0])[0]),
+                "enumerate(dictionary.items()) should assign the first key.");
+            object observedDictionaryValue;
+            Check(GameBridge.TryGetLastTestLiteral("value", out observedDictionaryValue) &&
+                    Math.Abs(Convert.ToSingle(observedDictionaryValue, CultureInfo.InvariantCulture) - 1f) < 0.0001f,
+                "enumerate(dictionary.items()) should assign the first value.");
+
+            context.SetVariable("_stage46_index", new SimpleExpressionEngine.DataValue(2f));
+            context.SetVariable("_stage46_gate", new SimpleExpressionEngine.DataValue(true));
+            ((RenPyParser.Images.IApply)dictionaryItemsItemLine).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("index", out observedIndex) &&
+                    Math.Abs(Convert.ToSingle(observedIndex, CultureInfo.InvariantCulture) - 5f) < 0.0001f,
+                "enumerate(dictionary.items()) indexes should advance.");
+            Check(GameBridge.TryGetLastTestLiteral("key", out observedItem) &&
+                    Equals(observedItem, ((object[])enumeratedPairs[2])[0]),
+                "enumerate(dictionary.items()) should preserve the final key.");
+            Check(GameBridge.TryGetLastTestLiteral("value", out observedDictionaryValue) &&
+                    Math.Abs(Convert.ToSingle(observedDictionaryValue, CultureInfo.InvariantCulture) - 3f) < 0.0001f,
+                "enumerate(dictionary.items()) should preserve the final value.");
         }
 
         private static void TestForDictionaryIteration()

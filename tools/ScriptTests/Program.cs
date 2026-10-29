@@ -2121,7 +2121,7 @@ namespace StoryAPI.Tests
             ((RenPyParser.Images.IApply)line).Apply(context);
 
             object observed;
-            Check(GameBridge.TryGetLastTestLiteral("lowest", out observed) &&
+            Check(GameBridge.TryGetLastTestLiteral("highest", out observed) &&
                     Math.Abs(Convert.ToSingle(observed) - 4.5f) < 0.001f,
                 "max() should return the largest numeric value.");
             Check(numbers.SequenceEqual(new object[] { 2f, -3f, 4.5f, 0f }),
@@ -2136,7 +2136,7 @@ namespace StoryAPI.Tests
                     "integer_highest = max(integer_numbers)", sourcePath, 4, out line),
                 "max() should recognize lists with integral numeric literals.");
             ((RenPyParser.Images.IApply)line).Apply(context);
-            Check(GameBridge.TryGetLastTestLiteral("integer_lowest", out observed) &&
+            Check(GameBridge.TryGetLastTestLiteral("integer_highest", out observed) &&
                     observed is float integerMaximum &&
                     Math.Abs(integerMaximum - 4f) < 0.001f,
                 "max() should normalize integer-list results to the numeric assignment representation.");
@@ -2148,7 +2148,7 @@ namespace StoryAPI.Tests
                     "last_string = max(strings)", sourcePath, 4, out line),
                 "max() should recognize string lists.");
             ((RenPyParser.Images.IApply)line).Apply(context);
-            Check(GameBridge.TryGetLastTestLiteral("first_string", out observed) &&
+            Check(GameBridge.TryGetLastTestLiteral("last_string", out observed) &&
                     Equals(observed, "pear"),
                 "max() should use ordinal ordering for homogeneous string lists.");
 
@@ -2187,27 +2187,27 @@ namespace StoryAPI.Tests
                 "max() on an empty list should leave the destination unchanged.");
 
             Check(!VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
-                    "lowest = max(numbers, 0)", sourcePath, 20, out line),
+                    "highest = max(numbers, 0)", sourcePath, 20, out line),
                 "max() should reject additional arguments.");
             Check(!VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
-                    "lowest = max(numbers[0])", sourcePath, 21, out line),
+                    "highest = max(numbers[0])", sourcePath, 21, out line),
                 "max() should reject indexed source expressions.");
             Check(!VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
                     "max(numbers)", sourcePath, 22, out line),
                 "The restricted max() form should require an assignment target.");
             Check(!VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
-                    "lowest = max(numbers); lowest = 0", sourcePath, 23, out line),
+                    "highest = max(numbers); highest = 0", sourcePath, 23, out line),
                 "max() should reject multiple statements.");
 
             var statements = Parse(
                 "label max_list_test:\n" +
-                "    $ lowest = max(numbers)\n" +
+                "    $ highest = max(numbers)\n" +
                 "    return\n");
             var label = Require<LabelStatement>(statements[0],
                 "Expected a label containing max().");
             Check(Require<PythonStatement>(label.Body[0],
                     "The max() assignment should parse as a Python statement.").Code ==
-                    "lowest = max(numbers)",
+                    "highest = max(numbers)",
                 "The parser should preserve max() assignments.");
         }
 

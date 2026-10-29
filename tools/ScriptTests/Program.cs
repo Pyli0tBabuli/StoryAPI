@@ -3297,10 +3297,10 @@ namespace StoryAPI.Tests
         {
             const string sourcePath = "enumerate-zip-list-test.rpy";
             var statements = Parse(
-                "label enumerate_zip_list_test:\\n" +
-                "    for item_index, left_item, right_item in enumerate(zip(left_values, right_values), start_index + 1):\\n" +
-                "        pass\\n" +
-                "    return\\n");
+                "label enumerate_zip_list_test:\n" +
+                "    for item_index, left_item, right_item in enumerate(zip(left_values, right_values), start_index + 1):\n" +
+                "        pass\n" +
+                "    return\n");
             var label = Require<LabelStatement>(statements[0], "Expected enumerate(zip()) label.");
             var loop = Require<ForStatement>(label.Body[0], "Expected enumerate(zip()) loop.");
             Check(loop.IsEnumerate && loop.IsZip &&
@@ -3311,14 +3311,14 @@ namespace StoryAPI.Tests
                 "enumerate(zip(left_values, right_values), start) should bind index and both values.");
 
             ExpectSyntaxError(
-                "label enumerate_zip_two_targets:\\n" +
-                "    for item_index, pair in enumerate(zip(left_values, right_values)):\\n" +
-                "        pass\\n",
+                "label enumerate_zip_two_targets:\n" +
+                "    for item_index, pair in enumerate(zip(left_values, right_values)):\n" +
+                "        pass\n",
                 "requires 'for index, left, right");
             ExpectSyntaxError(
-                "label enumerate_zip_extra_argument:\\n" +
-                "    for item_index, left_item, right_item in enumerate(zip(left_values, right_values, extras)):\\n" +
-                "        pass\\n",
+                "label enumerate_zip_extra_argument:\n" +
+                "    for item_index, left_item, right_item in enumerate(zip(left_values, right_values, extras)):\n" +
+                "        pass\n",
                 "exactly two named list arguments");
 
             var context = new RenpyParser.DynamicIndexTestContext();

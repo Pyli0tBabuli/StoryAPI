@@ -266,7 +266,10 @@ supported. List loops assign each element to the loop variable and support neste
 control. Dictionary key loops assign each key to the loop variable; value loops assign each value to one
 variable, and items loops assign each key and matching value to two variables. Dictionary keys, values,
 and key/value pairs are snapshotted at loop entry, so dictionary edits in the loop body do not change the
-active iteration sequence. Explicit `.keys()`, `.values()`, and `.items()` loops require a dictionary. Range loops support `range(stop)`, `range(start, stop)`,
+active iteration sequence. Explicit `.keys()`, `.values()`, and `.items()` loops require a dictionary.
+Reverse list iteration is available as `for item in reversed(inventory):`; it snapshots the named list
+from last item to first and leaves the source list unchanged. `reversed()` currently accepts only a named
+list and only one loop variable. Range loops support `range(stop)`, `range(start, stop)`,
 and `range(start, stop, step)`, including negative steps and empty ranges. Range arguments are
 evaluated once at loop entry and must resolve to 32-bit integers; a zero step or invalid argument logs
 a warning and skips the loop body. Range iteration does not allocate a list. Other iterable expressions

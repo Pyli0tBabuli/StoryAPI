@@ -273,7 +273,9 @@ Reverse list iteration is available as `for item in reversed(inventory):`; it sn
 from last item to first and leaves the source list unchanged. `reversed()` currently accepts only a named
 list and only one loop variable. Indexed iteration is available as
 `for index, item in enumerate(inventory):`. The index starts at zero, list iteration reads the list live
-as the loop advances, and exactly two loop variables are required. Dictionary keys can be enumerated with
+as the loop advances, and exactly two loop variables are required. Reverse-order indexed iteration is also
+supported as `for index, item in enumerate(reversed(inventory), start):`; it snapshots the list in reverse
+order at loop entry while the enumerate index begins at zero (or the provided start value). Dictionary keys can be enumerated with
 `for index, key in enumerate(settings):`; dictionary values can be enumerated with
 `for index, value in enumerate(settings.values()):`; and dictionary entries can be enumerated with three
 targets, as in `for index, key, value in enumerate(settings.items()):`. Dictionary keys, values, and

@@ -671,7 +671,21 @@ namespace StoryAPI.Scripting
                             "enumerate() iteration requires 'for index, value in enumerate(list):'.",
                             Current.Line);
                     _index += 2; // enumerate(
-                    if (Current.Type == TokenType.Identifier && Current.Text == "zip" &&
+                    if (Current.Type == TokenType.Identifier && Current.Text == "reversed" &&
+                        Ahead(1).Text == "(")
+                    {
+                        _index += 2; // reversed(
+                        if (Current.Type != TokenType.Identifier)
+                            throw new ScriptSyntaxException(
+                                "reversed() inside enumerate() requires a named list variable.", Current.Line);
+                        collection = Advance().Text;
+                        if (Current.Text != ")")
+                            throw new ScriptSyntaxException(
+                                "reversed() inside enumerate() accepts exactly one named list variable.", Current.Line);
+                        _index++; // )
+                        isReversed = true;
+                    }
+                    else if (Current.Type == TokenType.Identifier && Current.Text == "zip" &&
                         Ahead(1).Text == "(")
                     {
                         if (thirdVariable == null)

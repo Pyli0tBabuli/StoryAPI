@@ -60,6 +60,7 @@ namespace StoryAPI.Tests
             Run("for-reversed-list iteration", TestForReversedListIteration);
             Run("for-zip-list iteration", TestForZipListIteration);
             Run("for-enumerate-zip-list iteration", TestForEnumerateZipListIteration);
+            Run("for-enumerate-reversed-list iteration", TestForEnumerateReversedListIteration);
             Run("for-enumerate-list iteration", TestForEnumerateListIteration);
             Run("for-dictionary key iteration", TestForDictionaryIteration);
             Run("for-dictionary key/value iteration", TestForDictionaryItemsIteration);
@@ -3368,6 +3369,92 @@ namespace StoryAPI.Tests
             Check(GameBridge.TryGetLastTestLiteral("right_item", out observedRight) &&
                     Math.Abs(Convert.ToSingle(observedRight, CultureInfo.InvariantCulture) - 20f) < 0.0001f,
                 "The second enumerate(zip()) item should assign the next right value.");
+        }
+
+        private static void TestForEnumerateReversedListIteration()
+        {
+            const string sourcePath = "enumerate-reversed-list-test.rpy";
+            var statements = Parse(
+                "label enumerate_reversed_list_test:\n" +
+                "    for item_index, item in enumerate(reversed(inventory), start_index + 2):\n" +
+                "        pass\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected enumerate(reversed()) label.");
+            var loop = Require<ForStatement>(label.Body[0],
+                "Expected enumerate(reversed()) loop.");
+            Check(loop.IsEnumerate && loop.IsReversed && !loop.IsZip &&
+                    loop.Collection == "inventory" &&
+                    loop.Variable == "item_index" && loop.ValueVariable == "item" &&
+                    loop.EnumerateStartExpression == "start_index + 2",
+                "enumerate(reversed(inventory), start) should preserve reverse order and the start expression.");
+
+            ExpectSyntaxError(
+                "label enumerate_reversed_one_target:\n" +
+                "    for item in enumerate(reversed(inventory)):\n" +
+                "        pass\n",
+                "enumerate() iteration requires");
+            ExpectSyntaxError(
+                "label enumerate_reversed_three_targets:\n" +
+                "    for index, item, extra in enumerate(reversed(inventory)):\n" +
+                "        pass\n",
+                "Only two loop variables are supported");
+
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var inventory = new List<object> { "alpha", "beta", "gamma" };
+            context.SetVariable("inventory",
+                new SimpleExpressionEngine.DataValue((object)inventory));
+            context.SetVariable("start_index", new SimpleExpressionEngine.DataValue(7f));
+
+            RenPyParser.Line preparation;
+            Check(VariableIndexExpressionLine.TryCreateForEachPreparationLine(
+                    "inventory", "_stage49_items", false, false, false, true, true,
+                    sourcePath, 10, out preparation),
+                "The runtime should create an enumerate(reversed()) preparation line.");
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
+
+            object preparedValue;
+            Check(GameBridge.TryGetLastTestLiteral("_stage49_items", out preparedValue) &&
+                    preparedValue is List<object>,
+                "enumerate(reversed()) should prepare an iterable snapshot.");
+            var prepared = (List<object>)preparedValue;
+            Check(prepared.SequenceEqual(new object[] { "gamma", "beta", "alpha" }),
+                "enumerate(reversed()) should visit items from last to first.");
+            inventory[2] = "changed";
+            inventory.Add("delta");
+            Check(prepared.SequenceEqual(new object[] { "gamma", "beta", "alpha" }),
+                "The reverse iteration snapshot should not change when the source list is mutated.");
+            Check(inventory.Count == 4 && Equals(inventory[2], "changed"),
+                "Preparing reverse iteration must not mutate the source list.");
+
+            context.SetVariable("_stage49_items",
+                new SimpleExpressionEngine.DataValue((object)prepared));
+            context.SetVariable("_stage49_index", new SimpleExpressionEngine.DataValue(0f));
+            context.SetVariable("_stage49_gate", new SimpleExpressionEngine.DataValue(true));
+            RenPyParser.Line itemLine;
+            Check(VariableIndexExpressionLine.TryCreateForEachItemLine(
+                    "item_index", "item", "_stage49_items", "_stage49_index", "_stage49_gate",
+                    true, 0, "start_index", sourcePath, 11, out itemLine),
+                "The runtime should create an indexed item line for enumerate(reversed()).");
+            ((RenPyParser.Images.IApply)itemLine).Apply(context);
+
+            object observedIndex, observedItem;
+            Check(GameBridge.TryGetLastTestLiteral("item_index", out observedIndex) &&
+                    Math.Abs(Convert.ToSingle(observedIndex, CultureInfo.InvariantCulture) - 7f) < 0.0001f,
+                "The first reverse item should use the dynamic enumerate start.");
+            Check(GameBridge.TryGetLastTestLiteral("item", out observedItem) &&
+                    Equals(observedItem, "gamma"),
+                "The first enumerate(reversed()) item should be the last source item.");
+
+            context.SetVariable("_stage49_index", new SimpleExpressionEngine.DataValue(1f));
+            context.SetVariable("_stage49_gate", new SimpleExpressionEngine.DataValue(true));
+            ((RenPyParser.Images.IApply)itemLine).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("item_index", out observedIndex) &&
+                    Math.Abs(Convert.ToSingle(observedIndex, CultureInfo.InvariantCulture) - 8f) < 0.0001f,
+                "The second reverse item should increment the enumerate index.");
+            Check(GameBridge.TryGetLastTestLiteral("item", out observedItem) &&
+                    Equals(observedItem, "beta"),
+                "The second enumerate(reversed()) item should preserve reverse order.");
         }
 
         private static void TestForEnumerateListIteration()

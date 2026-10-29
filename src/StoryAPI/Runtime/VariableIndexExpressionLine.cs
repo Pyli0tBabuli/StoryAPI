@@ -4810,8 +4810,7 @@ namespace StoryAPI.Runtime
                 !dictionaryValuesOnly && !dictionaryKeysOnly && !reverseList;
             if (!IsSimpleIdentifier(sourceName) || !IsSimpleIdentifier(destinationName) ||
                 selectedModes > 1 ||
-                ((reverseList || enumerateList) && selectedModes != 0 && !enumeratedDictionaryItems) ||
-                (reverseList && enumerateList))
+                ((reverseList || enumerateList) && selectedModes != 0 && !enumeratedDictionaryItems))
                 return false;
 
             line = new ForEachPreparationLine(
@@ -5022,11 +5021,27 @@ namespace StoryAPI.Runtime
                     {
                         if (source is IList enumerateSource)
                         {
-                            // Keep lists live while iterating, matching Stage 41 behavior.
-                            iterationItems = enumerateSource;
+                            if (_reverseList)
+                            {
+                                // enumerate(reversed(list)) snapshots the list from last item
+                                // to first at loop entry, while its index still starts at zero.
+                                var reversedEnumerateItems = new List<object>(enumerateSource.Count);
+                                for (int i = enumerateSource.Count - 1; i >= 0; i--)
+                                    reversedEnumerateItems.Add(enumerateSource[i]);
+                                iterationItems = reversedEnumerateItems;
+                            }
+                            else
+                            {
+                                // Ordinary enumerate(list) keeps the list live while iterating.
+                                iterationItems = enumerateSource;
+                            }
                         }
                         else if (source is IDictionary enumerateDictionary)
                         {
+                            if (_reverseList)
+                                throw new InvalidOperationException(
+                                    "enumerate(reversed()) requires a list source");
+
                             // Python's enumerate(dict) visits keys. Snapshot the keys so that
                             // mutating the dictionary in the loop body does not invalidate this
                             // loop's active sequence, consistent with other dictionary loops.

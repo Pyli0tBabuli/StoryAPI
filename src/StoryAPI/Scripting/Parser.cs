@@ -572,8 +572,10 @@ namespace StoryAPI.Scripting
                 throw new ScriptSyntaxException("Expected a loop variable after 'for'.", line);
             string variable = Advance().Text;
             string valueVariable = null;
+            string thirdVariable = null;
 
-            // A two-name target is accepted only for dictionary .items() iteration.
+            // Two-name targets serve dictionary .items() loops; a third name is reserved
+            // for enumerate(dictionary.items()), which yields index, key, and value.
             if (Current.Text == ",")
             {
                 _index++;
@@ -581,13 +583,25 @@ namespace StoryAPI.Scripting
                     throw new ScriptSyntaxException("Expected a second loop variable after ','.", Current.Line);
                 valueVariable = Advance().Text;
                 if (Current.Text == ",")
-                    throw new ScriptSyntaxException("Only two loop variables are supported for dictionary items.", Current.Line);
+                {
+                    _index++;
+                    if (Current.Type != TokenType.Identifier)
+                        throw new ScriptSyntaxException("Expected a third loop variable after ','.", Current.Line);
+                    thirdVariable = Advance().Text;
+                    if (Current.Text == ",")
+                        throw new ScriptSyntaxException("Only three loop variables are supported.", Current.Line);
+                }
             }
 
             if (!MatchIdentifier("in"))
                 throw new ScriptSyntaxException("Expected 'in' after the loop variable.", Current.Line);
 
             ForStatement statement;
+            if (thirdVariable != null &&
+                Current.Type == TokenType.Identifier && Current.Text == "range" &&
+                Ahead(1).Text == "(")
+                throw new ScriptSyntaxException("range() loops accept only one loop variable.", line);
+
             if (valueVariable != null &&
                 Current.Type == TokenType.Identifier && Current.Text == "range" &&
                 Ahead(1).Text == "(")
@@ -621,6 +635,7 @@ namespace StoryAPI.Scripting
                 int enumerateStart = 0;
                 string enumerateStartExpression = null;
                 string collection;
+                bool enumerateDictionaryItems = false;
                 if (Current.Type == TokenType.Identifier && Current.Text == "enumerate" &&
                     Ahead(1).Text == "(")
                 {
@@ -633,11 +648,16 @@ namespace StoryAPI.Scripting
                         throw new ScriptSyntaxException(
                             "enumerate() requires a named list or dictionary variable.", Current.Line);
                     collection = Advance().Text;
-                    if (Current.Text == "." && Ahead(1).Text == "values" &&
+                    if (Current.Text == "." &&
+                        (Ahead(1).Text == "values" || Ahead(1).Text == "items") &&
                         Ahead(2).Text == "(" && Ahead(3).Text == ")")
                     {
-                        _index += 4; // .values()
-                        enumerateDictionaryValues = true;
+                        string dictionaryMethod = Ahead(1).Text;
+                        _index += 4; // .values() or .items()
+                        if (dictionaryMethod == "values")
+                            enumerateDictionaryValues = true;
+                        else
+                            enumerateDictionaryItems = true;
                     }
                     if (Current.Text == ",")
                     {
@@ -718,7 +738,7 @@ namespace StoryAPI.Scripting
                             Current.Line);
                     collection = Advance().Text;
                 }
-                bool isDictionaryItems = false;
+                bool isDictionaryItems = enumerateDictionaryItems;
                 bool isDictionaryValues = enumerateDictionaryValues;
                 bool isDictionaryKeys = false;
                 if (!isReversed && !isEnumerate && Current.Text == "." &&
@@ -754,9 +774,16 @@ namespace StoryAPI.Scripting
                         "Two loop variables require dictionary.items() or enumerate(list) iteration.", Current.Line);
                 }
 
+                if (thirdVariable != null && (!isEnumerate || !enumerateDictionaryItems))
+                    throw new ScriptSyntaxException(
+                        "Three loop variables require enumerate(dictionary.items()) iteration.", line);
+                if (isEnumerate && enumerateDictionaryItems && thirdVariable == null)
+                    throw new ScriptSyntaxException(
+                        "enumerate(dictionary.items()) requires 'for index, key, value'.", line);
+
                 if (Current.Type != TokenType.Colon)
                     throw new ScriptSyntaxException(
-                        "Only a named list, reversed(list), enumerate(list), enumerate(dictionary.values()), dictionary.keys(), dictionary.items(), or dictionary.values() is supported after 'in'.",
+                        "Only a named list, reversed(list), enumerate(list), enumerate(dictionary.values()), enumerate(dictionary.items()), dictionary.keys(), dictionary.items(), or dictionary.values() is supported after 'in'.",
                         Current.Line);
 
                 ExpectColon();
@@ -764,6 +791,7 @@ namespace StoryAPI.Scripting
                 {
                     Variable = variable,
                     ValueVariable = valueVariable,
+                    ThirdVariable = thirdVariable,
                     Collection = collection,
                     IsReversed = isReversed,
                     IsEnumerate = isEnumerate,

@@ -4845,17 +4845,27 @@ namespace StoryAPI.Runtime
             string collectionName, string indexName, string gateName, bool enumerateItems,
             int enumerateStart, string sourcePath, int sourceLine, out Line line)
         {
+            return TryCreateForEachItemLine(
+                variableName, valueVariableName, collectionName, indexName, gateName,
+                enumerateItems, enumerateStart, null, sourcePath, sourceLine, out line);
+        }
+
+        public static bool TryCreateForEachItemLine(string variableName, string valueVariableName,
+            string collectionName, string indexName, string gateName, bool enumerateItems,
+            int enumerateStart, string enumerateStartName, string sourcePath, int sourceLine, out Line line)
+        {
             line = null;
             if (!IsSimpleIdentifier(variableName) ||
                 (valueVariableName != null && !IsSimpleIdentifier(valueVariableName)) ||
                 (enumerateItems && valueVariableName == null) ||
                 !IsSimpleIdentifier(collectionName) || !IsSimpleIdentifier(indexName) ||
-                !IsSimpleIdentifier(gateName))
+                !IsSimpleIdentifier(gateName) ||
+                (enumerateStartName != null && !IsSimpleIdentifier(enumerateStartName)))
                 return false;
 
             line = new ForEachItemLine(
                 variableName, valueVariableName, collectionName, indexName,
-                gateName, enumerateItems, enumerateStart, sourcePath, sourceLine);
+                gateName, enumerateItems, enumerateStart, enumerateStartName, sourcePath, sourceLine);
             return true;
         }
 
@@ -5015,12 +5025,14 @@ namespace StoryAPI.Runtime
             private readonly string _gateName;
             private readonly bool _enumerateItems;
             private readonly int _enumerateStart;
+            private readonly string _enumerateStartName;
             private readonly string _sourcePath;
             private readonly int _sourceLine;
 
             public ForEachItemLine(string variableName, string valueVariableName,
                 string collectionName, string indexName, string gateName,
-                bool enumerateItems, int enumerateStart, string sourcePath, int sourceLine)
+                bool enumerateItems, int enumerateStart, string enumerateStartName,
+                string sourcePath, int sourceLine)
             {
                 _variableName = variableName;
                 _valueVariableName = valueVariableName;
@@ -5029,6 +5041,7 @@ namespace StoryAPI.Runtime
                 _gateName = gateName;
                 _enumerateItems = enumerateItems;
                 _enumerateStart = enumerateStart;
+                _enumerateStartName = enumerateStartName;
                 _sourcePath = sourcePath;
                 _sourceLine = sourceLine;
             }
@@ -5072,8 +5085,15 @@ namespace StoryAPI.Runtime
                     {
                         if (_enumerateItems)
                         {
+                            int enumerateStart = _enumerateStart;
+                            if (_enumerateStartName != null &&
+                                (!TryGetDynamicIndexValue(_enumerateStartName, context, out object rawStart) ||
+                                 !TryConvertListIndex(rawStart, out enumerateStart)))
+                                throw new InvalidOperationException(
+                                    "enumerate() start must evaluate to a signed 32-bit integer scalar");
+
                             if (!GameBridge.TrySetVariableLiteral(
-                                    _variableName, (float)((long)index + _enumerateStart), false, context) ||
+                                    _variableName, (float)((long)index + enumerateStart), false, context) ||
                                 !GameBridge.TrySetVariableLiteral(
                                     _valueVariableName, item, false, context))
                                 throw new InvalidOperationException(

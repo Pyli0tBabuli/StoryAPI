@@ -2114,7 +2114,7 @@ namespace StoryAPI.Tests
 
             RenPyParser.Line line;
             Check(VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
-                    "lowest = max(numbers)", sourcePath, 3, out line),
+                    "highest = max(numbers)", sourcePath, 3, out line),
                 "max(numbers) assignment should be recognized.");
             Check(line.GetType().Name == "MaxListAssignmentLine",
                 "max() should emit a dedicated maximum-selection instruction.");
@@ -2123,7 +2123,7 @@ namespace StoryAPI.Tests
             object observed;
             Check(GameBridge.TryGetLastTestLiteral("lowest", out observed) &&
                     Math.Abs(Convert.ToSingle(observed) - 4.5f) < 0.001f,
-                "max() should return the smallest numeric value.");
+                "max() should return the largest numeric value.");
             Check(numbers.SequenceEqual(new object[] { 2f, -3f, 4.5f, 0f }),
                 "max() should leave the source list unchanged.");
 
@@ -2133,7 +2133,7 @@ namespace StoryAPI.Tests
             context.SetVariable("integer_numbers",
                 new SimpleExpressionEngine.DataValue((object)integerNumbers));
             Check(VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
-                    "integer_lowest = max(integer_numbers)", sourcePath, 4, out line),
+                    "integer_highest = max(integer_numbers)", sourcePath, 4, out line),
                 "max() should recognize lists with integral numeric literals.");
             ((RenPyParser.Images.IApply)line).Apply(context);
             Check(GameBridge.TryGetLastTestLiteral("integer_lowest", out observed) &&
@@ -2145,7 +2145,7 @@ namespace StoryAPI.Tests
             context.SetVariable("strings",
                 new SimpleExpressionEngine.DataValue((object)strings));
             Check(VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
-                    "first_string = max(strings)", sourcePath, 4, out line),
+                    "last_string = max(strings)", sourcePath, 4, out line),
                 "max() should recognize string lists.");
             ((RenPyParser.Images.IApply)line).Apply(context);
             Check(GameBridge.TryGetLastTestLiteral("first_string", out observed) &&

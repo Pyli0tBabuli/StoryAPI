@@ -3203,6 +3203,7 @@ namespace StoryAPI.Tests
 
             var dictionary = new Dictionary<string, object> { { "one", 1f } };
             context.SetVariable("settings", new SimpleExpressionEngine.DataValue((object)dictionary));
+            context.SetVariable("_stage40_preserved", new SimpleExpressionEngine.DataValue(17f));
             GameBridge.TrySetVariableLiteral("_stage40_preserved", 17f, false, context);
             Check(VariableIndexExpressionLine.TryCreateForEachPreparationLine(
                     "settings", "_stage40_preserved", false, false, false, true,

@@ -1028,6 +1028,46 @@ namespace StoryAPI.Runtime
         }
 
         /// <summary>
+        /// Recognizes a no-argument sort() call on a named list variable.
+        /// </summary>
+        public static bool TryCreateListSortLine(string code, string sourcePath,
+            int sourceLine, out Line line)
+        {
+            line = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+
+            int nameStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string rootName = code.Substring(nameStart, cursor - nameStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '.') return false;
+            SkipWhitespace(code, ref cursor);
+
+            const string methodName = "sort";
+            if (cursor + methodName.Length > code.Length ||
+                string.Compare(code, cursor, methodName, 0, methodName.Length,
+                    StringComparison.Ordinal) != 0)
+                return false;
+            cursor += methodName.Length;
+            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '(') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != ')') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor != code.Length) return false;
+
+            line = new ListSortLine(rootName, sourcePath, sourceLine);
+            return true;
+        }
+
+        /// <summary>
         /// Recognizes a no-argument reverse() call on a named list variable.
         /// </summary>
         public static bool TryCreateListReverseLine(string code, string sourcePath,
@@ -2577,6 +2617,100 @@ namespace StoryAPI.Runtime
                     Log.Warn("Could not apply list.count on '" + _rootName + "' at " +
                         _sourcePath + ":" + _sourceLine + ": " +
                         e.GetBaseException().Message);
+                }
+            }
+        }
+
+        private sealed class ListSortLine : Line, IApply
+        {
+            private readonly string _rootName;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public ListSortLine(string rootName, string sourcePath, int sourceLine)
+            {
+                _rootName = rootName;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object target) ||
+                        !(target is IList list))
+                        throw new InvalidOperationException("list.sort() requires a list target");
+                    if (list.IsReadOnly || list.IsFixedSize)
+                        throw new InvalidOperationException("list.sort() target is not mutable");
+
+                    // Validate and sort a snapshot first so unsupported mixed values leave
+                    // the source list untouched.
+                    var sorted = new List<object>(list.Count);
+                    for (int i = 0; i < list.Count; i++)
+                        sorted.Add(list[i]);
+
+                    if (sorted.Count > 1)
+                    {
+                        bool strings = sorted[0] is string;
+                        bool numbers = IsNumericScalar(sorted[0]);
+                        if (!strings && !numbers)
+                            throw new InvalidOperationException(
+                                "list.sort() supports homogeneous string or numeric lists only");
+
+                        for (int i = 1; i < sorted.Count; i++)
+                        {
+                            if ((strings && !(sorted[i] is string)) ||
+                                (numbers && !IsNumericScalar(sorted[i])))
+                                throw new InvalidOperationException(
+                                    "list.sort() requires all items to have the same sortable scalar type");
+                        }
+
+                        sorted.Sort(delegate(object left, object right)
+                        {
+                            if (strings)
+                                return string.CompareOrdinal((string)left, (string)right);
+
+                            return Convert.ToDouble(left, CultureInfo.InvariantCulture).CompareTo(
+                                Convert.ToDouble(right, CultureInfo.InvariantCulture));
+                        });
+
+                        for (int i = 0; i < sorted.Count; i++)
+                            list[i] = sorted[i];
+                    }
+
+                    Log.Info("Applied list.sort on '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not sort list '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+
+            private static bool IsNumericScalar(object value)
+            {
+                if (value == null) return false;
+                switch (Type.GetTypeCode(value.GetType()))
+                {
+                    case TypeCode.SByte:
+                    case TypeCode.Byte:
+                    case TypeCode.Int16:
+                    case TypeCode.UInt16:
+                    case TypeCode.Int32:
+                    case TypeCode.UInt32:
+                    case TypeCode.Int64:
+                    case TypeCode.UInt64:
+                    case TypeCode.Single:
+                    case TypeCode.Double:
+                    case TypeCode.Decimal:
+                        return true;
+                    default:
+                        return false;
                 }
             }
         }

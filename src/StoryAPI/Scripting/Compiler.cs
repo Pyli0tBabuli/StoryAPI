@@ -148,6 +148,14 @@ namespace StoryAPI.Scripting
                 return;
             }
 
+            Line listSortLine;
+            if (VariableIndexExpressionLine.TryCreateListSortLine(
+                python.Code, _textLabel ?? "unknown", python.Line, out listSortLine))
+            {
+                _out.Add(listSortLine);
+                return;
+            }
+
             Line listIndexLine;
             if (VariableIndexExpressionLine.TryCreateListIndexLine(
                 python.Code, _textLabel ?? "unknown", python.Line, out listIndexLine))

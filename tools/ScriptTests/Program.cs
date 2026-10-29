@@ -2000,7 +2000,7 @@ namespace StoryAPI.Tests
             context.SetVariable("inventory",
                 new SimpleExpressionEngine.DataValue((object)inventory));
 
-            RenpyParser.Line line;
+            RenPyParser.Line line;
             Check(VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
                     "sorted_inventory = sorted(inventory)", sourcePath, 3, out line),
                 "sorted(inventory) assignment should be recognized.");

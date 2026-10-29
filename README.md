@@ -166,7 +166,10 @@ the same restricted dynamic scalar indexes supported by reads. Assignment values
 expressions; collection reads on the right-hand side are resolved before the assignment. Compound assignments to simple scalar variables and indexed list/dictionary entries support
 `+=`, `-=`, `*=`, `/=`, and `%=`; their right-hand side may use supported scalar expressions and
 collection index reads. Other compound operators such as `**=`, slices, and assigning a new value
-beyond the end of a list remain unsupported. Lists support `$ inventory.reverse()`, which
+beyond the end of a list remain unsupported. Lists support `$ inventory.sort()`, which sorts
+homogeneous string lists in ordinal ascending order and homogeneous numeric lists in ascending
+numeric order, in place. It accepts no arguments; mixed or unsupported item types are left
+unchanged with a warning. Lists also support `$ inventory.reverse()`, which
 reverses the existing list in place and accepts no arguments. Assignment from `$ item_index = inventory.index("battery")` is supported for a quoted string,
 number, `True`, `False`, or `None` literal. It returns the first matching zero-based index;
 if no item matches, StoryAPI logs a warning and leaves the destination unchanged. This restricted

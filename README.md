@@ -280,11 +280,13 @@ targets, as in `for index, key, value in enumerate(settings.items()):`. Dictiona
 key/value pairs are snapshotted at loop entry, so additions during the loop do not change the active sequence.
 The restricted `zip(first_list, second_list)` loop accepts two named lists and two loop variables:
 `for first, second in zip(first_items, second_items):`. It creates pairs at loop entry, stops at the shorter
-list, and does not modify either source list. An optional signed integer literal
-or supported scalar expression can set the initial index, as in `enumerate(inventory, 1)`,
-`enumerate(inventory, start_index)`, or `enumerate(inventory, start_index + 2)`. A dynamic start
-expression is evaluated once at loop entry and must resolve to a signed 32-bit integer; invalid runtime
-values log a warning and skip the loop body. Decimal literals and extra arguments are unsupported. Range loops support `range(stop)`,
+list, and does not modify either source list. The paired values can also be enumerated with
+three loop variables, as in `for index, first, second in enumerate(zip(first_items, second_items), start_index):`.
+This form binds the running index and both values from each pair; it requires exactly three loop variables.
+An optional signed integer literal or supported scalar expression can set the initial index, as in
+`enumerate(inventory, 1)`, `enumerate(inventory, start_index)`, or `enumerate(inventory, start_index + 2)`.
+A dynamic start expression is evaluated once at loop entry and must resolve to a signed 32-bit integer;
+invalid runtime values log a warning and skip the loop body. Decimal literals and extra arguments are unsupported. Range loops support `range(stop)`,
 `range(start, stop)`, and `range(start, stop, step)`, including negative steps and empty ranges. Range
 arguments are evaluated once at loop entry and must resolve to 32-bit integers; a zero step or invalid
 argument logs a warning and skips the loop body. Range iteration does not allocate a list. Other iterable

@@ -671,20 +671,47 @@ namespace StoryAPI.Scripting
                             "enumerate() iteration requires 'for index, value in enumerate(list):'.",
                             Current.Line);
                     _index += 2; // enumerate(
-                    if (Current.Type != TokenType.Identifier)
-                        throw new ScriptSyntaxException(
-                            "enumerate() requires a named list or dictionary variable.", Current.Line);
-                    collection = Advance().Text;
-                    if (Current.Text == "." &&
-                        (Ahead(1).Text == "values" || Ahead(1).Text == "items") &&
-                        Ahead(2).Text == "(" && Ahead(3).Text == ")")
+                    if (Current.Type == TokenType.Identifier && Current.Text == "zip" &&
+                        Ahead(1).Text == "(")
                     {
-                        string dictionaryMethod = Ahead(1).Text;
-                        _index += 4; // .values() or .items()
-                        if (dictionaryMethod == "values")
-                            enumerateDictionaryValues = true;
-                        else
-                            enumerateDictionaryItems = true;
+                        if (thirdVariable == null)
+                            throw new ScriptSyntaxException(
+                                "enumerate(zip()) requires 'for index, left, right in enumerate(zip(first_list, second_list))'.",
+                                Current.Line);
+
+                        _index += 2; // zip(
+                        if (Current.Type != TokenType.Identifier)
+                            throw new ScriptSyntaxException("zip() requires a first named list.", Current.Line);
+                        collection = Advance().Text;
+                        if (Current.Text != ",")
+                            throw new ScriptSyntaxException("zip() requires exactly two named list arguments.", Current.Line);
+                        _index++;
+                        if (Current.Type != TokenType.Identifier)
+                            throw new ScriptSyntaxException("zip() requires a second named list.", Current.Line);
+                        zipSecondCollection = Advance().Text;
+                        if (Current.Text != ")")
+                            throw new ScriptSyntaxException("zip() accepts exactly two named list arguments.", Current.Line);
+                        _index++; // )
+                        isZip = true;
+                    }
+                    else
+                    {
+                        if (Current.Type != TokenType.Identifier)
+                            throw new ScriptSyntaxException(
+                                "enumerate() requires a named list or dictionary variable, or zip(list, list).",
+                                Current.Line);
+                        collection = Advance().Text;
+                        if (Current.Text == "." &&
+                            (Ahead(1).Text == "values" || Ahead(1).Text == "items") &&
+                            Ahead(2).Text == "(" && Ahead(3).Text == ")")
+                        {
+                            string dictionaryMethod = Ahead(1).Text;
+                            _index += 4; // .values() or .items()
+                            if (dictionaryMethod == "values")
+                                enumerateDictionaryValues = true;
+                            else
+                                enumerateDictionaryItems = true;
+                        }
                     }
                     if (Current.Text == ",")
                     {
@@ -801,16 +828,18 @@ namespace StoryAPI.Scripting
                         "Two loop variables require dictionary.items(), enumerate(...), or zip(list, list) iteration.", Current.Line);
                 }
 
-                if (thirdVariable != null && (!isEnumerate || !enumerateDictionaryItems))
+                if (thirdVariable != null &&
+                    (!isEnumerate || (!enumerateDictionaryItems && !isZip)))
                     throw new ScriptSyntaxException(
-                        "Only two loop variables are supported outside enumerate(dictionary.items()). Three loop variables require enumerate(dictionary.items()) iteration.", line);
+                        "Only two loop variables are supported generally. Three loop variables require enumerate(dictionary.items()) or enumerate(zip(list, list)) iteration.",
+                        line);
                 if (isEnumerate && enumerateDictionaryItems && thirdVariable == null)
                     throw new ScriptSyntaxException(
                         "enumerate(dictionary.items()) requires 'for index, key, value'.", line);
 
                 if (Current.Type != TokenType.Colon)
                     throw new ScriptSyntaxException(
-                        "Only a named list, zip(list, list), reversed(list), enumerate(list), enumerate(dictionary.values()), enumerate(dictionary.items()), dictionary.keys(), dictionary.items(), or dictionary.values() is supported after 'in'.",
+                        "Only a named list, zip(list, list), reversed(list), enumerate(list), enumerate(zip(list, list)), enumerate(dictionary.values()), enumerate(dictionary.items()), dictionary.keys(), dictionary.items(), or dictionary.values() is supported after 'in'.",
                         Current.Line);
 
                 ExpectColon();

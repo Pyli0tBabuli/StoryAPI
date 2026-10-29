@@ -59,6 +59,7 @@ namespace StoryAPI.Tests
             Run("for-list iteration and loop control", TestForListIteration);
             Run("for-reversed-list iteration", TestForReversedListIteration);
             Run("for-zip-list iteration", TestForZipListIteration);
+            Run("for-enumerate-zip-list iteration", TestForEnumerateZipListIteration);
             Run("for-enumerate-list iteration", TestForEnumerateListIteration);
             Run("for-dictionary key iteration", TestForDictionaryIteration);
             Run("for-dictionary key/value iteration", TestForDictionaryItemsIteration);
@@ -3290,6 +3291,83 @@ namespace StoryAPI.Tests
             Check(GameBridge.TryGetLastTestLiteral("right_item", out rightObserved) &&
                     Math.Abs(Convert.ToSingle(rightObserved, CultureInfo.InvariantCulture) - 20f) < 0.0001f,
                 "The second zip() pair should assign the next right value.");
+        }
+
+        private static void TestForEnumerateZipListIteration()
+        {
+            const string sourcePath = "enumerate-zip-list-test.rpy";
+            var statements = Parse(
+                "label enumerate_zip_list_test:\n" +
+                "    for item_index, left_item, right_item in enumerate(zip(left_values, right_values), start_index + 1):\n" +
+                "        pass\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0], "Expected enumerate(zip()) label.");
+            var loop = Require<ForStatement>(label.Body[0], "Expected enumerate(zip()) loop.");
+            Check(loop.IsEnumerate && loop.IsZip &&
+                    loop.Collection == "left_values" && loop.ZipSecondCollection == "right_values" &&
+                    loop.Variable == "item_index" && loop.ValueVariable == "left_item" &&
+                    loop.ThirdVariable == "right_item" &&
+                    loop.EnumerateStartExpression == "start_index + 1",
+                "enumerate(zip(left_values, right_values), start) should bind index and both values.");
+
+            ExpectSyntaxError(
+                "label enumerate_zip_two_targets:\n" +
+                "    for item_index, pair in enumerate(zip(left_values, right_values)):\n" +
+                "        pass\n",
+                "requires 'for index, left, right");
+            ExpectSyntaxError(
+                "label enumerate_zip_extra_argument:\n" +
+                "    for item_index, left_item, right_item in enumerate(zip(left_values, right_values, extras)):\n" +
+                "        pass\n",
+                "exactly two named list arguments");
+
+            var context = new RenpyParser.DynamicIndexTestContext();
+            context.SetVariable("left_values",
+                new SimpleExpressionEngine.DataValue((object)new List<object> { "A", "B", "C" }));
+            context.SetVariable("right_values",
+                new SimpleExpressionEngine.DataValue((object)new List<object> { 10f, 20f }));
+            context.SetVariable("start_index", new SimpleExpressionEngine.DataValue(6f));
+
+            RenPyParser.Line preparation;
+            Check(VariableIndexExpressionLine.TryCreateForZipPreparationLine(
+                    "left_values", "right_values", "_stage48_pairs", sourcePath, 20, out preparation),
+                "Runtime should prepare zipped pairs for enumerate(zip()).");
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
+            object preparedValue;
+            Check(GameBridge.TryGetLastTestLiteral("_stage48_pairs", out preparedValue) &&
+                    preparedValue is List<object> pairs && pairs.Count == 2,
+                "enumerate(zip()) should retain the shorter paired list.");
+
+            context.SetVariable("_stage48_pairs", new SimpleExpressionEngine.DataValue(preparedValue));
+            context.SetVariable("_stage48_index", new SimpleExpressionEngine.DataValue(0f));
+            context.SetVariable("_stage48_gate", new SimpleExpressionEngine.DataValue(true));
+            RenPyParser.Line itemLine;
+            Check(VariableIndexExpressionLine.TryCreateForEachItemLine(
+                    "item_index", "left_item", "right_item", "_stage48_pairs", "_stage48_index",
+                    "_stage48_gate", true, 0, "start_index", sourcePath, 21, out itemLine),
+                "Runtime should create an enumerate(zip()) item-assignment line.");
+            ((RenPyParser.Images.IApply)itemLine).Apply(context);
+
+            object observedIndex, observedLeft, observedRight;
+            Check(GameBridge.TryGetLastTestLiteral("item_index", out observedIndex) &&
+                    Math.Abs(Convert.ToSingle(observedIndex, CultureInfo.InvariantCulture) - 6f) < 0.0001f,
+                "The first enumerate(zip()) index should use the dynamic start value.");
+            Check(GameBridge.TryGetLastTestLiteral("left_item", out observedLeft) && Equals(observedLeft, "A"),
+                "The first enumerate(zip()) item should assign the left value.");
+            Check(GameBridge.TryGetLastTestLiteral("right_item", out observedRight) &&
+                    Math.Abs(Convert.ToSingle(observedRight, CultureInfo.InvariantCulture) - 10f) < 0.0001f,
+                "The first enumerate(zip()) item should assign the right value.");
+
+            context.SetVariable("_stage48_index", new SimpleExpressionEngine.DataValue(1f));
+            context.SetVariable("_stage48_gate", new SimpleExpressionEngine.DataValue(true));
+            ((RenPyParser.Images.IApply)itemLine).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("item_index", out observedIndex) &&
+                    Math.Abs(Convert.ToSingle(observedIndex, CultureInfo.InvariantCulture) - 7f) < 0.0001f &&
+                    GameBridge.TryGetLastTestLiteral("left_item", out observedLeft) && Equals(observedLeft, "B"),
+                "The second enumerate(zip()) item should advance the index and paired values.");
+            Check(GameBridge.TryGetLastTestLiteral("right_item", out observedRight) &&
+                    Math.Abs(Convert.ToSingle(observedRight, CultureInfo.InvariantCulture) - 20f) < 0.0001f,
+                "The second enumerate(zip()) item should assign the next right value.");
         }
 
         private static void TestForEnumerateListIteration()

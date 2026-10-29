@@ -277,7 +277,10 @@ as the loop advances, and exactly two loop variables are required. Dictionary ke
 `for index, key in enumerate(settings):`; dictionary values can be enumerated with
 `for index, value in enumerate(settings.values()):`; and dictionary entries can be enumerated with three
 targets, as in `for index, key, value in enumerate(settings.items()):`. Dictionary keys, values, and
-key/value pairs are snapshotted at loop entry, so additions during the loop do not change the active sequence. An optional signed integer literal
+key/value pairs are snapshotted at loop entry, so additions during the loop do not change the active sequence.
+The restricted `zip(first_list, second_list)` loop accepts two named lists and two loop variables:
+`for first, second in zip(first_items, second_items):`. It creates pairs at loop entry, stops at the shorter
+list, and does not modify either source list. An optional signed integer literal
 or supported scalar expression can set the initial index, as in `enumerate(inventory, 1)`,
 `enumerate(inventory, start_index)`, or `enumerate(inventory, start_index + 2)`. A dynamic start
 expression is evaluated once at loop entry and must resolve to a signed 32-bit integer; invalid runtime

@@ -317,6 +317,8 @@ namespace StoryAPI.Scripting
         public string ValueVariable { get; set; }
         public string ThirdVariable { get; set; }
         public string Collection { get; set; }
+        public string ZipSecondCollection { get; set; }
+        public bool IsZip { get; set; }
         public bool IsReversed { get; set; }
         public bool IsEnumerate { get; set; }
         public int EnumerateStart { get; set; }

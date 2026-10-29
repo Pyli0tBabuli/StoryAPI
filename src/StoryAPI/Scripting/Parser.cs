@@ -889,7 +889,7 @@ namespace StoryAPI.Scripting
                 {
                     if (Current.Type != TokenType.Identifier)
                         throw new ScriptSyntaxException(
-                            "Expected a named list, reversed(list), or range(start, stop[, step]) after 'in'.",
+                            "Expected a named list, sorted(list[, reverse=True]), reversed(list), or range(start, stop[, step]) after 'in'.",
                             Current.Line);
                     collection = Advance().Text;
                 }
@@ -940,7 +940,7 @@ namespace StoryAPI.Scripting
 
                 if (Current.Type != TokenType.Colon)
                     throw new ScriptSyntaxException(
-                        "Only a named list, zip(list, list), reversed(list), enumerate(list), enumerate(zip(list, list)), enumerate(dictionary.values()), enumerate(dictionary.items()), dictionary.keys(), dictionary.items(), or dictionary.values() is supported after 'in'.",
+                        "Only a named list, sorted(list[, reverse=True]), reversed(list), zip(list, list), enumerate(list), enumerate(sorted(list), start), enumerate(zip(list, list)), enumerate(dictionary.values()), enumerate(dictionary.items()), dictionary.keys(), dictionary.items(), or dictionary.values() is supported after 'in'.",
                         Current.Line);
 
                 ExpectColon();

@@ -832,7 +832,7 @@ namespace StoryAPI.Scripting
             Line itemLine;
             if (!VariableIndexExpressionLine.TryCreateForEachItemLine(
                 statement.Variable, statement.ValueVariable, iterationCollectionName,
-                indexName, itemGateName, statement.IsEnumerate,
+                indexName, itemGateName, statement.IsEnumerate, statement.EnumerateStart,
                 _textLabel ?? "unknown", statement.Line, out itemLine))
                 throw new InvalidOperationException(
                     "for loops require simple variable names and a named list or dictionary (line " +

@@ -3220,8 +3220,31 @@ namespace StoryAPI.Tests
             var label = Require<LabelStatement>(statements[0], "Expected enumerate-list label.");
             var loop = Require<ForStatement>(label.Body[0], "Expected enumerate() loop.");
             Check(loop.IsEnumerate && loop.Variable == "index" &&
-                    loop.ValueVariable == "item" && loop.Collection == "inventory" && !loop.IsRange,
+                    loop.ValueVariable == "item" && loop.Collection == "inventory" &&
+                    loop.EnumerateStart == 0 && !loop.IsRange,
                 "enumerate(inventory) should bind a zero-based index and each value.");
+
+            var customStartStatements = Parse(
+                "label enumerate_custom_start:\n" +
+                "    for index, item in enumerate(inventory, 5):\n" +
+                "        pass\n" +
+                "    return\n");
+            var customStartLoop = Require<ForStatement>(
+                Require<LabelStatement>(customStartStatements[0], "Expected custom-start label.").Body[0],
+                "Expected enumerate() loop with a start value.");
+            Check(customStartLoop.IsEnumerate && customStartLoop.EnumerateStart == 5,
+                "enumerate(inventory, 5) should store the supplied start index.");
+
+            var negativeStartStatements = Parse(
+                "label enumerate_negative_start:\n" +
+                "    for index, item in enumerate(inventory, -2):\n" +
+                "        pass\n" +
+                "    return\n");
+            var negativeStartLoop = Require<ForStatement>(
+                Require<LabelStatement>(negativeStartStatements[0], "Expected negative-start label.").Body[0],
+                "Expected enumerate() loop with a negative start.");
+            Check(negativeStartLoop.EnumerateStart == -2,
+                "enumerate(inventory, -2) should allow a negative integer start.");
 
             ExpectSyntaxError(
                 "label enumerate_one_name:\n" +
@@ -3230,9 +3253,14 @@ namespace StoryAPI.Tests
                 "requires 'for index, value");
             ExpectSyntaxError(
                 "label enumerate_extra_argument:\n" +
-                "    for index, item in enumerate(inventory, 1):\n" +
+                "    for index, item in enumerate(inventory, 1, 2):\n" +
                 "        pass\n",
-                "exactly one named list variable");
+                "optional integer start");
+            ExpectSyntaxError(
+                "label enumerate_non_integer_start:\n" +
+                "    for index, item in enumerate(inventory, 1.5):\n" +
+                "        pass\n",
+                "integer literal");
 
             var context = new RenpyParser.DynamicIndexTestContext();
             var values = new List<object> { 10f, 20f, 30f };
@@ -3266,6 +3294,16 @@ namespace StoryAPI.Tests
             Check(GameBridge.TryGetLastTestLiteral("item", out observedItem) &&
                     Math.Abs(Convert.ToSingle(observedItem, CultureInfo.InvariantCulture) - 10f) < 0.0001f,
                 "The first enumerate() value should be the first list item.");
+
+            RenPyParser.Line customStartItemLine;
+            Check(VariableIndexExpressionLine.TryCreateForEachItemLine(
+                    "index", "item", "_stage41_items", "_stage41_index", "_stage41_gate",
+                    true, 5, sourcePath, 6, out customStartItemLine),
+                "The runtime should create an enumerate() item instruction with a custom start.");
+            ((RenPyParser.Images.IApply)customStartItemLine).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("index", out observedIndex) &&
+                    Math.Abs(Convert.ToSingle(observedIndex, CultureInfo.InvariantCulture) - 5f) < 0.0001f,
+                "enumerate() should add the custom start to the current list index.");
 
             context.SetVariable("_stage41_index", new SimpleExpressionEngine.DataValue(1f));
             ((RenPyParser.Images.IApply)itemLine).Apply(context);

@@ -617,6 +617,7 @@ namespace StoryAPI.Scripting
             {
                 bool isReversed = false;
                 bool isEnumerate = false;
+                int enumerateStart = 0;
                 string collection;
                 if (Current.Type == TokenType.Identifier && Current.Text == "enumerate" &&
                     Ahead(1).Text == "(")
@@ -630,9 +631,19 @@ namespace StoryAPI.Scripting
                         throw new ScriptSyntaxException(
                             "enumerate() requires a named list variable.", Current.Line);
                     collection = Advance().Text;
+                    if (Current.Text == ",")
+                    {
+                        _index++;
+                        if (Current.Type != TokenType.Number ||
+                            !int.TryParse(Current.Text, NumberStyles.Integer,
+                                CultureInfo.InvariantCulture, out enumerateStart))
+                            throw new ScriptSyntaxException(
+                                "enumerate() start must be an integer literal.", Current.Line);
+                        _index++;
+                    }
                     if (Current.Text != ")")
                         throw new ScriptSyntaxException(
-                            "enumerate() accepts exactly one named list variable.", Current.Line);
+                            "enumerate() accepts a named list and an optional integer start.", Current.Line);
                     _index++; // )
                     isEnumerate = true;
                 }
@@ -710,6 +721,7 @@ namespace StoryAPI.Scripting
                     Collection = collection,
                     IsReversed = isReversed,
                     IsEnumerate = isEnumerate,
+                    EnumerateStart = enumerateStart,
                     IsDictionaryItems = isDictionaryItems,
                     IsDictionaryValues = isDictionaryValues,
                     IsDictionaryKeys = isDictionaryKeys,

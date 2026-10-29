@@ -34,6 +34,7 @@ namespace StoryAPI.Tests
             Run("list and dictionary clear methods", TestCollectionClearMethods);
             Run("list reverse method", TestListReverseMethod);
             Run("list count method", TestListCountMethod);
+            Run("list index method", TestListIndexMethod);
             Run("list copy method", TestListCopyMethod);
             Run("list extend method", TestListExtendMethod);
             Run("list insert and pop methods", TestListInsertAndPopMethods);
@@ -1847,6 +1848,90 @@ namespace StoryAPI.Tests
                     "The copy call should parse as a Python statement.").Code ==
                     "copied_inventory = inventory.copy()",
                 "The parser should preserve list copy assignments.");
+        }
+
+        private static void TestListIndexMethod()
+        {
+            const string sourcePath = "list-index-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var inventory = new List<object>
+            {
+                "key", "battery", "battery", "medkit", 2f, 2f, true, null
+            };
+            context.SetVariable("inventory",
+                new SimpleExpressionEngine.DataValue((object)inventory));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "battery_index = inventory.index(\"battery\")", sourcePath, 3, out line),
+                "index() with a string literal should be recognized.");
+            Check(line.GetType().Name == "ListIndexLine",
+                "index() should emit a dedicated list-index instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("battery_index", out observed) &&
+                    Convert.ToInt32(observed) == 1,
+                "index() should return the first matching index, not the later duplicate.");
+
+            Check(VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "number_index = inventory.index(2)", sourcePath, 4, out line),
+                "index() should accept a numeric literal.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("number_index", out observed) &&
+                    Convert.ToInt32(observed) == 4,
+                "index() should locate the first matching numeric scalar.");
+
+            Check(VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "bool_index = inventory.index(True)", sourcePath, 5, out line),
+                "index() should accept a boolean literal.");
+            ((RenpyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("bool_index", out observed) &&
+                    Convert.ToInt32(observed) == 6,
+                "index() should distinguish a boolean from numeric values.");
+
+            Check(VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "none_index = inventory.index(None)", sourcePath, 6, out line),
+                "index() should accept None.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("none_index", out observed) &&
+                    Convert.ToInt32(observed) == 7,
+                "index(None) should find the first null entry.");
+
+            context.SetVariable("missing_index", new SimpleExpressionEngine.DataValue(77f));
+            Check(VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "missing_index = inventory.index(\"absent\")", sourcePath, 7, out line),
+                "index() should recognize an absent scalar value.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("missing_index", out observed) &&
+                    Convert.ToSingle(observed) == 77f,
+                "When no item matches, index() should log a warning and leave the destination unchanged.");
+
+            Check(!VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "item_index = inventory.index(item_name)", sourcePath, 20, out line),
+                "This restricted index() implementation should reject variable arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "item_index = inventory.index(\"battery\", \"key\")", sourcePath, 21, out line),
+                "index() should reject more than one argument.");
+            Check(!VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "item_index = inventory[0].index(\"battery\")", sourcePath, 22, out line),
+                "index() should reject indexed targets.");
+            Check(!VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "inventory.index(\"battery\")", sourcePath, 23, out line),
+                "This restricted index() feature should require an assignment target.");
+            Check(!VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "item_index = inventory.index(\"battery\"); inventory.reverse()", sourcePath, 24, out line),
+                "index() should reject multiple statements.");
+
+            var statements = Parse(
+                "label list_index_test:\\n" +
+                "    $ battery_index = inventory.index(\"battery\")\\n" +
+                "    return\\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing list index().");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The index() call should parse as a Python statement.").Code ==
+                    "battery_index = inventory.index(\"battery\")",
+                "The parser should preserve list index assignments.");
         }
 
         private static void TestListCountMethod()

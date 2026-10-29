@@ -148,11 +148,131 @@ namespace StoryAPI.Scripting
                 return;
             }
 
+            Line minListLine;
+            if (VariableIndexExpressionLine.TryCreateMinListAssignmentLine(
+                python.Code, _textLabel ?? "unknown", python.Line, out minListLine))
+            {
+                Log.Info("[StoryAPI] Compiled min() assignment at " +
+                    (_textLabel ?? "unknown") + ":" + python.Line + ".");
+                _out.Add(minListLine);
+                return;
+            }
+
+            Line maxListLine;
+            if (VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
+                python.Code, _textLabel ?? "unknown", python.Line, out maxListLine))
+            {
+                Log.Info("[StoryAPI] Compiled max() assignment at " +
+                    (_textLabel ?? "unknown") + ":" + python.Line + ".");
+                _out.Add(maxListLine);
+                return;
+            }
+
+            Line anyListLine;
+            if (VariableIndexExpressionLine.TryCreateAnyListAssignmentLine(
+                python.Code, _textLabel ?? "unknown", python.Line, out anyListLine))
+            {
+                Log.Info("[StoryAPI] Compiled any() assignment at " +
+                    (_textLabel ?? "unknown") + ":" + python.Line + ".");
+                _out.Add(anyListLine);
+                return;
+            }
+
+            Line allListLine;
+            if (VariableIndexExpressionLine.TryCreateAllListAssignmentLine(
+                python.Code, _textLabel ?? "unknown", python.Line, out allListLine))
+            {
+                Log.Info("[StoryAPI] Compiled all() assignment at " +
+                    (_textLabel ?? "unknown") + ":" + python.Line + ".");
+                _out.Add(allListLine);
+                return;
+            }
+
+            Line sumListLine;
+            if (VariableIndexExpressionLine.TryCreateSumListAssignmentLine(
+                python.Code, _textLabel ?? "unknown", python.Line, out sumListLine))
+            {
+                _out.Add(sumListLine);
+                return;
+            }
+
+            Line sortedListLine;
+            if (VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                python.Code, _textLabel ?? "unknown", python.Line, out sortedListLine))
+            {
+                _out.Add(sortedListLine);
+                return;
+            }
+
+            Line listSortLine;
+            if (VariableIndexExpressionLine.TryCreateListSortLine(
+                python.Code, _textLabel ?? "unknown", python.Line, out listSortLine))
+            {
+                _out.Add(listSortLine);
+                return;
+            }
+
+            Line listIndexLine;
+            if (VariableIndexExpressionLine.TryCreateListIndexLine(
+                python.Code, _textLabel ?? "unknown", python.Line, out listIndexLine))
+            {
+                _out.Add(listIndexLine);
+                return;
+            }
+
+            Line listCopyLine;
+            if (VariableIndexExpressionLine.TryCreateListCopyLine(
+                python.Code, _textLabel ?? "unknown", python.Line, out listCopyLine))
+            {
+                _out.Add(listCopyLine);
+                return;
+            }
+
+            Line listCountLine;
+            if (VariableIndexExpressionLine.TryCreateListCountLine(
+                python.Code, _textLabel ?? "unknown", python.Line, out listCountLine))
+            {
+                _out.Add(listCountLine);
+                return;
+            }
+
+            Line reverseLine;
+            if (VariableIndexExpressionLine.TryCreateListReverseLine(
+                python.Code, _textLabel ?? "unknown", python.Line, out reverseLine))
+            {
+                _out.Add(reverseLine);
+                return;
+            }
+
             Line extendLine;
             if (VariableIndexExpressionLine.TryCreateListExtendLine(
                 python.Code, _textLabel ?? "unknown", python.Line, out extendLine))
             {
                 _out.Add(extendLine);
+                return;
+            }
+
+            Line dictionarySetDefaultLine;
+            if (VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                python.Code, _textLabel ?? "unknown", python.Line, out dictionarySetDefaultLine))
+            {
+                _out.Add(dictionarySetDefaultLine);
+                return;
+            }
+
+            Line dictionaryCopyLine;
+            if (VariableIndexExpressionLine.TryCreateDictionaryCopyLine(
+                python.Code, _textLabel ?? "unknown", python.Line, out dictionaryCopyLine))
+            {
+                _out.Add(dictionaryCopyLine);
+                return;
+            }
+
+            Line dictionaryGetLine;
+            if (VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                python.Code, _textLabel ?? "unknown", python.Line, out dictionaryGetLine))
+            {
+                _out.Add(dictionaryGetLine);
                 return;
             }
 
@@ -693,8 +813,8 @@ namespace StoryAPI.Scripting
             Line preparationLine;
             if (!VariableIndexExpressionLine.TryCreateForEachPreparationLine(
                 statement.Collection, iterationCollectionName, statement.IsDictionaryItems,
-                statement.IsDictionaryValues, _textLabel ?? "unknown", statement.Line,
-                out preparationLine))
+                statement.IsDictionaryValues, statement.IsDictionaryKeys, statement.IsReversed,
+                _textLabel ?? "unknown", statement.Line, out preparationLine))
                 throw new InvalidOperationException(
                     "for loops require a simple collection variable name (line " +
                     statement.Line + ").");

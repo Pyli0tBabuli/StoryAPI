@@ -30,19 +30,37 @@ namespace StoryAPI.Tests
             Run("indexed collection conditions", TestIndexedCollectionConditions);
             Run("list and dictionary membership conditions", TestCollectionMembershipConditions);
             Run("list and dictionary length conditions", TestCollectionLengthConditions);
+            Run("None comparison conditions", TestNoneComparisonConditions);
             Run("list and dictionary clear methods", TestCollectionClearMethods);
+            Run("list reverse method", TestListReverseMethod);
+            Run("list sort method", TestListSortMethod);
+            Run("sorted() builtin", TestSortedListBuiltin);
+            Run("sum() builtin", TestSumListBuiltin);
+            Run("min() builtin", TestMinListBuiltin);
+            Run("max() builtin", TestMaxListBuiltin);
+            Run("any() builtin", TestAnyListBuiltin);
+            Run("all() builtin", TestAllListBuiltin);
+            Run("list count method", TestListCountMethod);
+            Run("list index method", TestListIndexMethod);
+            Run("list copy method", TestListCopyMethod);
             Run("list extend method", TestListExtendMethod);
             Run("list insert and pop methods", TestListInsertAndPopMethods);
             Run("dictionary update and pop methods", TestDictionaryUpdateAndPopMethods);
+            Run("dictionary pop default argument", TestDictionaryPopDefaultArgument);
+            Run("dictionary get method", TestDictionaryGetMethod);
+            Run("dictionary setdefault method", TestDictionarySetDefaultMethod);
+            Run("dictionary copy method", TestDictionaryCopyMethod);
             Run("compound scalar assignments", TestCompoundScalarAssignments);
             Run("compound indexed collection assignments", TestIndexedCompoundAssignments);
             Run("if/elif/else branches", TestConditionalBranches);
             Run("menu choices and nested statements", TestMenuChoices);
             Run("while and loop-control statements", TestWhileAndLoopControl);
             Run("for-list iteration and loop control", TestForListIteration);
+            Run("for-reversed-list iteration", TestForReversedListIteration);
             Run("for-dictionary key iteration", TestForDictionaryIteration);
             Run("for-dictionary key/value iteration", TestForDictionaryItemsIteration);
             Run("for-dictionary values iteration", TestForDictionaryValuesIteration);
+            Run("for-dictionary keys() iteration", TestForDictionaryKeysMethodIteration);
             Run("range() for-loop arguments", TestForRangeIteration);
             Run("image/audio asset paths", TestAssetPaths);
             Run("comments and blank lines", TestCommentsAndBlankLines);
@@ -874,6 +892,17 @@ namespace StoryAPI.Tests
                     out noIndexLines, out unchangedCondition) &&
                 noIndexLines.Count == 0 && unchangedCondition == "score > 0",
                 "Ordinary scalar conditions should remain untouched.");
+
+            const string nonePrefix = "_storyapi_condition_none_test";
+            Check(VariableIndexExpressionLine.TryPrepareCondition(
+                    "optional_value != None and label == \"None\"",
+                    nonePrefix, "condition-test.rpy", 10, out noIndexLines, out unchangedCondition),
+                "A Python None literal in a condition should be prepared for the game evaluator.");
+            Check(unchangedCondition == nonePrefix + "_gate and (" +
+                    nonePrefix + "_none_compare_0 and label == \"None\")",
+                "The None comparison should be rewritten, while quoted text remains unchanged.");
+            Check(noIndexLines.Any(line => line.GetType().Name == "NoneComparisonLine"),
+                "Condition preparation should emit a dedicated runtime None comparison.");
         }
 
         private static void TestListMethodMutations()
@@ -1155,6 +1184,56 @@ namespace StoryAPI.Tests
                 "Text containing len(collection) inside a string must not be rewritten.");
         }
 
+        private static void TestNoneComparisonConditions()
+        {
+            const string sourcePath = "none-condition-test.rpy";
+            const string prefix = "_storyapi_none_comparison_test";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            context.SetVariable("optional_value", default(SimpleExpressionEngine.DataValue));
+
+            List<RenPyParser.Line> lines;
+            string prepared;
+            Check(VariableIndexExpressionLine.TryPrepareCondition(
+                    "optional_value != None", prefix, sourcePath, 31,
+                    out lines, out prepared),
+                "A simple variable != None condition should be rewritten.");
+            Check(prepared == prefix + "_gate and (" + prefix + "_none_compare_0)",
+                "A None comparison should use a boolean temporary rather than the native scalar evaluator.");
+            RenPyParser.Line noneComparison = lines.Single(
+                line => line.GetType().Name == "NoneComparisonLine");
+            ((RenPyParser.Images.IApply)noneComparison).Apply(context);
+
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral(prefix + "_none_compare_0", out observed) &&
+                    observed is bool && !(bool)observed,
+                "An Unknown/default DataValue should compare equal to None.");
+
+            context.SetVariable("optional_value", new SimpleExpressionEngine.DataValue("present"));
+            ((RenPyParser.Images.IApply)noneComparison).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(prefix + "_none_compare_0", out observed) &&
+                    observed is bool && (bool)observed,
+                "A string DataValue should compare unequal to None.");
+
+            const string reversePrefix = "_storyapi_reverse_none_comparison_test";
+            context.SetVariable("optional_value", default(SimpleExpressionEngine.DataValue));
+            Check(VariableIndexExpressionLine.TryPrepareCondition(
+                    "None == optional_value", reversePrefix, sourcePath, 32,
+                    out lines, out prepared),
+                "A None == variable condition should be rewritten.");
+            ((RenPyParser.Images.IApply)lines.Single(
+                line => line.GetType().Name == "NoneComparisonLine")).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(
+                    reversePrefix + "_none_compare_0", out observed) &&
+                    observed is bool && (bool)observed,
+                "The reverse operand order should also compare None correctly.");
+
+            const string literalCondition = "\"The word None is literal text\"";
+            Check(!VariableIndexExpressionLine.TryPrepareCondition(
+                    literalCondition, prefix, sourcePath, 33, out lines, out prepared) &&
+                    prepared == literalCondition,
+                "None inside a quoted string must remain untouched.");
+        }
+
         private static void TestCollectionClearMethods()
         {
             const string sourcePath = "collection-clear-test.rpy";
@@ -1298,9 +1377,9 @@ namespace StoryAPI.Tests
             Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
                     "settings.pop()", sourcePath, 22, out lines),
                 "dict.pop() should reject a missing key.");
-            Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+            Check(VariableIndexExpressionLine.TryCreateDictionaryPopLines(
                     "settings.pop(\"sound\", \"off\")", sourcePath, 23, out lines),
-                "dict.pop() should reject a default-value argument in this subset.");
+                "dict.pop() should accept a literal default argument.");
             Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
                     "settings.pop(key_name)", sourcePath, 24, out lines),
                 "dict.pop() should require a quoted string key.");
@@ -1329,6 +1408,1465 @@ namespace StoryAPI.Tests
                     "The pop assignment should parse as a Python statement.").Code ==
                     "old_theme = settings.pop(\"theme\")",
                 "The parser should preserve dictionary pop() assignments.");
+        }
+
+        private static void TestDictionaryPopDefaultArgument()
+        {
+            const string sourcePath = "dictionary-pop-default-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var settings = new Dictionary<string, object>
+            {
+                { "theme", "dark" },
+                { "count", 5f }
+            };
+            context.SetVariable("settings",
+                new SimpleExpressionEngine.DataValue((object)settings));
+
+            List<RenPyParser.Line> lines;
+            Check(VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "theme_value = settings.pop(\"theme\", \"fallback\")",
+                    sourcePath, 10, out lines),
+                "pop() with a default should be recognized.");
+            Check(lines.Count == 1 && lines[0].GetType().Name == "DictionaryPopLine",
+                "pop() with a default should emit the dictionary-pop instruction.");
+            ((RenPyParser.Images.IApply)lines[0]).Apply(context);
+
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("theme_value", out observed) &&
+                    Equals(observed, "dark") && !settings.ContainsKey("theme"),
+                "When the key exists, pop() should return and remove its value instead of the default.");
+
+            Check(VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "missing_value = settings.pop(\"missing\", \"fallback\")",
+                    sourcePath, 11, out lines),
+                "pop() should recognize a string default for a missing key.");
+            ((RenPyParser.Images.IApply)lines[0]).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("missing_value", out observed) &&
+                    Equals(observed, "fallback"),
+                "pop() should assign its default when the key is missing.");
+            Check(!settings.ContainsKey("missing"),
+                "Using pop() with a default must not insert the missing key.");
+
+            Check(VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "count_value = settings.pop(\"missing_count\", 7)",
+                    sourcePath, 12, out lines),
+                "pop() should accept a numeric default.");
+            ((RenPyParser.Images.IApply)lines[0]).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("count_value", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 7f) < 0.001f,
+                "pop() should return a numeric default when the key is missing.");
+
+            Check(VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "nullable_value = settings.pop(\"missing_nullable\", None)",
+                    sourcePath, 13, out lines),
+                "pop() should accept None as a default.");
+            ((RenPyParser.Images.IApply)lines[0]).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("nullable_value", out observed) && observed == null,
+                "pop() should assign None when the key is missing and its default is None.");
+
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "settings.pop(\"missing\", fallback)", sourcePath, 20, out lines),
+                "pop() should reject variable defaults in this restricted implementation.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "settings.pop(\"missing\", \"a\", \"b\")", sourcePath, 21, out lines),
+                "pop() should reject more than two arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "settings.pop(key_name, \"fallback\")", sourcePath, 22, out lines),
+                "pop() should continue to require a quoted string key.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "settings[\"nested\"].pop(\"missing\", \"fallback\")",
+                    sourcePath, 23, out lines),
+                "pop() should reject indexed targets.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "settings.pop(\"missing\", \"fallback\"); settings.clear()",
+                    sourcePath, 24, out lines),
+                "pop() should reject multiple statements.");
+
+            var statements = Parse(
+                "label dictionary_pop_default_test:\n" +
+                "    $ missing_value = settings.pop(\"missing\", \"fallback\")\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing a dictionary pop() with default.");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The pop() with default should parse as a Python statement.").Code ==
+                    "missing_value = settings.pop(\"missing\", \"fallback\")",
+                "The parser should preserve dictionary pop() defaults.");
+        }
+
+        private static void TestDictionaryGetMethod()
+        {
+            const string sourcePath = "dictionary-get-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var settings = new Dictionary<string, object>
+            {
+                { "theme", "dark" },
+                { "count", 5f },
+                { "enabled", true }
+            };
+            context.SetVariable("settings",
+                new SimpleExpressionEngine.DataValue((object)settings));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "theme = settings.get(\"theme\")", sourcePath, 10, out line),
+                "dict.get() without a default should be recognized.");
+            Check(line.GetType().Name == "DictionaryGetLine",
+                "dict.get() should emit the dedicated dictionary-get instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("theme", out observed) &&
+                    Equals(observed, "dark"),
+                "dict.get() should assign the existing value.");
+            Check(settings.Count == 3 && (string)settings["theme"] == "dark",
+                "dict.get() must not mutate the source dictionary.");
+
+            Check(VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "missing = settings.get(\"missing\", \"fallback\")", sourcePath, 11, out line),
+                "dict.get() with a quoted-string default should be recognized.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("missing", out observed) &&
+                    Equals(observed, "fallback"),
+                "dict.get() should assign the default when the key is absent.");
+
+            Check(VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "missing_none = settings.get(\"absent\")", sourcePath, 12, out line),
+                "dict.get() without a default should still support absent keys.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("missing_none", out observed) && observed == null,
+                "An absent key without a default should assign None/null.");
+
+            Check(VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "count_default = settings.get(\"absent\", 7)", sourcePath, 13, out line),
+                "dict.get() should accept a numeric literal default.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("count_default", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 7f) < 0.001f,
+                "dict.get() should preserve a numeric default.");
+
+            Check(VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "enabled_default = settings.get(\"absent\", True)", sourcePath, 14, out line),
+                "dict.get() should accept a boolean default.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("enabled_default", out observed) &&
+                    Equals(observed, true),
+                "dict.get() should preserve a boolean default.");
+
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "theme = settings.get(key_name)", sourcePath, 15, out line),
+                "dict.get() should require a quoted string key in this subset.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "theme = settings.get(\"theme\", fallback)", sourcePath, 16, out line),
+                "dict.get() should reject non-literal defaults in this subset.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "theme = settings.get(\"theme\", \"fallback\", \"extra\")",
+                    sourcePath, 17, out line),
+                "dict.get() should reject more than two arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "theme = settings[\"nested\"].get(\"theme\")", sourcePath, 18, out line),
+                "dict.get() should reject indexed targets.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "theme = settings.get(\"theme\"); settings.clear()", sourcePath, 19, out line),
+                "dict.get() should reject multiple statements.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "settings.get(\"theme\")", sourcePath, 20, out line),
+                "dict.get() must require an assignment target.");
+
+            var statements = Parse(
+                "label dictionary_get_test:\n" +
+                "    $ theme = settings.get(\"theme\")\n" +
+                "    $ fallback = settings.get(\"missing\", \"off\")\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing dictionary get() calls.");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The first get() should parse as a Python statement.").Code ==
+                    "theme = settings.get(\"theme\")",
+                "The parser should preserve dictionary get() assignments.");
+            Check(Require<PythonStatement>(label.Body[1],
+                    "The second get() should parse as a Python statement.").Code ==
+                    "fallback = settings.get(\"missing\", \"off\")",
+                "The parser should preserve dict.get() calls with a default.");
+        }
+
+        private static void TestDictionarySetDefaultMethod()
+        {
+            const string sourcePath = "dictionary-setdefault-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var settings = new Dictionary<string, object>
+            {
+                { "theme", "dark" },
+                { "count", 5f },
+                { "enabled", true }
+            };
+            context.SetVariable("settings",
+                new SimpleExpressionEngine.DataValue((object)settings));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                    "existing = settings.setdefault(\"theme\", \"light\")",
+                    sourcePath, 10, out line),
+                "setdefault() with a string default should be recognized.");
+            Check(line.GetType().Name == "DictionarySetDefaultLine",
+                "setdefault() should emit the dedicated setdefault instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("existing", out observed) &&
+                    Equals(observed, "dark"),
+                "setdefault() should return the existing value.");
+            Check((string)settings["theme"] == "dark" && settings.Count == 3,
+                "setdefault() must not replace or add anything when the key already exists.");
+
+            Check(VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                    "inserted = settings.setdefault(\"accent\", \"blue\")",
+                    sourcePath, 11, out line),
+                "setdefault() should accept a quoted string default.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("inserted", out observed) &&
+                    Equals(observed, "blue"),
+                "setdefault() should return the default for a missing key.");
+            Check(settings.ContainsKey("accent") && Equals(settings["accent"], "blue"),
+                "setdefault() should insert the default for a missing key.");
+
+            Check(VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                    "again = settings.setdefault(\"accent\", \"red\")",
+                    sourcePath, 12, out line),
+                "A repeated setdefault() call should be recognized.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("again", out observed) &&
+                    Equals(observed, "blue") && Equals(settings["accent"], "blue"),
+                "A repeated setdefault() must return the existing value and preserve it.");
+
+            Check(VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                    "number = settings.setdefault(\"new_count\", 7)",
+                    sourcePath, 13, out line),
+                "setdefault() should accept a numeric literal default.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("number", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 7f) < 0.001f &&
+                    Math.Abs(Convert.ToSingle(settings["new_count"]) - 7f) < 0.001f,
+                "A numeric default should be assigned and stored.");
+
+            Check(VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                    "enabled_default = settings.setdefault(\"new_enabled\", True)",
+                    sourcePath, 14, out line),
+                "setdefault() should accept a boolean literal default.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("enabled_default", out observed) &&
+                    Equals(observed, true) && Equals(settings["new_enabled"], true),
+                "A boolean default should be assigned and stored.");
+
+            Check(VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                    "no_default = settings.setdefault(\"nullable\")",
+                    sourcePath, 15, out line),
+                "setdefault() without a default should be recognized.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("no_default", out observed) && observed == null &&
+                    settings.ContainsKey("nullable") && settings["nullable"] == null,
+                "Without a default, setdefault() should insert and return None.");
+
+            Check(!VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                    "value = settings.setdefault(key_name)", sourcePath, 20, out line),
+                "setdefault() should require a quoted string key in this subset.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                    "value = settings.setdefault(\"key\", fallback)", sourcePath, 21, out line),
+                "setdefault() should reject non-literal defaults in this subset.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                    "value = settings.setdefault(\"key\", \"one\", \"two\")",
+                    sourcePath, 22, out line),
+                "setdefault() should reject more than two arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                    "value = settings[\"nested\"].setdefault(\"key\")",
+                    sourcePath, 23, out line),
+                "setdefault() should reject indexed targets.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                    "value = settings.setdefault(\"key\"); settings.clear()",
+                    sourcePath, 24, out line),
+                "setdefault() should reject multiple statements.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                    "settings.setdefault(\"theme\")", sourcePath, 25, out line),
+                "This restricted setdefault() feature must require an assignment target.");
+
+            var statements = Parse(
+                "label dictionary_setdefault_test:\n" +
+                "    $ existing = settings.setdefault(\"theme\", \"light\")\n" +
+                "    $ inserted = settings.setdefault(\"accent\", \"blue\")\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing dictionary setdefault() assignments.");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The existing-key call should parse as a Python statement.").Code ==
+                    "existing = settings.setdefault(\"theme\", \"light\")",
+                "The parser should preserve setdefault() assignments.");
+            Check(Require<PythonStatement>(label.Body[1],
+                    "The missing-key call should parse as a Python statement.").Code ==
+                    "inserted = settings.setdefault(\"accent\", \"blue\")",
+                "The parser should preserve setdefault() assignments with defaults.");
+        }
+
+        private static void TestDictionaryCopyMethod()
+        {
+            const string sourcePath = "dictionary-copy-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var settings = new Dictionary<string, object>
+            {
+                { "theme", "dark" },
+                { "count", 5f },
+                { "enabled", true }
+            };
+            context.SetVariable("settings",
+                new SimpleExpressionEngine.DataValue((object)settings));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateDictionaryCopyLine(
+                    "copied = settings.copy()", sourcePath, 10, out line),
+                "settings.copy() assignment should be recognized.");
+            Check(line.GetType().Name == "DictionaryCopyLine",
+                "copy() should emit the dedicated dictionary-copy instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("copied", out observed) &&
+                    observed is Dictionary<string, object>,
+                "copy() should assign a dictionary object.");
+            var copied = (Dictionary<string, object>)observed;
+            Check(!object.ReferenceEquals(settings, copied),
+                "copy() must create a distinct dictionary instance.");
+            Check(copied.Count == settings.Count &&
+                    Equals(copied["theme"], "dark") &&
+                    Math.Abs(Convert.ToSingle(copied["count"]) - 5f) < 0.001f &&
+                    Equals(copied["enabled"], true),
+                "The copy should preserve all source key/value pairs.");
+            copied["theme"] = "light";
+            copied["accent"] = "blue";
+            Check(Equals(settings["theme"], "dark") && !settings.ContainsKey("accent"),
+                "Mutating the copied dictionary must not mutate the original.");
+            Check(settings.Count == 3,
+                "copy() must leave the original dictionary unchanged.");
+
+            var empty = new Dictionary<string, object>();
+            context.SetVariable("empty_settings",
+                new SimpleExpressionEngine.DataValue((object)empty));
+            Check(VariableIndexExpressionLine.TryCreateDictionaryCopyLine(
+                    "empty_copy = empty_settings.copy()", sourcePath, 11, out line),
+                "copy() should work for an empty dictionary.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("empty_copy", out observed) &&
+                    observed is Dictionary<string, object> emptyCopy &&
+                    emptyCopy.Count == 0 && !object.ReferenceEquals(empty, emptyCopy),
+                "Copying an empty dictionary should produce an independent empty dictionary.");
+
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryCopyLine(
+                    "copied = settings.copy(extra)", sourcePath, 20, out line),
+                "copy() should reject arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryCopyLine(
+                    "copied = settings.copy().clear()", sourcePath, 21, out line),
+                "copy() should reject chained calls.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryCopyLine(
+                    "settings.copy()", sourcePath, 22, out line),
+                "The restricted copy() feature must require an assignment target.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryCopyLine(
+                    "copied = settings[\"nested\"].copy()", sourcePath, 23, out line),
+                "copy() should reject indexed targets.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryCopyLine(
+                    "copied = settings.copy(); settings.clear()", sourcePath, 24, out line),
+                "copy() should reject multiple statements.");
+
+            var statements = Parse(
+                "label dictionary_copy_test:\n" +
+                "    $ copied = settings.copy()\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing a dictionary copy assignment.");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The copy call should parse as a Python statement.").Code ==
+                    "copied = settings.copy()",
+                "The parser should preserve dictionary copy assignments.");
+        }
+
+        private static void TestListCopyMethod()
+        {
+            const string sourcePath = "list-copy-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var inventory = new List<object> { "key", "flashlight", 3f, true };
+            context.SetVariable("inventory",
+                new SimpleExpressionEngine.DataValue((object)inventory));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateListCopyLine(
+                    "copied_inventory = inventory.copy()", sourcePath, 3, out line),
+                "inventory.copy() assignment should be recognized.");
+            Check(line.GetType().Name == "ListCopyLine",
+                "copy() should emit a dedicated list-copy instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("copied_inventory", out observed) &&
+                    observed is List<object>,
+                "copy() should assign a list object.");
+            var copied = (List<object>)observed;
+            Check(!object.ReferenceEquals(inventory, copied),
+                "copy() must create a separate list object.");
+            Check(copied.Count == inventory.Count && Equals(copied[0], "key") &&
+                    Equals(copied[1], "flashlight") &&
+                    Math.Abs(Convert.ToSingle(copied[2]) - 3f) < 0.001f &&
+                    Equals(copied[3], true),
+                "copy() should preserve every item and its order.");
+
+            copied[0] = "map";
+            copied.Add("battery");
+            Check(Equals(inventory[0], "key") && inventory.Count == 4,
+                "Mutating the copied list must not mutate the original list.");
+
+            var empty = new List<object>();
+            context.SetVariable("empty_inventory",
+                new SimpleExpressionEngine.DataValue((object)empty));
+            Check(VariableIndexExpressionLine.TryCreateListCopyLine(
+                    "empty_copy = empty_inventory.copy()", sourcePath, 4, out line),
+                "copy() should recognize an empty list.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("empty_copy", out observed) &&
+                    observed is List<object> emptyCopy && emptyCopy.Count == 0 &&
+                    !object.ReferenceEquals(empty, emptyCopy),
+                "Copying an empty list should produce a separate empty list.");
+
+            Check(!VariableIndexExpressionLine.TryCreateListCopyLine(
+                    "copied_inventory = inventory.copy(extra)", sourcePath, 20, out line),
+                "copy() should reject arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateListCopyLine(
+                    "copied_inventory = inventory.copy().reverse()", sourcePath, 21, out line),
+                "copy() should reject chained calls.");
+            Check(!VariableIndexExpressionLine.TryCreateListCopyLine(
+                    "inventory.copy()", sourcePath, 22, out line),
+                "The restricted copy() form should require an assignment target.");
+            Check(!VariableIndexExpressionLine.TryCreateListCopyLine(
+                    "copied_inventory = inventory[0].copy()", sourcePath, 23, out line),
+                "copy() should reject indexed targets.");
+            Check(!VariableIndexExpressionLine.TryCreateListCopyLine(
+                    "copied_inventory = inventory.copy(); inventory.clear()", sourcePath, 24, out line),
+                "copy() should reject multiple statements.");
+
+            var statements = Parse(
+                "label list_copy_test:\n" +
+                "    $ copied_inventory = inventory.copy()\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing list copy().");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The copy call should parse as a Python statement.").Code ==
+                    "copied_inventory = inventory.copy()",
+                "The parser should preserve list copy assignments.");
+        }
+
+        private static void TestListIndexMethod()
+        {
+            const string sourcePath = "list-index-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var inventory = new List<object>
+            {
+                "key", "battery", "battery", "medkit", 2f, 2f, true, null
+            };
+            context.SetVariable("inventory",
+                new SimpleExpressionEngine.DataValue((object)inventory));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "battery_index = inventory.index(\"battery\")", sourcePath, 3, out line),
+                "index() with a string literal should be recognized.");
+            Check(line.GetType().Name == "ListIndexLine",
+                "index() should emit a dedicated list-index instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("battery_index", out observed) &&
+                    Convert.ToInt32(observed) == 1,
+                "index() should return the first matching index, not the later duplicate.");
+
+            Check(VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "number_index = inventory.index(2)", sourcePath, 4, out line),
+                "index() should accept a numeric literal.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("number_index", out observed) &&
+                    Convert.ToInt32(observed) == 4,
+                "index() should locate the first matching numeric scalar.");
+
+            Check(VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "bool_index = inventory.index(True)", sourcePath, 5, out line),
+                "index() should accept a boolean literal.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("bool_index", out observed) &&
+                    Convert.ToInt32(observed) == 6,
+                "index() should distinguish a boolean from numeric values.");
+
+            Check(VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "none_index = inventory.index(None)", sourcePath, 6, out line),
+                "index() should accept None.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("none_index", out observed) &&
+                    Convert.ToInt32(observed) == 7,
+                "index(None) should find the first null entry.");
+
+            Check(VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "start_index = inventory.index(\"battery\", 2)", sourcePath, 7, out line),
+                "index() should support a start position.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("start_index", out observed) &&
+                    Convert.ToInt32(observed) == 2,
+                "index() with start=2 should return the second matching occurrence.");
+
+            Check(VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "stop_index = inventory.index(\"battery\", 0, 2)", sourcePath, 8, out line),
+                "index() should support start and stop positions.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("stop_index", out observed) &&
+                    Convert.ToInt32(observed) == 1,
+                "index() should include start and exclude stop.");
+
+            Check(VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "negative_start_index = inventory.index(\"battery\", -6)", sourcePath, 9, out line),
+                "index() should accept a negative start position.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("negative_start_index", out observed) &&
+                    Convert.ToInt32(observed) == 2,
+                "Negative start positions should be normalized like Python.");
+
+            Check(VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "negative_stop_index = inventory.index(\"battery\", 0, -6)", sourcePath, 10, out line),
+                "index() should accept a negative stop position.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("negative_stop_index", out observed) &&
+                    Convert.ToInt32(observed) == 1,
+                "Negative stop positions should be normalized like Python.");
+
+            context.SetVariable("range_missing_index", new SimpleExpressionEngine.DataValue(77f));
+            GameBridge.TrySetVariableLiteral("range_missing_index", 77f, false, context);
+            Check(VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "range_missing_index = inventory.index(\"battery\", 2, 2)", sourcePath, 11, out line),
+                "index() should recognize an empty search range.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("range_missing_index", out observed) &&
+                    Convert.ToSingle(observed) == 77f,
+                "No match within the requested range should leave the destination unchanged.");
+
+            Check(!VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "bad_start_index = inventory.index(\"battery\", 1.5)", sourcePath, 12, out line),
+                "index() should reject non-integer start positions.");
+            Check(!VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "bad_stop_index = inventory.index(\"battery\", 0, False)", sourcePath, 13, out line),
+                "index() should reject non-integer stop positions.");
+            Check(!VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "bad_range_index = inventory.index(\"battery\", start_at)", sourcePath, 14, out line),
+                "This restricted index() form should reject variable bounds.");
+            Check(!VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "too_many_bounds = inventory.index(\"battery\", 0, 2, 4)", sourcePath, 15, out line),
+                "index() should reject more than three arguments.");
+
+            context.SetVariable("missing_index", new SimpleExpressionEngine.DataValue(77f));
+            GameBridge.TrySetVariableLiteral("missing_index", 77f, false, context);
+            Check(VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "missing_index = inventory.index(\"absent\")", sourcePath, 7, out line),
+                "index() should recognize an absent scalar value.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("missing_index", out observed) &&
+                    Convert.ToSingle(observed) == 77f,
+                "When no item matches, index() should log a warning and leave the destination unchanged.");
+
+            Check(!VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "item_index = inventory.index(item_name)", sourcePath, 20, out line),
+                "This restricted index() implementation should reject variable arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "item_index = inventory.index(\"battery\", \"key\")", sourcePath, 21, out line),
+                "index() should reject more than one argument.");
+            Check(!VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "item_index = inventory[0].index(\"battery\")", sourcePath, 22, out line),
+                "index() should reject indexed targets.");
+            Check(!VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "inventory.index(\"battery\")", sourcePath, 23, out line),
+                "This restricted index() feature should require an assignment target.");
+            Check(!VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "item_index = inventory.index(\"battery\"); inventory.reverse()", sourcePath, 24, out line),
+                "index() should reject multiple statements.");
+
+            var statements = Parse(
+                "label list_index_test:\n" +
+                "    $ battery_index = inventory.index(\"battery\")\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing list index().");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The index() call should parse as a Python statement.").Code ==
+                    "battery_index = inventory.index(\"battery\")",
+                "The parser should preserve list index assignments.");
+        }
+
+        private static void TestMinListBuiltin()
+        {
+            const string sourcePath = "min-list-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+
+            var numbers = new List<object> { 2f, -3f, 4.5f, 0f };
+            context.SetVariable("numbers",
+                new SimpleExpressionEngine.DataValue((object)numbers));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateMinListAssignmentLine(
+                    "lowest = min(numbers)", sourcePath, 3, out line),
+                "min(numbers) assignment should be recognized.");
+            Check(line.GetType().Name == "MinListAssignmentLine",
+                "min() should emit a dedicated minimum-selection instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("lowest", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - (-3f)) < 0.001f,
+                "min() should return the smallest numeric value.");
+            Check(numbers.SequenceEqual(new object[] { 2f, -3f, 4.5f, 0f }),
+                "min() should leave the source list unchanged.");
+
+            // Ren'Py list literals made only of whole numbers may yield integral boxed values.
+            // The bridge should still assign a numeric result consistently as a float.
+            var integerNumbers = new List<object> { 2, -3, 4, 0 };
+            context.SetVariable("integer_numbers",
+                new SimpleExpressionEngine.DataValue((object)integerNumbers));
+            Check(VariableIndexExpressionLine.TryCreateMinListAssignmentLine(
+                    "integer_lowest = min(integer_numbers)", sourcePath, 4, out line),
+                "min() should recognize lists with integral numeric literals.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("integer_lowest", out observed) &&
+                    observed is float integerMinimum &&
+                    Math.Abs(integerMinimum - (-3f)) < 0.001f,
+                "min() should normalize integer-list results to the numeric assignment representation.");
+
+            var strings = new List<object> { "pear", "apple", "Apple", "banana" };
+            context.SetVariable("strings",
+                new SimpleExpressionEngine.DataValue((object)strings));
+            Check(VariableIndexExpressionLine.TryCreateMinListAssignmentLine(
+                    "first_string = min(strings)", sourcePath, 4, out line),
+                "min() should recognize string lists.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("first_string", out observed) &&
+                    Equals(observed, "Apple"),
+                "min() should use ordinal ordering for homogeneous string lists.");
+
+            var singleton = new List<object> { 7f };
+            context.SetVariable("singleton", new SimpleExpressionEngine.DataValue((object)singleton));
+            Check(VariableIndexExpressionLine.TryCreateMinListAssignmentLine(
+                    "single_min = min(singleton)", sourcePath, 5, out line),
+                "min() should recognize one-item lists.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("single_min", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 7f) < 0.001f,
+                "min() of a one-item list should return that item.");
+
+            var mixed = new List<object> { 2f, "three" };
+            context.SetVariable("mixed", new SimpleExpressionEngine.DataValue((object)mixed));
+            context.SetVariable("unchanged_min", new SimpleExpressionEngine.DataValue(77f));
+            GameBridge.TrySetVariableLiteral("unchanged_min", 77f, false, context);
+            Check(VariableIndexExpressionLine.TryCreateMinListAssignmentLine(
+                    "unchanged_min = min(mixed)", sourcePath, 6, out line),
+                "min() should recognize lists with unsupported members.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("unchanged_min", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 77f) < 0.001f,
+                "min() should leave the destination unchanged for mixed lists.");
+
+            var empty = new List<object>();
+            context.SetVariable("empty", new SimpleExpressionEngine.DataValue((object)empty));
+            context.SetVariable("empty_min", new SimpleExpressionEngine.DataValue(55f));
+            GameBridge.TrySetVariableLiteral("empty_min", 55f, false, context);
+            Check(VariableIndexExpressionLine.TryCreateMinListAssignmentLine(
+                    "empty_min = min(empty)", sourcePath, 7, out line),
+                "min() should recognize an empty list call.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("empty_min", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 55f) < 0.001f,
+                "min() on an empty list should leave the destination unchanged.");
+
+            Check(!VariableIndexExpressionLine.TryCreateMinListAssignmentLine(
+                    "lowest = min(numbers, 0)", sourcePath, 20, out line),
+                "min() should reject additional arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateMinListAssignmentLine(
+                    "lowest = min(numbers[0])", sourcePath, 21, out line),
+                "min() should reject indexed source expressions.");
+            Check(!VariableIndexExpressionLine.TryCreateMinListAssignmentLine(
+                    "min(numbers)", sourcePath, 22, out line),
+                "The restricted min() form should require an assignment target.");
+            Check(!VariableIndexExpressionLine.TryCreateMinListAssignmentLine(
+                    "lowest = min(numbers); lowest = 0", sourcePath, 23, out line),
+                "min() should reject multiple statements.");
+
+            var statements = Parse(
+                "label min_list_test:\n" +
+                "    $ lowest = min(numbers)\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing min().");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The min() assignment should parse as a Python statement.").Code ==
+                    "lowest = min(numbers)",
+                "The parser should preserve min() assignments.");
+        }
+
+        private static void TestMaxListBuiltin()
+        {
+            const string sourcePath = "max-list-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+
+            var numbers = new List<object> { 2f, -3f, 4.5f, 0f };
+            context.SetVariable("numbers",
+                new SimpleExpressionEngine.DataValue((object)numbers));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
+                    "highest = max(numbers)", sourcePath, 3, out line),
+                "max(numbers) assignment should be recognized.");
+            Check(line.GetType().Name == "MaxListAssignmentLine",
+                "max() should emit a dedicated maximum-selection instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("highest", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 4.5f) < 0.001f,
+                "max() should return the largest numeric value.");
+            Check(numbers.SequenceEqual(new object[] { 2f, -3f, 4.5f, 0f }),
+                "max() should leave the source list unchanged.");
+
+            // Ren'Py list literals made only of whole numbers may yield integral boxed values.
+            // The bridge should still assign a numeric result consistently as a float.
+            var integerNumbers = new List<object> { 2, -3, 4, 0 };
+            context.SetVariable("integer_numbers",
+                new SimpleExpressionEngine.DataValue((object)integerNumbers));
+            Check(VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
+                    "integer_highest = max(integer_numbers)", sourcePath, 4, out line),
+                "max() should recognize lists with integral numeric literals.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("integer_highest", out observed) &&
+                    observed is float integerMaximum &&
+                    Math.Abs(integerMaximum - 4f) < 0.001f,
+                "max() should normalize integer-list results to the numeric assignment representation.");
+
+            var strings = new List<object> { "pear", "apple", "Apple", "banana" };
+            context.SetVariable("strings",
+                new SimpleExpressionEngine.DataValue((object)strings));
+            Check(VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
+                    "last_string = max(strings)", sourcePath, 4, out line),
+                "max() should recognize string lists.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("last_string", out observed) &&
+                    Equals(observed, "pear"),
+                "max() should use ordinal ordering for homogeneous string lists.");
+
+            var singleton = new List<object> { 7f };
+            context.SetVariable("singleton", new SimpleExpressionEngine.DataValue((object)singleton));
+            Check(VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
+                    "single_max = max(singleton)", sourcePath, 5, out line),
+                "max() should recognize one-item lists.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("single_max", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 7f) < 0.001f,
+                "max() of a one-item list should return that item.");
+
+            var mixed = new List<object> { 2f, "three" };
+            context.SetVariable("mixed", new SimpleExpressionEngine.DataValue((object)mixed));
+            context.SetVariable("unchanged_max", new SimpleExpressionEngine.DataValue(77f));
+            GameBridge.TrySetVariableLiteral("unchanged_max", 77f, false, context);
+            Check(VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
+                    "unchanged_max = max(mixed)", sourcePath, 6, out line),
+                "max() should recognize lists with unsupported members.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("unchanged_max", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 77f) < 0.001f,
+                "max() should leave the destination unchanged for mixed lists.");
+
+            var empty = new List<object>();
+            context.SetVariable("empty", new SimpleExpressionEngine.DataValue((object)empty));
+            context.SetVariable("empty_max", new SimpleExpressionEngine.DataValue(55f));
+            GameBridge.TrySetVariableLiteral("empty_max", 55f, false, context);
+            Check(VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
+                    "empty_max = max(empty)", sourcePath, 7, out line),
+                "max() should recognize an empty list call.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("empty_max", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 55f) < 0.001f,
+                "max() on an empty list should leave the destination unchanged.");
+
+            Check(!VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
+                    "highest = max(numbers, 0)", sourcePath, 20, out line),
+                "max() should reject additional arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
+                    "highest = max(numbers[0])", sourcePath, 21, out line),
+                "max() should reject indexed source expressions.");
+            Check(!VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
+                    "max(numbers)", sourcePath, 22, out line),
+                "The restricted max() form should require an assignment target.");
+            Check(!VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
+                    "highest = max(numbers); highest = 0", sourcePath, 23, out line),
+                "max() should reject multiple statements.");
+
+            var statements = Parse(
+                "label max_list_test:\n" +
+                "    $ highest = max(numbers)\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing max().");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The max() assignment should parse as a Python statement.").Code ==
+                    "highest = max(numbers)",
+                "The parser should preserve max() assignments.");
+        }
+
+        private static void TestAnyListBuiltin()
+        {
+            const string sourcePath = "any-list-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+
+            var mixed = new List<object> { false, 0, "", "active", 0f };
+            context.SetVariable("mixed", new SimpleExpressionEngine.DataValue((object)mixed));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateAnyListAssignmentLine(
+                    "found = any(mixed)", sourcePath, 3, out line),
+                "any(mixed) assignment should be recognized.");
+            Check(line.GetType().Name == "AnyListAssignmentLine",
+                "any() should emit a dedicated truthiness instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("found", out observed) &&
+                    observed is bool found && found,
+                "any() should return true when any supported scalar is truthy.");
+            Check(mixed.SequenceEqual(new object[] { false, 0, "", "active", 0f }),
+                "any() should leave the source list unchanged.");
+
+            var falseValues = new List<object> { false, 0, 0f, "", null };
+            context.SetVariable("false_values",
+                new SimpleExpressionEngine.DataValue((object)falseValues));
+            Check(VariableIndexExpressionLine.TryCreateAnyListAssignmentLine(
+                    "has_truthy = any(false_values)", sourcePath, 4, out line),
+                "any() should recognize scalar lists containing only falsey values.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("has_truthy", out observed) &&
+                    observed is bool noTruthy && !noTruthy,
+                "any() should return false if every item is falsey.");
+
+            var empty = new List<object>();
+            context.SetVariable("empty", new SimpleExpressionEngine.DataValue((object)empty));
+            Check(VariableIndexExpressionLine.TryCreateAnyListAssignmentLine(
+                    "empty_any = any(empty)", sourcePath, 5, out line),
+                "any() should recognize an empty list.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("empty_any", out observed) &&
+                    observed is bool emptyResult && !emptyResult,
+                "any() of an empty list should return false.");
+
+            var singleton = new List<object> { "x" };
+            context.SetVariable("singleton", new SimpleExpressionEngine.DataValue((object)singleton));
+            Check(VariableIndexExpressionLine.TryCreateAnyListAssignmentLine(
+                    "single_any = any(singleton)", sourcePath, 6, out line),
+                "any() should recognize one-item lists.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("single_any", out observed) &&
+                    observed is bool singleResult && singleResult,
+                "any() should return true for a one-item truthy list.");
+
+            var unsupported = new List<object> { 0, new object() };
+            context.SetVariable("unsupported", new SimpleExpressionEngine.DataValue((object)unsupported));
+            context.SetVariable("preserved_any", new SimpleExpressionEngine.DataValue(true));
+            GameBridge.TrySetVariableLiteral("preserved_any", true, false, context);
+            Check(VariableIndexExpressionLine.TryCreateAnyListAssignmentLine(
+                    "preserved_any = any(unsupported)", sourcePath, 7, out line),
+                "any() should recognize lists with unsupported items before runtime validation.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("preserved_any", out observed) &&
+                    observed is bool preserved && preserved,
+                "any() should leave the destination unchanged when an unsupported item is reached.");
+
+            Check(!VariableIndexExpressionLine.TryCreateAnyListAssignmentLine(
+                    "found = any(mixed, False)", sourcePath, 20, out line),
+                "any() should reject additional arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateAnyListAssignmentLine(
+                    "found = any(mixed[0])", sourcePath, 21, out line),
+                "any() should reject indexed source expressions.");
+            Check(!VariableIndexExpressionLine.TryCreateAnyListAssignmentLine(
+                    "any(mixed)", sourcePath, 22, out line),
+                "The restricted any() form should require an assignment target.");
+            Check(!VariableIndexExpressionLine.TryCreateAnyListAssignmentLine(
+                    "found = any(mixed); found = False", sourcePath, 23, out line),
+                "any() should reject multiple statements.");
+
+            var statements = Parse(
+                "label any_list_test:\n" +
+                "    $ found = any(mixed)\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing any().");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The any() assignment should parse as a Python statement.").Code ==
+                    "found = any(mixed)",
+                "The parser should preserve any() assignments.");
+        }
+
+        private static void TestAllListBuiltin()
+        {
+            const string sourcePath = "all-list-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+
+            var truthyValues = new List<object> { true, 1, "active", 2f };
+            context.SetVariable("truthy_values", new SimpleExpressionEngine.DataValue((object)truthyValues));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateAllListAssignmentLine(
+                    "all_truthy = all(truthy_values)", sourcePath, 3, out line),
+                "all(truthy_values) assignment should be recognized.");
+            Check(line.GetType().Name == "AllListAssignmentLine",
+                "all() should emit a dedicated truthiness instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("all_truthy", out observed) &&
+                    observed is bool everyTruthy && everyTruthy,
+                "all() should return true when every supported scalar is truthy.");
+            Check(truthyValues.SequenceEqual(new object[] { true, 1, "active", 2f }),
+                "all() should leave the source list unchanged.");
+
+            var falseyValues = new List<object> { true, 1, 0, new object() };
+            context.SetVariable("falsey_values",
+                new SimpleExpressionEngine.DataValue((object)falseyValues));
+            Check(VariableIndexExpressionLine.TryCreateAllListAssignmentLine(
+                    "all_values = all(falsey_values)", sourcePath, 4, out line),
+                "all() should recognize lists that contain a falsey value.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("all_values", out observed) &&
+                    observed is bool notAll && !notAll,
+                "all() should short-circuit to false at the first falsey value.");
+
+            var empty = new List<object>();
+            context.SetVariable("empty", new SimpleExpressionEngine.DataValue((object)empty));
+            Check(VariableIndexExpressionLine.TryCreateAllListAssignmentLine(
+                    "empty_all = all(empty)", sourcePath, 5, out line),
+                "all() should recognize an empty list.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("empty_all", out observed) &&
+                    observed is bool emptyResult && emptyResult,
+                "all() of an empty list should return true.");
+
+            var singleton = new List<object> { "x" };
+            context.SetVariable("singleton",
+                new SimpleExpressionEngine.DataValue((object)singleton));
+            Check(VariableIndexExpressionLine.TryCreateAllListAssignmentLine(
+                    "single_all = all(singleton)", sourcePath, 6, out line),
+                "all() should recognize one-item lists.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("single_all", out observed) &&
+                    observed is bool singleResult && singleResult,
+                "all() should return true for a one-item truthy list.");
+
+            var unsupported = new List<object> { new object(), true };
+            context.SetVariable("unsupported", new SimpleExpressionEngine.DataValue((object)unsupported));
+            context.SetVariable("preserved_all", new SimpleExpressionEngine.DataValue(true));
+            GameBridge.TrySetVariableLiteral("preserved_all", true, false, context);
+            Check(VariableIndexExpressionLine.TryCreateAllListAssignmentLine(
+                    "preserved_all = all(unsupported)", sourcePath, 7, out line),
+                "all() should recognize lists with unsupported members.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("preserved_all", out observed) &&
+                    observed is bool preserved && preserved,
+                "all() should leave the destination unchanged when a list item is unsupported.");
+
+            Check(!VariableIndexExpressionLine.TryCreateAllListAssignmentLine(
+                    "all_truthy = all(truthy_values, True)", sourcePath, 20, out line),
+                "all() should reject additional arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateAllListAssignmentLine(
+                    "all_truthy = all(truthy_values[0])", sourcePath, 21, out line),
+                "all() should reject indexed source expressions.");
+            Check(!VariableIndexExpressionLine.TryCreateAllListAssignmentLine(
+                    "all(truthy_values)", sourcePath, 22, out line),
+                "The restricted all() form should require an assignment target.");
+            Check(!VariableIndexExpressionLine.TryCreateAllListAssignmentLine(
+                    "all_truthy = all(truthy_values); all_truthy = False", sourcePath, 23, out line),
+                "all() should reject multiple statements.");
+
+            var statements = Parse(
+                "label all_list_test:\n" +
+                "    $ all_truthy = all(truthy_values)\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing all().");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The all() assignment should parse as a Python statement.").Code ==
+                    "all_truthy = all(truthy_values)",
+                "The parser should preserve all() assignments.");
+        }
+
+        private static void TestSumListBuiltin()
+        {
+            const string sourcePath = "sum-list-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+
+            var numbers = new List<object> { 2f, 3f, -1f, 4.5f };
+            context.SetVariable("numbers",
+                new SimpleExpressionEngine.DataValue((object)numbers));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateSumListAssignmentLine(
+                    "total = sum(numbers)", sourcePath, 3, out line),
+                "sum(numbers) assignment should be recognized.");
+            Check(line.GetType().Name == "SumListAssignmentLine",
+                "sum() should emit a dedicated list-sum instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("total", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 8.5f) < 0.001f,
+                "sum() should add numeric list values.");
+            Check(numbers.SequenceEqual(new object[] { 2f, 3f, -1f, 4.5f }),
+                "sum() should leave the source list unchanged.");
+
+            var empty = new List<object>();
+            context.SetVariable("empty_numbers",
+                new SimpleExpressionEngine.DataValue((object)empty));
+            Check(VariableIndexExpressionLine.TryCreateSumListAssignmentLine(
+                    "empty_total = sum(empty_numbers)", sourcePath, 4, out line),
+                "sum() should recognize an empty list.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("empty_total", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed)) < 0.001f,
+                "sum() of an empty list should return numeric zero.");
+
+            var integers = new List<object> { 1, 2, 3 };
+            context.SetVariable("integer_numbers",
+                new SimpleExpressionEngine.DataValue((object)integers));
+            Check(VariableIndexExpressionLine.TryCreateSumListAssignmentLine(
+                    "integer_total = sum(integer_numbers)", sourcePath, 5, out line),
+                "sum() should accept integral scalar types.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("integer_total", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 6f) < 0.001f,
+                "sum() should total integral values.");
+
+            var mixed = new List<object> { 2f, "three" };
+            context.SetVariable("mixed", new SimpleExpressionEngine.DataValue((object)mixed));
+            context.SetVariable("unchanged_total", new SimpleExpressionEngine.DataValue(77f));
+            GameBridge.TrySetVariableLiteral("unchanged_total", 77f, false, context);
+            Check(VariableIndexExpressionLine.TryCreateSumListAssignmentLine(
+                    "unchanged_total = sum(mixed)", sourcePath, 6, out line),
+                "sum() should recognize a list even if it has unsupported members.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("unchanged_total", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 77f) < 0.001f,
+                "sum() should leave the destination unchanged for unsupported list items.");
+
+            Check(!VariableIndexExpressionLine.TryCreateSumListAssignmentLine(
+                    "total = sum(numbers, 10)", sourcePath, 20, out line),
+                "The restricted sum() form should reject extra arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateSumListAssignmentLine(
+                    "total = sum(numbers[0])", sourcePath, 21, out line),
+                "sum() should reject indexed source expressions.");
+            Check(!VariableIndexExpressionLine.TryCreateSumListAssignmentLine(
+                    "sum(numbers)", sourcePath, 22, out line),
+                "The restricted sum() form should require an assignment target.");
+            Check(!VariableIndexExpressionLine.TryCreateSumListAssignmentLine(
+                    "total = sum(numbers); total = 0", sourcePath, 23, out line),
+                "sum() should reject multiple statements.");
+
+            var statements = Parse(
+                "label sum_list_test:\n" +
+                "    $ total = sum(numbers)\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing sum().");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The sum() assignment should parse as a Python statement.").Code ==
+                    "total = sum(numbers)",
+                "The parser should preserve sum() assignments.");
+        }
+
+        private static void TestSortedListBuiltin()
+        {
+            const string sourcePath = "sorted-builtin-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var inventory = new List<object> { "pear", "apple", "banana", "Apple" };
+            context.SetVariable("inventory",
+                new SimpleExpressionEngine.DataValue((object)inventory));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "sorted_inventory = sorted(inventory)", sourcePath, 3, out line),
+                "sorted(inventory) assignment should be recognized.");
+            Check(line.GetType().Name == "SortedListAssignmentLine",
+                "sorted() should emit a dedicated sorted-list instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("sorted_inventory", out observed) &&
+                    observed is List<object>,
+                "sorted() should assign a list object.");
+            var sorted = (List<object>)observed;
+            Check(sorted.SequenceEqual(new object[] { "Apple", "apple", "banana", "pear" }),
+                "sorted() should sort strings by ordinal ascending order.");
+            Check(!object.ReferenceEquals(inventory, sorted),
+                "sorted() should return a new list, not the source list.");
+            Check(inventory.SequenceEqual(new object[] { "pear", "apple", "banana", "Apple" }),
+                "sorted() must leave the source list unchanged.");
+
+            Check(VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "reverse_sorted_inventory = sorted(inventory, reverse=True)", sourcePath, 4, out line),
+                "sorted(inventory, reverse=True) should be recognized.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("reverse_sorted_inventory", out observed) &&
+                    observed is List<object> reverseSorted &&
+                    reverseSorted.SequenceEqual(new object[] { "pear", "banana", "apple", "Apple" }),
+                "sorted(reverse=True) should sort strings in descending ordinal order.");
+            Check(inventory.SequenceEqual(new object[] { "pear", "apple", "banana", "Apple" }),
+                "Descending sorted() must leave the source list unchanged.");
+
+            var numbers = new List<object> { 9f, -2f, 3f, 0f };
+            context.SetVariable("numbers",
+                new SimpleExpressionEngine.DataValue((object)numbers));
+            Check(VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "sorted_numbers = sorted(numbers)", sourcePath, 4, out line),
+                "sorted() should accept a numeric list.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("sorted_numbers", out observed) &&
+                    observed is List<object> sortedNumbers &&
+                    sortedNumbers.SequenceEqual(new object[] { -2f, 0f, 3f, 9f }),
+                "sorted() should return ascending numeric order.");
+
+            Check(VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "reverse_sorted_numbers = sorted(numbers, reverse=True)", sourcePath, 5, out line),
+                "sorted(numbers, reverse=True) should recognize numeric lists.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("reverse_sorted_numbers", out observed) &&
+                    observed is List<object> reverseSortedNumbers &&
+                    reverseSortedNumbers.SequenceEqual(new object[] { 9f, 3f, 0f, -2f }),
+                "sorted(reverse=True) should return descending numeric order.");
+
+            Check(VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "false_sorted_numbers = sorted(numbers, reverse=False)", sourcePath, 6, out line),
+                "sorted(reverse=False) should be recognized.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("false_sorted_numbers", out observed) &&
+                    observed is List<object> falseSortedNumbers &&
+                    falseSortedNumbers.SequenceEqual(new object[] { -2f, 0f, 3f, 9f }),
+                "sorted(reverse=False) should return ascending numeric order.");
+
+            var mixed = new List<object> { "battery", 2f };
+            context.SetVariable("mixed",
+                new SimpleExpressionEngine.DataValue((object)mixed));
+            context.SetVariable("mixed_sorted",
+                new SimpleExpressionEngine.DataValue(77f));
+            GameBridge.TrySetVariableLiteral("mixed_sorted", 77f, false, context);
+            Check(VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "mixed_sorted = sorted(mixed)", sourcePath, 5, out line),
+                "sorted() should recognize a named list with unsupported items.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("mixed_sorted", out observed) &&
+                    Convert.ToSingle(observed) == 77f,
+                "Unsupported mixed lists should leave the destination unchanged.");
+            Check(mixed.SequenceEqual(new object[] { "battery", 2f }),
+                "Unsupported mixed lists should leave the source unchanged.");
+
+            var empty = new List<object>();
+            context.SetVariable("empty_inventory",
+                new SimpleExpressionEngine.DataValue((object)empty));
+            Check(VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "sorted_empty = sorted(empty_inventory)", sourcePath, 6, out line),
+                "sorted() should recognize an empty list.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("sorted_empty", out observed) &&
+                    observed is List<object> emptySorted && emptySorted.Count == 0,
+                "sorted() on an empty list should return a new empty list.");
+
+            Check(!VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "sorted_inventory = sorted(inventory, reverse=1)", sourcePath, 20, out line),
+                "sorted() should reject non-boolean reverse values.");
+            Check(!VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "sorted_inventory = sorted(inventory, reverse=descending)", sourcePath, 21, out line),
+                "sorted() should reject variable reverse values.");
+            Check(!VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "sorted_inventory = sorted(inventory, unknown=True)", sourcePath, 22, out line),
+                "sorted() should reject unknown keyword arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "sorted_inventory = sorted(inventory, True)", sourcePath, 23, out line),
+                "sorted() should reject positional arguments after the list.");
+            Check(!VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "sorted_inventory = sorted(inventory, reverse=True, reverse=False)", sourcePath, 24, out line),
+                "sorted() should reject multiple keyword arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "sorted_inventory = sorted(inventory, other_list)", sourcePath, 21, out line),
+                "sorted() should reject additional arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "sorted_inventory = sorted(inventory[0])", sourcePath, 22, out line),
+                "sorted() should reject indexed source expressions.");
+            Check(!VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "sorted(inventory)", sourcePath, 23, out line),
+                "The restricted sorted() form should require an assignment target.");
+            Check(!VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "sorted_inventory = sorted(inventory); inventory.clear()", sourcePath, 24, out line),
+                "sorted() should reject multiple statements.");
+
+            var statements = Parse(
+                "label sorted_builtin_test:\n" +
+                "    $ sorted_inventory = sorted(inventory)\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing sorted().");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The sorted() assignment should parse as a Python statement.").Code ==
+                    "sorted_inventory = sorted(inventory)",
+                "The parser should preserve sorted() assignments.");
+        }
+
+        private static void TestListSortMethod()
+        {
+            const string sourcePath = "list-sort-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var inventory = new List<object> { "pear", "apple", "banana", "Apple" };
+            context.SetVariable("inventory",
+                new SimpleExpressionEngine.DataValue((object)inventory));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateListSortLine(
+                    "inventory.sort()", sourcePath, 3, out line),
+                "inventory.sort() should be recognized.");
+            Check(line.GetType().Name == "ListSortLine",
+                "sort() should emit the dedicated list-sort instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(inventory.SequenceEqual(new object[] { "Apple", "apple", "banana", "pear" }),
+                "sort() should sort strings in ordinal ascending order.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(inventory.SequenceEqual(new object[] { "Apple", "apple", "banana", "pear" }),
+                "Sorting an already sorted list should preserve its order.");
+
+            var numbers = new List<object> { 9f, -2f, 3f, 0f };
+            context.SetVariable("numbers",
+                new SimpleExpressionEngine.DataValue((object)numbers));
+            Check(VariableIndexExpressionLine.TryCreateListSortLine(
+                    "numbers.sort()", sourcePath, 4, out line),
+                "numbers.sort() should be recognized.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(numbers.SequenceEqual(new object[] { -2f, 0f, 3f, 9f }),
+                "sort() should sort numeric values in ascending order.");
+
+            var descendingStrings = new List<object> { "pear", "apple", "banana" };
+            context.SetVariable("descending_strings",
+                new SimpleExpressionEngine.DataValue((object)descendingStrings));
+            Check(VariableIndexExpressionLine.TryCreateListSortLine(
+                    "descending_strings.sort(reverse=True)", sourcePath, 5, out line),
+                "sort(reverse=True) should be recognized.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(descendingStrings.SequenceEqual(new object[] { "pear", "banana", "apple" }),
+                "sort(reverse=True) should sort strings in descending ordinal order.");
+
+            var descendingNumbers = new List<object> { 9f, -2f, 3f, 0f };
+            context.SetVariable("descending_numbers",
+                new SimpleExpressionEngine.DataValue((object)descendingNumbers));
+            Check(VariableIndexExpressionLine.TryCreateListSortLine(
+                    "descending_numbers.sort(reverse=True)", sourcePath, 6, out line),
+                "sort(reverse=True) should accept numeric lists.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(descendingNumbers.SequenceEqual(new object[] { 9f, 3f, 0f, -2f }),
+                "sort(reverse=True) should sort numeric values in descending order.");
+
+            Check(VariableIndexExpressionLine.TryCreateListSortLine(
+                    "descending_numbers.sort(reverse=False)", sourcePath, 7, out line),
+                "sort(reverse=False) should be recognized.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(descendingNumbers.SequenceEqual(new object[] { -2f, 0f, 3f, 9f }),
+                "sort(reverse=False) should preserve ascending ordering.");
+
+            var mixed = new List<object> { "battery", 2f };
+            context.SetVariable("mixed",
+                new SimpleExpressionEngine.DataValue((object)mixed));
+            Check(VariableIndexExpressionLine.TryCreateListSortLine(
+                    "mixed.sort()", sourcePath, 5, out line),
+                "sort() should recognize a list even when its values are unsupported.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(mixed.SequenceEqual(new object[] { "battery", 2f }),
+                "Unsupported mixed-type lists should remain unchanged.");
+
+            var empty = new List<object>();
+            context.SetVariable("empty_inventory",
+                new SimpleExpressionEngine.DataValue((object)empty));
+            Check(VariableIndexExpressionLine.TryCreateListSortLine(
+                    "empty_inventory.sort()", sourcePath, 6, out line),
+                "sort() should recognize empty lists.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(empty.Count == 0, "Sorting an empty list should be a no-op.");
+
+            Check(!VariableIndexExpressionLine.TryCreateListSortLine(
+                    "inventory.sort(reverse=1)", sourcePath, 20, out line),
+                "sort() should reject non-boolean reverse values.");
+            Check(!VariableIndexExpressionLine.TryCreateListSortLine(
+                    "inventory.sort(reverse=descending)", sourcePath, 21, out line),
+                "sort() should reject variable reverse values.");
+            Check(!VariableIndexExpressionLine.TryCreateListSortLine(
+                    "inventory.sort(unknown=True)", sourcePath, 22, out line),
+                "sort() should reject unknown keyword arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateListSortLine(
+                    "inventory.sort(True)", sourcePath, 23, out line),
+                "sort() should reject positional arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateListSortLine(
+                    "inventory.sort(reverse=True, reverse=False)", sourcePath, 24, out line),
+                "sort() should reject multiple keyword arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateListSortLine(
+                    "inventory[0].sort()", sourcePath, 21, out line),
+                "sort() should reject indexed targets.");
+            Check(!VariableIndexExpressionLine.TryCreateListSortLine(
+                    "item = inventory.sort()", sourcePath, 22, out line),
+                "This sort() feature should require a direct no-argument call.");
+            Check(!VariableIndexExpressionLine.TryCreateListSortLine(
+                    "inventory.sort(); inventory.reverse()", sourcePath, 23, out line),
+                "sort() should reject multiple statements.");
+
+            var statements = Parse(
+                "label list_sort_test:\n" +
+                "    $ inventory.sort()\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing list sort().");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The sort call should parse as a Python statement.").Code == "inventory.sort()",
+                "The parser should preserve list sort calls.");
+        }
+
+        private static void TestListCountMethod()
+        {
+            const string sourcePath = "list-count-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var inventory = new List<object>
+            {
+                "battery", "key", "battery", "battery", 2f, 2f, true, null
+            };
+            context.SetVariable("inventory",
+                new SimpleExpressionEngine.DataValue((object)inventory));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateListCountLine(
+                    "battery_count = inventory.count(\"battery\")", sourcePath, 3, out line),
+                "count() with a string literal should be recognized.");
+            Check(line.GetType().Name == "ListCountLine",
+                "count() should emit a dedicated list-count instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("battery_count", out observed) &&
+                    Convert.ToInt32(observed) == 3,
+                "count() should count every matching string occurrence.");
+
+            Check(VariableIndexExpressionLine.TryCreateListCountLine(
+                    "number_count = inventory.count(2)", sourcePath, 4, out line),
+                "count() should accept a numeric literal.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("number_count", out observed) &&
+                    Convert.ToInt32(observed) == 2,
+                "count() should compare numeric scalars by value.");
+
+            Check(VariableIndexExpressionLine.TryCreateListCountLine(
+                    "true_count = inventory.count(True)", sourcePath, 5, out line),
+                "count() should accept a boolean literal.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("true_count", out observed) &&
+                    Convert.ToInt32(observed) == 1,
+                "count() should distinguish booleans from numeric values.");
+
+            Check(VariableIndexExpressionLine.TryCreateListCountLine(
+                    "none_count = inventory.count(None)", sourcePath, 6, out line),
+                "count() should accept None.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("none_count", out observed) &&
+                    Convert.ToInt32(observed) == 1,
+                "count(None) should count null entries.");
+
+            Check(VariableIndexExpressionLine.TryCreateListCountLine(
+                    "absent_count = inventory.count(\"absent\")", sourcePath, 7, out line),
+                "count() should recognize a value not present in the list.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("absent_count", out observed) &&
+                    Convert.ToInt32(observed) == 0,
+                "count() should return zero when no elements match.");
+
+            Check(!VariableIndexExpressionLine.TryCreateListCountLine(
+                    "value_count = inventory.count(value_name)", sourcePath, 20, out line),
+                "This restricted count() implementation should reject variable arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateListCountLine(
+                    "value_count = inventory.count(\"battery\", \"key\")", sourcePath, 21, out line),
+                "count() should reject more than one argument.");
+            Check(!VariableIndexExpressionLine.TryCreateListCountLine(
+                    "value_count = inventory[0].count(\"battery\")", sourcePath, 22, out line),
+                "count() should reject indexed targets.");
+            Check(!VariableIndexExpressionLine.TryCreateListCountLine(
+                    "inventory.count(\"battery\")", sourcePath, 23, out line),
+                "This restricted count() feature should require an assignment target.");
+            Check(!VariableIndexExpressionLine.TryCreateListCountLine(
+                    "value_count = inventory.count(\"battery\"); inventory.reverse()", sourcePath, 24, out line),
+                "count() should reject multiple statements.");
+
+            var statements = Parse(
+                "label list_count_test:\n" +
+                "    $ battery_count = inventory.count(\"battery\")\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing list count().");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The count() call should parse as a Python statement.").Code ==
+                    "battery_count = inventory.count(\"battery\")",
+                "The parser should preserve list count assignments.");
+        }
+
+        private static void TestListReverseMethod()
+        {
+            const string sourcePath = "list-reverse-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var inventory = new List<object> { "key", "flashlight", "battery", "medkit" };
+            context.SetVariable("inventory",
+                new SimpleExpressionEngine.DataValue((object)inventory));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateListReverseLine(
+                    "inventory.reverse()", sourcePath, 3, out line),
+                "inventory.reverse() should be recognized.");
+            Check(line.GetType().Name == "ListReverseLine",
+                "reverse() should emit the dedicated list-reverse instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(inventory.SequenceEqual(new object[] { "medkit", "battery", "flashlight", "key" }),
+                "reverse() should reverse the list in place.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(inventory.SequenceEqual(new object[] { "key", "flashlight", "battery", "medkit" }),
+                "Calling reverse() a second time should restore the original order.");
+
+            var empty = new List<object>();
+            context.SetVariable("empty_inventory",
+                new SimpleExpressionEngine.DataValue((object)empty));
+            Check(VariableIndexExpressionLine.TryCreateListReverseLine(
+                    "empty_inventory.reverse()", sourcePath, 4, out line),
+                "reverse() should recognize an empty-list call.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(empty.Count == 0, "Reversing an empty list should leave it empty.");
+
+            Check(!VariableIndexExpressionLine.TryCreateListReverseLine(
+                    "inventory.reverse(1)", sourcePath, 10, out line),
+                "reverse() should reject arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateListReverseLine(
+                    "inventory[0].reverse()", sourcePath, 11, out line),
+                "reverse() should reject indexed targets.");
+            Check(!VariableIndexExpressionLine.TryCreateListReverseLine(
+                    "inventory.reverse().clear()", sourcePath, 12, out line),
+                "reverse() should reject chained calls.");
+            Check(!VariableIndexExpressionLine.TryCreateListReverseLine(
+                    "inventory.reverse(); inventory.clear()", sourcePath, 13, out line),
+                "reverse() should reject multiple statements.");
+            Check(!VariableIndexExpressionLine.TryCreateListReverseLine(
+                    "settings.clear()", sourcePath, 14, out line),
+                "The reverse recognizer must not capture other method names.");
+
+            var statements = Parse(
+                "label list_reverse_test:\n" +
+                "    $ inventory.reverse()\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing a list reverse call.");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The reverse call should parse as a Python statement.").Code == "inventory.reverse()",
+                "The parser should preserve list reverse calls.");
         }
 
         private static void TestListExtendMethod()
@@ -1623,6 +3161,52 @@ namespace StoryAPI.Tests
                 "Expected 'in'");
         }
 
+        private static void TestForReversedListIteration()
+        {
+            const string sourcePath = "reversed-list-test.rpy";
+            var statements = Parse(
+                "label reversed_list_test:\n" +
+                "    for item in reversed(inventory):\n" +
+                "        pass\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0], "Expected reversed-list label.");
+            var loop = Require<ForStatement>(label.Body[0], "Expected reversed-list loop.");
+            Check(loop.IsReversed && loop.Collection == "inventory" && !loop.IsRange,
+                "reversed(inventory) should be represented as reverse iteration over inventory.");
+
+            ExpectSyntaxError(
+                "label reversed_two_names:\n" +
+                "    for key, value in reversed(inventory):\n" +
+                "        pass\n",
+                "one loop variable");
+
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var values = new List<object> { 1f, 2f, 3f };
+            context.SetVariable("inventory", new SimpleExpressionEngine.DataValue((object)values));
+
+            RenPyParser.Line preparation;
+            Check(VariableIndexExpressionLine.TryCreateForEachPreparationLine(
+                    "inventory", "_stage40_items", false, false, false, true,
+                    sourcePath, 5, out preparation),
+                "The runtime should create a reversed-list preparation line.");
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
+
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("_stage40_items", out observed) &&
+                    observed is List<object>,
+                "reversed() should prepare an iterable list snapshot.");
+            var prepared = (List<object>)observed;
+            Check(prepared.SequenceEqual(new object[] { 3f, 2f, 1f }),
+                "reversed() iteration should visit list elements from last to first.");
+            Check(values.SequenceEqual(new object[] { 1f, 2f, 3f }),
+                "reversed() iteration must not mutate the source list.");
+
+            Check(!VariableIndexExpressionLine.TryCreateForEachPreparationLine(
+                    "settings", "_stage40_invalid", true, false, false, true,
+                    sourcePath, 6, out preparation),
+                "reversed() should not be combined with a dictionary-items iteration mode.");
+        }
+
         private static void TestForDictionaryIteration()
         {
             var statements = Parse(
@@ -1797,6 +3381,62 @@ namespace StoryAPI.Tests
             Check(GameBridge.TryGetLastTestLiteral("value", out observedValue) &&
                     Equals(observedValue, prepared[1]),
                 "The second iteration should assign the next snapshotted value.");
+        }
+
+        private static void TestForDictionaryKeysMethodIteration()
+        {
+            var statements = Parse(
+                "label for_dict_keys_method_test:\n" +
+                "    for key in settings.keys():\n" +
+                "        pass\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0], "Expected dictionary-keys label.");
+            var loop = Require<ForStatement>(label.Body[0], "Expected dictionary.keys() loop.");
+            Check(loop.Variable == "key" && loop.ValueVariable == null,
+                "Dictionary.keys() should use a single loop variable.");
+            Check(loop.Collection == "settings" && loop.IsDictionaryKeys &&
+                    !loop.IsDictionaryItems && !loop.IsDictionaryValues && !loop.IsRange,
+                "Dictionary.keys() should be represented as an explicit keys-only loop.");
+
+            ExpectSyntaxError(
+                "label dict_keys_two_names:\n" +
+                "    for key, value in settings.keys():\n" +
+                "        pass\n",
+                "accepts only one loop variable");
+
+            const string sourcePath = "dictionary-keys-runtime-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var settings = new Dictionary<string, object>
+            {
+                { "alpha", 2f },
+                { "beta", 4f }
+            };
+            context.SetVariable("settings", new SimpleExpressionEngine.DataValue((object)settings));
+
+            RenPyParser.Line preparation;
+            Check(VariableIndexExpressionLine.TryCreateForEachPreparationLine(
+                    "settings", "_stage21_keys", false, false, true, sourcePath, 30, out preparation),
+                "The runtime should create a dictionary-keys preparation line.");
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
+
+            object preparedValue;
+            Check(GameBridge.TryGetLastTestLiteral("_stage21_keys", out preparedValue) &&
+                    preparedValue is List<object>,
+                "Dictionary.keys() should snapshot keys into an iterable list.");
+            var prepared = (List<object>)preparedValue;
+            Check(prepared.Count == 2 && prepared.Contains("alpha") && prepared.Contains("beta"),
+                "The key snapshot should contain each dictionary key exactly once.");
+
+            settings["gamma"] = 6f;
+            Check(prepared.Count == 2 && !prepared.Contains("gamma"),
+                "Keys added after preparation must not enter the active snapshot.");
+
+            context.SetVariable("settings",
+                new SimpleExpressionEngine.DataValue((object)new List<object> { "not", "a", "dictionary" }));
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("_stage21_keys", out preparedValue) &&
+                    preparedValue is List<object> rejected && rejected.Count == 0,
+                "dictionary.keys() must not silently iterate a list source.");
         }
 
         private static void TestForRangeIteration()

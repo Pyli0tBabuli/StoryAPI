@@ -166,7 +166,50 @@ the same restricted dynamic scalar indexes supported by reads. Assignment values
 expressions; collection reads on the right-hand side are resolved before the assignment. Compound assignments to simple scalar variables and indexed list/dictionary entries support
 `+=`, `-=`, `*=`, `/=`, and `%=`; their right-hand side may use supported scalar expressions and
 collection index reads. Other compound operators such as `**=`, slices, and assigning a new value
-beyond the end of a list remain unsupported. Lists support one-argument scalar
+beyond the end of a list remain unsupported. The restricted assignment `$ lowest = min(inventory)` selects the smallest scalar from a named list.
+It supports homogeneous string lists (ordinal ordering) and homogeneous numeric lists (numeric ordering).
+The source list is unchanged. Empty lists or mixed/unsupported values log a warning and leave the destination
+unchanged; extra arguments and indexed source expressions are not supported.
+
+The restricted assignment `$ has_active = any(items)` returns `True` when the named list contains a truthy scalar and `False` when it is empty or all supported scalar items are falsey. It supports `None`, booleans, numbers and strings, and leaves the source list unchanged. Nested collections and other unsupported item types log a warning and leave the destination unchanged; extra arguments and indexed source expressions are not supported.
+
+The restricted assignment `$ all_active = all(items)` returns `True` when every supported scalar item is truthy. An empty list also returns `True`, matching Python's `all()` behavior. It supports `None`, booleans, numbers and strings and leaves the source list unchanged. The operation stops at the first falsey item; unsupported item types encountered before that point log a warning and leave the destination unchanged. Extra arguments and indexed source expressions are not supported.
+
+The `sum()`, `min()`, `max()`, `any()`, and `all()` helpers are currently restricted to assignments to a simple variable from a named list. Nested calls, indexed source expressions, and calls without an assignment target are not supported.
+
+The restricted assignment `$ highest = max(inventory)` selects the largest scalar from a named list.
+It supports homogeneous string lists (ordinal ordering) and homogeneous numeric lists (numeric ordering).
+The source list is unchanged. Empty lists or mixed/unsupported values log a warning and leave the destination
+unchanged; extra arguments and indexed source expressions are not supported.
+The restricted assignment `$ total = sum(inventory)` adds values from a named list of numeric scalars
+and assigns the total. An empty list returns `0`. The source list is unchanged. Lists containing
+non-numeric values log a warning and leave the destination unchanged; extra arguments and indexed
+source expressions are not supported.
+The built-in assignment form `$ sorted_inventory = sorted(inventory)` creates a new list; 
+`$ sorted_inventory = sorted(inventory, reverse=True)` sorts it in descending order. Homogeneous
+strings use ordinal ordering and homogeneous numbers use numeric ordering. `reverse` accepts only
+the literal `True` or `False`; `False` is the default. The source list is not modified. Mixed or
+unsupported item types leave the destination unchanged with a warning; additional arguments and
+other keywords are not supported.
+Lists support `$ inventory.sort()` and `$ inventory.sort(reverse=True)`. Sorting is in place:
+homogeneous string lists use ordinal ordering, and homogeneous numeric lists use numeric ordering.
+The optional `reverse` keyword accepts only the literal `True` or `False`; `True` sorts in
+descending order and `False` (the default) sorts in ascending order. Mixed or unsupported item
+types are left unchanged with a warning. Lists also support `$ inventory.reverse()`, which
+reverses the existing list in place and accepts no arguments. Assignment from `$ item_index = inventory.index("battery")` is supported for a quoted string,
+number, `True`, `False`, or `None` literal. Optional integer `start` and `stop` bounds are also
+supported, as in `$ item_index = inventory.index("battery", 1, 4)`; the start is inclusive, stop
+is exclusive, and negative bounds are normalized like Python. If no matching item exists in the
+requested range, StoryAPI logs a warning and leaves the destination unchanged. Variable search
+values, non-integer bounds, indexed targets, and more than three arguments remain unsupported.
+Assignment from
+`$ copied_inventory = inventory.copy()` is supported as a shallow list copy: the new list can
+be changed without adding or removing items in the source list, while nested objects remain shared.
+The call accepts no arguments and requires a simple list variable and assignment target.
+Assignment from `$ battery_count = inventory.count("battery")` is also supported for a quoted string, number,
+`True`, `False`, or `None` literal argument; it counts all matching scalar values and returns zero
+when there are no matches. Variable arguments, indexed targets, and multiple statements are not
+supported by this restricted `count()` form. Lists support one-argument scalar
 method calls `$ inventory.append("battery")` and `$ inventory.remove("key")`; `remove`
 deletes the first matching item. Lists also support `$ inventory.extend(rewards)`, which
 appends the items from another named list in order without changing the source list. The
@@ -176,12 +219,26 @@ to insert a scalar or supported value at an index; indexes are integers, and neg
 indexes are clamped like Python's `list.insert()`. Lists also support `$ item = inventory.pop()`
 and `$ item = inventory.pop(0)`; `pop()` removes the final item by default or the item at the
 provided integer index, and can assign the removed scalar to a variable. Invalid/empty pops log
-a warning without changing the list. Dictionaries support `$ settings.update(overrides)`, which
-adds missing keys and replaces values for keys already present; the argument must be a simple
-variable referring to another dictionary. Dictionaries also support `$ settings.pop("theme")`
-and `$ old_theme = settings.pop("theme")`; this removes the named key and can assign its value
-to a variable. The key must be a quoted string literal, and a missing key logs a warning without
-changing the dictionary. Both lists and dictionaries support the no-argument method
+a warning without changing the list. Dictionaries support scalar assignment from `$ theme = settings.get("theme")` and
+`$ theme = settings.get("missing", "default")`. The key must be a quoted string; an absent key
+returns None unless a simple scalar literal default is provided. Defaults may be strings, numbers,
+`True`, `False`, or `None`; variable defaults and method calls inside expressions are not supported.
+`get()` does not mutate the dictionary. Dictionaries also support scalar assignment from
+`$ copied_settings = settings.copy()`. The call accepts no arguments and makes a shallow copy:
+the returned dictionary can be modified independently, while nested objects (if any) remain shared.
+The source dictionary is not changed by making the copy. Dictionaries also support assignment from
+`$ theme = settings.setdefault("theme", "default")` or `$ theme = settings.setdefault("theme")`.
+The key must be a quoted string; the optional default must be a scalar literal (string, number,
+`True`, `False`, or `None`). When the key exists, `setdefault()` returns its current value
+without replacing it; when absent, it inserts and returns the default, or `None` if no default
+is supplied. This restricted implementation requires an assignment target. Dictionaries also
+support `$ settings.update(overrides)`, which adds missing keys and replaces values for keys
+already present; the argument must be a simple variable referring to another dictionary. Dictionaries also support `$ settings.pop("theme")`,
+`$ old_theme = settings.pop("theme")`, and `$ old_theme = settings.pop("theme", "fallback")`.
+This removes the named key and can assign its value to a variable. The key must be a quoted
+string literal; the optional default must be a scalar literal (string, number, `True`, `False`,
+or `None`). When the key is missing, `pop()` returns the default without modifying the dictionary;
+without a default, a missing key logs a warning. Both lists and dictionaries support the no-argument method
 `$ inventory.clear()` or `$ settings.clear()`, which empties the existing collection in-place.
 Other list/dictionary methods and arbitrary Python calls remain unsupported.
 
@@ -198,14 +255,23 @@ The call is resolved before the native condition is evaluated, and several lengt
 be used in one condition or combined with indexed reads. Other function calls and nested
 forms such as `len(inventory[0])` remain unsupported.
 
+The Python `None` literal is supported in runtime `if`, `elif`, and `while` comparisons,
+for example `if optional_value == None:` and `if optional_value != None:`. Simple variable-to-`None`
+comparisons are evaluated against the runtime `DataValue` representation and rewritten to a
+boolean temporary, avoiding the game's unreliable comparison of `Unknown` values. The word
+`None` inside quoted text is left unchanged.
+
 Within a label, `while`, `for item in inventory:`, `for key in settings:`,
-`for key, value in settings.items():`, `for value in settings.values():`,
-`for i in range(...):`, `break`, `continue`, and `pass` are supported. List loops assign each
-element to the loop variable and support nested conditions and loop control. Dictionary key loops assign
-each key to the loop variable; dictionary value loops assign each value to one variable, and dictionary
-items loops assign each key and matching value to two variables. Dictionary keys, values, and key/value
-pairs are snapshotted at loop entry, so dictionary edits in the loop body do not change the active
-iteration sequence. Range loops support `range(stop)`, `range(start, stop)`,
+`for key in settings.keys():`, `for key, value in settings.items():`, and
+`for value in settings.values():`, `for i in range(...):`, `break`, `continue`, and `pass` are
+supported. List loops assign each element to the loop variable and support nested conditions and loop
+control. Dictionary key loops assign each key to the loop variable; value loops assign each value to one
+variable, and items loops assign each key and matching value to two variables. Dictionary keys, values,
+and key/value pairs are snapshotted at loop entry, so dictionary edits in the loop body do not change the
+active iteration sequence. Explicit `.keys()`, `.values()`, and `.items()` loops require a dictionary.
+Reverse list iteration is available as `for item in reversed(inventory):`; it snapshots the named list
+from last item to first and leaves the source list unchanged. `reversed()` currently accepts only a named
+list and only one loop variable. Range loops support `range(stop)`, `range(start, stop)`,
 and `range(start, stop, step)`, including negative steps and empty ranges. Range arguments are
 evaluated once at loop entry and must resolve to 32-bit integers; a zero step or invalid argument logs
 a warning and skips the loop body. Range iteration does not allocate a list. Other iterable expressions

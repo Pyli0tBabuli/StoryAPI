@@ -456,13 +456,29 @@ namespace StoryAPI.Runtime
                 sourcePath, sourceLine, out lengthLines, out lengthExpression);
 
             string expressionToRewrite = hasLength ? lengthExpression : expressionAfterMembership;
+            List<Line> noneComparisonLines;
+            string expressionWithNoneComparisons;
+            bool hasNoneComparisons = TryRewriteNoneComparisons(expressionToRewrite,
+                temporaryPrefix, sourcePath, sourceLine, out noneComparisonLines,
+                out expressionWithNoneComparisons);
+            if (hasNoneComparisons)
+                expressionToRewrite = expressionWithNoneComparisons;
+
             string rewrittenExpression;
+            string noneVariableName;
+            string expressionWithNone;
+            bool hasNoneLiteral = TryRewriteNoneLiteral(expressionToRewrite, temporaryPrefix,
+                out expressionWithNone, out noneVariableName);
+            if (hasNoneLiteral)
+                expressionToRewrite = expressionWithNone;
+
             List<KeyValuePair<string, string>> indexReads;
             List<KeyValuePair<string, string>> dynamicIndexes;
             bool hasIndexReads = TryRewriteExpression(expressionToRewrite, temporaryPrefix,
                 out rewrittenExpression, out indexReads, out dynamicIndexes);
 
-            if (!hasMembership && !hasLength && !hasIndexReads)
+            if (!hasMembership && !hasLength && !hasIndexReads &&
+                !hasNoneLiteral && !hasNoneComparisons)
                 return false;
 
             if (!hasIndexReads)
@@ -478,10 +494,14 @@ namespace StoryAPI.Runtime
                 new RenpyOneLinePython("$ " + gateName + " = True")
             };
 
+            if (hasNoneLiteral)
+                result.Add(new RenpyOneLinePython("$ " + noneVariableName + " = None"));
             if (hasMembership)
                 result.AddRange(membershipLines);
             if (hasLength)
                 result.AddRange(lengthLines);
+            if (hasNoneComparisons)
+                result.AddRange(noneComparisonLines);
 
             foreach (KeyValuePair<string, string> dynamicIndex in dynamicIndexes)
             {
@@ -506,6 +526,109 @@ namespace StoryAPI.Runtime
 
             preparatoryLines = result;
             preparedCondition = gateName + " and (" + rewrittenExpression + ")";
+            return true;
+        }
+
+        /// <summary>
+        /// Rewrites simple variable/None comparisons to a dedicated runtime instruction.
+        /// The game's scalar evaluator does not reliably compare Unknown DataValue instances,
+        /// even when both represent Python None, so evaluate this one case against the actual
+        /// DataValue representation and expose the result as an ordinary boolean temporary.
+        /// </summary>
+        private static bool TryRewriteNoneComparisons(string expression, string temporaryPrefix,
+            string sourcePath, int sourceLine, out List<Line> preparatoryLines,
+            out string rewrittenExpression)
+        {
+            preparatoryLines = new List<Line>();
+            rewrittenExpression = expression;
+            if (string.IsNullOrWhiteSpace(expression)) return false;
+
+            var pattern = new Regex(
+                @"(?<![A-Za-z0-9_.])(?:(?<left>[A-Za-z_][A-Za-z0-9_]*)\s*(?<op>==|!=)\s*None|None\s*(?<reverseOp>==|!=)\s*(?<right>[A-Za-z_][A-Za-z0-9_]*))(?![A-Za-z0-9_])",
+                RegexOptions.Compiled);
+            MatchCollection matches = pattern.Matches(expression);
+            var replacements = new List<Tuple<int, int, string>>();
+            var lines = new List<Line>();
+            int comparisonIndex = 0;
+
+            foreach (Match match in matches)
+            {
+                if (!IsOutsideStringAt(expression, match.Index))
+                    continue;
+
+                string variableName = match.Groups["left"].Success
+                    ? match.Groups["left"].Value
+                    : match.Groups["right"].Value;
+                if (string.Equals(variableName, "None", StringComparison.Ordinal))
+                    continue;
+
+                string operatorText = match.Groups["left"].Success
+                    ? match.Groups["op"].Value
+                    : match.Groups["reverseOp"].Value;
+                string resultName = temporaryPrefix + "_none_compare_" +
+                    comparisonIndex.ToString(CultureInfo.InvariantCulture);
+
+                lines.Add(new NoneComparisonLine(variableName, resultName,
+                    operatorText == "!=", sourcePath, sourceLine));
+                replacements.Add(Tuple.Create(match.Index, match.Length, resultName));
+                comparisonIndex++;
+            }
+
+            if (replacements.Count == 0)
+                return false;
+
+            var builder = new StringBuilder(expression.Length + 32);
+            int cursor = 0;
+            foreach (Tuple<int, int, string> replacement in replacements)
+            {
+                builder.Append(expression, cursor, replacement.Item1 - cursor);
+                builder.Append(replacement.Item3);
+                cursor = replacement.Item1 + replacement.Item2;
+            }
+            builder.Append(expression, cursor, expression.Length - cursor);
+
+            preparatoryLines = lines;
+            rewrittenExpression = builder.ToString();
+            return true;
+        }
+
+        /// <summary>
+        /// Rewrites the Python None literal in a condition to a temporary variable.
+        /// The game condition evaluator may treat "None" as a variable name, while the
+        /// native one-line Python assignment can materialize the actual None value.
+        /// Identical text inside string literals is left untouched.
+        /// </summary>
+        private static bool TryRewriteNoneLiteral(string expression, string temporaryPrefix,
+            out string rewrittenExpression, out string noneVariableName)
+        {
+            rewrittenExpression = expression;
+            noneVariableName = null;
+            if (string.IsNullOrWhiteSpace(expression)) return false;
+
+            var pattern = new Regex(@"(?<![A-Za-z0-9_.])None(?![A-Za-z0-9_])",
+                RegexOptions.Compiled);
+            MatchCollection matches = pattern.Matches(expression);
+            var replacements = new List<Tuple<int, int, string>>();
+            foreach (Match match in matches)
+            {
+                if (IsOutsideStringAt(expression, match.Index))
+                    replacements.Add(Tuple.Create(match.Index, match.Length, string.Empty));
+            }
+
+            if (replacements.Count == 0) return false;
+
+            noneVariableName = temporaryPrefix + "_none_reference";
+            var builder = new StringBuilder();
+            int cursor = 0;
+            foreach (Tuple<int, int, string> replacement in replacements)
+            {
+                builder.Append(expression, cursor, replacement.Item1 - cursor);
+                builder.Append(noneVariableName);
+                cursor = replacement.Item1 + replacement.Item2;
+            }
+
+            builder.Append(expression, cursor, expression.Length - cursor);
+            rewrittenExpression = builder.ToString();
             return true;
         }
 
@@ -754,6 +877,680 @@ namespace StoryAPI.Runtime
         }
 
         /// <summary>
+        /// Recognizes sorted(listVariable[, reverse=True/False]) assigned to a simple variable.
+        /// The result is a new list; the source collection is never mutated.
+        /// </summary>
+        /// <summary>
+        /// Recognizes sum(listVariable) assigned to a simple variable. The supported subset
+        /// accepts numeric lists and returns a numeric zero for an empty list.
+        /// </summary>
+        /// <summary>
+        /// Recognizes min(listVariable) assigned to a simple variable. The list must
+        /// contain comparable scalar values of one supported type.
+        /// </summary>
+        public static bool TryCreateMinListAssignmentLine(string code, string sourcePath,
+            int sourceLine, out Line line)
+        {
+            line = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int destinationStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string destinationName = code.Substring(destinationStart, cursor - destinationStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '=' ||
+                (cursor < code.Length && code[cursor] == '=')) return false;
+            SkipWhitespace(code, ref cursor);
+
+            const string builtinName = "min";
+            if (cursor + builtinName.Length > code.Length ||
+                string.Compare(code, cursor, builtinName, 0, builtinName.Length,
+                    StringComparison.Ordinal) != 0)
+                return false;
+            cursor += builtinName.Length;
+            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '(') return false;
+            SkipWhitespace(code, ref cursor);
+
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int rootStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string rootName = code.Substring(rootStart, cursor - rootStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != ')') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor != code.Length) return false;
+
+            line = new MinListAssignmentLine(destinationName, rootName, sourcePath, sourceLine);
+            return true;
+        }
+
+                /// <summary>
+        /// Recognizes max(listVariable) assigned to a simple variable. The list must
+        /// contain comparable scalar values of one supported type.
+        /// </summary>
+        public static bool TryCreateMaxListAssignmentLine(string code, string sourcePath,
+            int sourceLine, out Line line)
+        {
+            line = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int destinationStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string destinationName = code.Substring(destinationStart, cursor - destinationStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '=' ||
+                (cursor < code.Length && code[cursor] == '=')) return false;
+            SkipWhitespace(code, ref cursor);
+
+            const string builtinName = "max";
+            if (cursor + builtinName.Length > code.Length ||
+                string.Compare(code, cursor, builtinName, 0, builtinName.Length,
+                    StringComparison.Ordinal) != 0)
+                return false;
+            cursor += builtinName.Length;
+            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '(') return false;
+            SkipWhitespace(code, ref cursor);
+
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int rootStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string rootName = code.Substring(rootStart, cursor - rootStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != ')') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor != code.Length) return false;
+
+            line = new MaxListAssignmentLine(destinationName, rootName, sourcePath, sourceLine);
+            return true;
+        }
+
+                /// <summary>
+        /// Recognizes any(listVariable) assigned to a simple variable.
+        /// Only scalar truth values (None, booleans, numbers and strings) are supported.
+        /// </summary>
+        public static bool TryCreateAnyListAssignmentLine(string code, string sourcePath,
+            int sourceLine, out Line line)
+        {
+            line = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int destinationStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string destinationName = code.Substring(destinationStart, cursor - destinationStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '=' ||
+                (cursor < code.Length && code[cursor] == '=')) return false;
+            SkipWhitespace(code, ref cursor);
+
+            const string builtinName = "any";
+            if (cursor + builtinName.Length > code.Length ||
+                string.Compare(code, cursor, builtinName, 0, builtinName.Length,
+                    StringComparison.Ordinal) != 0)
+                return false;
+            cursor += builtinName.Length;
+            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '(') return false;
+            SkipWhitespace(code, ref cursor);
+
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int rootStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string rootName = code.Substring(rootStart, cursor - rootStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != ')') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor != code.Length) return false;
+
+            line = new AnyListAssignmentLine(destinationName, rootName, sourcePath, sourceLine);
+            return true;
+        }
+
+                /// <summary>
+        /// Recognizes all(listVariable) assigned to a simple variable.
+        /// Only scalar truth values (None, booleans, numbers and strings) are supported.
+        /// </summary>
+        public static bool TryCreateAllListAssignmentLine(string code, string sourcePath,
+            int sourceLine, out Line line)
+        {
+            line = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int destinationStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string destinationName = code.Substring(destinationStart, cursor - destinationStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '=' ||
+                (cursor < code.Length && code[cursor] == '=')) return false;
+            SkipWhitespace(code, ref cursor);
+
+            const string builtinName = "all";
+            if (cursor + builtinName.Length > code.Length ||
+                string.Compare(code, cursor, builtinName, 0, builtinName.Length,
+                    StringComparison.Ordinal) != 0)
+                return false;
+            cursor += builtinName.Length;
+            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '(') return false;
+            SkipWhitespace(code, ref cursor);
+
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int rootStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string rootName = code.Substring(rootStart, cursor - rootStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != ')') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor != code.Length) return false;
+
+            line = new AllListAssignmentLine(destinationName, rootName, sourcePath, sourceLine);
+            return true;
+        }
+
+        public static bool TryCreateSumListAssignmentLine(string code, string sourcePath,
+            int sourceLine, out Line line)
+        {
+            line = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int destinationStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string destinationName = code.Substring(destinationStart, cursor - destinationStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '=' ||
+                (cursor < code.Length && code[cursor] == '=')) return false;
+            SkipWhitespace(code, ref cursor);
+
+            const string builtinName = "sum";
+            if (cursor + builtinName.Length > code.Length ||
+                string.Compare(code, cursor, builtinName, 0, builtinName.Length,
+                    StringComparison.Ordinal) != 0)
+                return false;
+            cursor += builtinName.Length;
+            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '(') return false;
+            SkipWhitespace(code, ref cursor);
+
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int rootStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string rootName = code.Substring(rootStart, cursor - rootStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != ')') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor != code.Length) return false;
+
+            line = new SumListAssignmentLine(destinationName, rootName, sourcePath, sourceLine);
+            return true;
+        }
+
+        public static bool TryCreateSortedListAssignmentLine(string code, string sourcePath,
+            int sourceLine, out Line line)
+        {
+            line = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int destinationStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string destinationName = code.Substring(destinationStart, cursor - destinationStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '=' ||
+                (cursor < code.Length && code[cursor] == '=')) return false;
+            SkipWhitespace(code, ref cursor);
+
+            const string builtinName = "sorted";
+            if (cursor + builtinName.Length > code.Length ||
+                string.Compare(code, cursor, builtinName, 0, builtinName.Length,
+                    StringComparison.Ordinal) != 0)
+                return false;
+            cursor += builtinName.Length;
+            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '(') return false;
+            SkipWhitespace(code, ref cursor);
+
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int rootStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string rootName = code.Substring(rootStart, cursor - rootStart);
+
+            SkipWhitespace(code, ref cursor);
+            bool reverse = false;
+            if (cursor < code.Length && code[cursor] == ',')
+            {
+                cursor++;
+                SkipWhitespace(code, ref cursor);
+
+                const string argumentName = "reverse";
+                if (cursor + argumentName.Length > code.Length ||
+                    string.Compare(code, cursor, argumentName, 0, argumentName.Length,
+                        StringComparison.Ordinal) != 0)
+                    return false;
+                cursor += argumentName.Length;
+                if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+                SkipWhitespace(code, ref cursor);
+                if (cursor >= code.Length || code[cursor++] != '=') return false;
+                SkipWhitespace(code, ref cursor);
+
+                if (cursor + 4 <= code.Length &&
+                    string.Compare(code, cursor, "True", 0, 4, StringComparison.Ordinal) == 0 &&
+                    (cursor + 4 == code.Length || !IsIdentifierPart(code[cursor + 4])))
+                {
+                    reverse = true;
+                    cursor += 4;
+                }
+                else if (cursor + 5 <= code.Length &&
+                    string.Compare(code, cursor, "False", 0, 5, StringComparison.Ordinal) == 0 &&
+                    (cursor + 5 == code.Length || !IsIdentifierPart(code[cursor + 5])))
+                {
+                    reverse = false;
+                    cursor += 5;
+                }
+                else
+                {
+                    return false;
+                }
+
+                SkipWhitespace(code, ref cursor);
+            }
+
+            if (cursor >= code.Length || code[cursor++] != ')') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor != code.Length) return false;
+
+            line = new SortedListAssignmentLine(destinationName, rootName, reverse,
+                sourcePath, sourceLine);
+            return true;
+        }
+
+        /// <summary>
+        /// Recognizes assignment from a no-argument list.copy() call.        /// <summary>
+        /// Recognizes assignment from a no-argument list.copy() call.
+        /// </summary>
+        public static bool TryCreateListCopyLine(string code, string sourcePath,
+            int sourceLine, out Line line)
+        {
+            line = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int destinationStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string destinationName = code.Substring(destinationStart, cursor - destinationStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '=' ||
+                (cursor < code.Length && code[cursor] == '=')) return false;
+            SkipWhitespace(code, ref cursor);
+
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int rootStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string rootName = code.Substring(rootStart, cursor - rootStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '.') return false;
+            SkipWhitespace(code, ref cursor);
+            const string methodName = "copy";
+            if (cursor + methodName.Length > code.Length ||
+                string.Compare(code, cursor, methodName, 0, methodName.Length,
+                    StringComparison.Ordinal) != 0) return false;
+            cursor += methodName.Length;
+            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '(') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != ')') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor != code.Length) return false;
+
+            line = new ListCopyLine(destinationName, rootName, sourcePath, sourceLine);
+            return true;
+        }
+
+        /// <summary>
+        /// Recognizes assignment from list.index(scalarLiteral). The first matching index
+        /// is returned; arguments are restricted to scalar literal values.
+        /// </summary>
+        public static bool TryCreateListIndexLine(string code, string sourcePath,
+            int sourceLine, out Line line)
+        {
+            line = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int destinationStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string destinationName = code.Substring(destinationStart, cursor - destinationStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '=' ||
+                (cursor < code.Length && code[cursor] == '=')) return false;
+            SkipWhitespace(code, ref cursor);
+
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int rootStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string rootName = code.Substring(rootStart, cursor - rootStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '.') return false;
+            SkipWhitespace(code, ref cursor);
+            const string methodName = "index";
+            if (cursor + methodName.Length > code.Length ||
+                string.Compare(code, cursor, methodName, 0, methodName.Length,
+                    StringComparison.Ordinal) != 0)
+                return false;
+            cursor += methodName.Length;
+            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '(') return false;
+            SkipWhitespace(code, ref cursor);
+
+            object soughtValue;
+            if (!TryReadListIndexScalarArgument(code, ref cursor, out soughtValue)) return false;
+            SkipWhitespace(code, ref cursor);
+
+            bool hasStart = false;
+            bool hasStop = false;
+            int start = 0;
+            int stop = 0;
+
+            if (cursor < code.Length && code[cursor] == ',')
+            {
+                cursor++;
+                SkipWhitespace(code, ref cursor);
+                if (!TryReadListIndexIntegerArgument(code, ref cursor, out start)) return false;
+                hasStart = true;
+                SkipWhitespace(code, ref cursor);
+
+                if (cursor < code.Length && code[cursor] == ',')
+                {
+                    cursor++;
+                    SkipWhitespace(code, ref cursor);
+                    if (!TryReadListIndexIntegerArgument(code, ref cursor, out stop)) return false;
+                    hasStop = true;
+                    SkipWhitespace(code, ref cursor);
+                }
+            }
+
+            if (cursor >= code.Length || code[cursor++] != ')') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor != code.Length) return false;
+
+            line = new ListIndexLine(destinationName, rootName, soughtValue,
+                hasStart, start, hasStop, stop, sourcePath, sourceLine);
+            return true;
+        }
+
+        private static bool TryReadListIndexScalarArgument(string code, ref int cursor,
+            out object value)
+        {
+            value = null;
+            if (cursor >= code.Length) return false;
+
+            if (code[cursor] == '"' || code[cursor] == '\'')
+            {
+                string stringValue;
+                if (!TryReadString(code, ref cursor, out stringValue)) return false;
+                value = stringValue;
+                return true;
+            }
+
+            int start = cursor;
+            while (cursor < code.Length && code[cursor] != ',' && code[cursor] != ')') cursor++;
+            string literal = code.Substring(start, cursor - start).Trim();
+            if (literal.Length == 0) return false;
+            if (literal == "True") { value = true; return true; }
+            if (literal == "False") { value = false; return true; }
+            if (literal == "None") { value = null; return true; }
+
+            int integer;
+            if (int.TryParse(literal, NumberStyles.Integer, CultureInfo.InvariantCulture, out integer))
+            {
+                value = (float)integer;
+                return true;
+            }
+
+            float number;
+            if (float.TryParse(literal, NumberStyles.Float, CultureInfo.InvariantCulture, out number) &&
+                !float.IsNaN(number) && !float.IsInfinity(number))
+            {
+                value = number;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryReadListIndexIntegerArgument(string code, ref int cursor,
+            out int value)
+        {
+            value = 0;
+            if (cursor >= code.Length) return false;
+
+            int start = cursor;
+            while (cursor < code.Length && code[cursor] != ',' && code[cursor] != ')') cursor++;
+            string literal = code.Substring(start, cursor - start).Trim();
+            return int.TryParse(literal, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
+        }
+
+        /// <summary>
+        /// Recognizes assignment from list.count(scalarLiteral). In this restricted form
+        /// the collection variable and destination must be simple names.
+        /// </summary>
+        public static bool TryCreateListCountLine(string code, string sourcePath,
+            int sourceLine, out Line line)
+        {
+            line = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int destinationStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string destinationName = code.Substring(destinationStart, cursor - destinationStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '=' ||
+                (cursor < code.Length && code[cursor] == '=')) return false;
+            SkipWhitespace(code, ref cursor);
+
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int rootStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string rootName = code.Substring(rootStart, cursor - rootStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '.') return false;
+            SkipWhitespace(code, ref cursor);
+            const string methodName = "count";
+            if (cursor + methodName.Length > code.Length ||
+                string.Compare(code, cursor, methodName, 0, methodName.Length,
+                    StringComparison.Ordinal) != 0)
+                return false;
+            cursor += methodName.Length;
+            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '(') return false;
+            SkipWhitespace(code, ref cursor);
+            object soughtValue;
+            if (!TryReadDictionaryGetDefault(code, ref cursor, out soughtValue)) return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != ')') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor != code.Length) return false;
+
+            line = new ListCountLine(destinationName, rootName, soughtValue, sourcePath, sourceLine);
+            return true;
+        }
+
+        /// <summary>
+        /// Recognizes a no-argument sort() call on a named list variable.
+        /// </summary>
+        public static bool TryCreateListSortLine(string code, string sourcePath,
+            int sourceLine, out Line line)
+        {
+            line = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+
+            int nameStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string rootName = code.Substring(nameStart, cursor - nameStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '.') return false;
+            SkipWhitespace(code, ref cursor);
+
+            const string methodName = "sort";
+            if (cursor + methodName.Length > code.Length ||
+                string.Compare(code, cursor, methodName, 0, methodName.Length,
+                    StringComparison.Ordinal) != 0)
+                return false;
+            cursor += methodName.Length;
+            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '(') return false;
+            SkipWhitespace(code, ref cursor);
+
+            bool reverse = false;
+            if (cursor < code.Length && code[cursor] != ')')
+            {
+                const string argumentName = "reverse";
+                if (cursor + argumentName.Length > code.Length ||
+                    string.Compare(code, cursor, argumentName, 0, argumentName.Length,
+                        StringComparison.Ordinal) != 0)
+                    return false;
+                cursor += argumentName.Length;
+                if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+                SkipWhitespace(code, ref cursor);
+                if (cursor >= code.Length || code[cursor++] != '=') return false;
+                SkipWhitespace(code, ref cursor);
+
+                if (cursor + 4 <= code.Length &&
+                    string.Compare(code, cursor, "True", 0, 4, StringComparison.Ordinal) == 0 &&
+                    (cursor + 4 == code.Length || !IsIdentifierPart(code[cursor + 4])))
+                {
+                    reverse = true;
+                    cursor += 4;
+                }
+                else if (cursor + 5 <= code.Length &&
+                    string.Compare(code, cursor, "False", 0, 5, StringComparison.Ordinal) == 0 &&
+                    (cursor + 5 == code.Length || !IsIdentifierPart(code[cursor + 5])))
+                {
+                    reverse = false;
+                    cursor += 5;
+                }
+                else
+                {
+                    return false;
+                }
+
+                SkipWhitespace(code, ref cursor);
+            }
+
+            if (cursor >= code.Length || code[cursor++] != ')') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor != code.Length) return false;
+
+            line = new ListSortLine(rootName, reverse, sourcePath, sourceLine);
+            return true;
+        }
+
+        public static bool TryCreateListReverseLine(string code, string sourcePath,
+            int sourceLine, out Line line)
+        {
+            line = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+
+            int nameStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string rootName = code.Substring(nameStart, cursor - nameStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '.') return false;
+            SkipWhitespace(code, ref cursor);
+
+            const string methodName = "reverse";
+            if (cursor + methodName.Length > code.Length ||
+                string.Compare(code, cursor, methodName, 0, methodName.Length,
+                    StringComparison.Ordinal) != 0)
+                return false;
+            cursor += methodName.Length;
+            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '(') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != ')') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor != code.Length) return false;
+
+            line = new ListReverseLine(rootName, sourcePath, sourceLine);
+            return true;
+        }
+
+        /// <summary>
         /// Recognizes extend(otherList) on a named object-backed list. The argument must
         /// be another simple variable name; expressions and indexed/nested targets are unsupported.
         /// </summary>
@@ -848,6 +1645,228 @@ namespace StoryAPI.Runtime
         }
 
         /// <summary>
+        /// Recognizes assignment from dictionary.get("key") or dictionary.get("key", literalDefault).
+        /// Keys and defaults are deliberately limited to quoted string keys and scalar literals.
+        /// </summary>
+        public static bool TryCreateDictionaryGetLine(string code, string sourcePath,
+            int sourceLine, out Line line)
+        {
+            line = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int destinationStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string destinationName = code.Substring(destinationStart, cursor - destinationStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '=' ||
+                (cursor < code.Length && code[cursor] == '=')) return false;
+            SkipWhitespace(code, ref cursor);
+
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int rootStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string rootName = code.Substring(rootStart, cursor - rootStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '.') return false;
+            SkipWhitespace(code, ref cursor);
+            const string methodName = "get";
+            if (cursor + methodName.Length > code.Length ||
+                string.Compare(code, cursor, methodName, 0, methodName.Length,
+                    StringComparison.Ordinal) != 0) return false;
+            cursor += methodName.Length;
+            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '(') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || (code[cursor] != '"' && code[cursor] != '\'')) return false;
+
+            string key;
+            if (!TryReadString(code, ref cursor, out key)) return false;
+            SkipWhitespace(code, ref cursor);
+
+            bool hasDefault = false;
+            object defaultValue = null;
+            if (cursor < code.Length && code[cursor] == ',')
+            {
+                cursor++;
+                SkipWhitespace(code, ref cursor);
+                if (!TryReadDictionaryGetDefault(code, ref cursor, out defaultValue))
+                    return false;
+                hasDefault = true;
+                SkipWhitespace(code, ref cursor);
+            }
+
+            if (cursor >= code.Length || code[cursor++] != ')') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor != code.Length) return false;
+
+            line = new DictionaryGetLine(destinationName, rootName, key, hasDefault,
+                defaultValue, sourcePath, sourceLine);
+            return true;
+        }
+
+        /// <summary>
+        /// Recognizes assignment from dictionary.copy(). The copy is shallow and requires a
+        /// simple destination/root variable with no method arguments.
+        /// </summary>
+        public static bool TryCreateDictionaryCopyLine(string code, string sourcePath,
+            int sourceLine, out Line line)
+        {
+            line = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int destinationStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string destinationName = code.Substring(destinationStart, cursor - destinationStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '=' ||
+                (cursor < code.Length && code[cursor] == '=')) return false;
+            SkipWhitespace(code, ref cursor);
+
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int rootStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string rootName = code.Substring(rootStart, cursor - rootStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '.') return false;
+            SkipWhitespace(code, ref cursor);
+            const string methodName = "copy";
+            if (cursor + methodName.Length > code.Length ||
+                string.Compare(code, cursor, methodName, 0, methodName.Length,
+                    StringComparison.Ordinal) != 0) return false;
+            cursor += methodName.Length;
+            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '(') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != ')') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor != code.Length) return false;
+
+            line = new DictionaryCopyLine(destinationName, rootName, sourcePath, sourceLine);
+            return true;
+        }
+
+        /// <summary>
+        /// Recognizes assignment from dictionary.setdefault("key"[, literalDefault]).
+        /// This supported subset returns the existing value, or inserts and returns the
+        /// literal default (None when omitted) if the key does not yet exist.
+        /// </summary>
+        public static bool TryCreateDictionarySetDefaultLine(string code, string sourcePath,
+            int sourceLine, out Line line)
+        {
+            line = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int destinationStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string destinationName = code.Substring(destinationStart, cursor - destinationStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '=' ||
+                (cursor < code.Length && code[cursor] == '=')) return false;
+            SkipWhitespace(code, ref cursor);
+
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int rootStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string rootName = code.Substring(rootStart, cursor - rootStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '.') return false;
+            SkipWhitespace(code, ref cursor);
+            const string methodName = "setdefault";
+            if (cursor + methodName.Length > code.Length ||
+                string.Compare(code, cursor, methodName, 0, methodName.Length,
+                    StringComparison.Ordinal) != 0) return false;
+            cursor += methodName.Length;
+            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '(') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || (code[cursor] != '"' && code[cursor] != '\'')) return false;
+
+            string key;
+            if (!TryReadString(code, ref cursor, out key)) return false;
+            SkipWhitespace(code, ref cursor);
+
+            bool hasDefault = false;
+            object defaultValue = null;
+            if (cursor < code.Length && code[cursor] == ',')
+            {
+                cursor++;
+                SkipWhitespace(code, ref cursor);
+                if (!TryReadDictionaryGetDefault(code, ref cursor, out defaultValue))
+                    return false;
+                hasDefault = true;
+                SkipWhitespace(code, ref cursor);
+            }
+
+            if (cursor >= code.Length || code[cursor++] != ')') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor != code.Length) return false;
+
+            line = new DictionarySetDefaultLine(destinationName, rootName, key, hasDefault,
+                defaultValue, sourcePath, sourceLine);
+            return true;
+        }
+
+        private static bool TryReadDictionaryGetDefault(string code, ref int cursor,
+            out object value)
+        {
+            value = null;
+            if (cursor >= code.Length) return false;
+
+            if (code[cursor] == '"' || code[cursor] == '\'')
+            {
+                string stringValue;
+                if (!TryReadString(code, ref cursor, out stringValue)) return false;
+                value = stringValue;
+                return true;
+            }
+
+            int start = cursor;
+            while (cursor < code.Length && code[cursor] != ')') cursor++;
+            string literal = code.Substring(start, cursor - start).Trim();
+            if (literal == "True") { value = true; return true; }
+            if (literal == "False") { value = false; return true; }
+            if (literal == "None") { value = null; return true; }
+
+            int integer;
+            if (int.TryParse(literal, NumberStyles.Integer, CultureInfo.InvariantCulture, out integer))
+            {
+                value = (float)integer;
+                return true;
+            }
+
+            float number;
+            if (float.TryParse(literal, NumberStyles.Float, CultureInfo.InvariantCulture, out number) &&
+                !float.IsNaN(number) && !float.IsInfinity(number))
+            {
+                value = number;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
         /// Recognizes dictionary.pop("key"), optionally assigning the removed value to a
         /// simple variable. Keys must be quoted string literals in this supported subset.
         /// </summary>
@@ -903,13 +1922,27 @@ namespace StoryAPI.Runtime
             string key;
             if (!TryReadString(code, ref cursor, out key)) return false;
             SkipWhitespace(code, ref cursor);
+
+            bool hasDefault = false;
+            object defaultValue = null;
+            if (cursor < code.Length && code[cursor] == ',')
+            {
+                cursor++;
+                SkipWhitespace(code, ref cursor);
+                if (!TryReadDictionaryGetDefault(code, ref cursor, out defaultValue))
+                    return false;
+                hasDefault = true;
+                SkipWhitespace(code, ref cursor);
+            }
+
             if (cursor >= code.Length || code[cursor++] != ')') return false;
             SkipWhitespace(code, ref cursor);
             if (cursor != code.Length) return false;
 
             lines = new List<Line>
             {
-                new DictionaryPopLine(rootName, destinationName, key, sourcePath, sourceLine)
+                new DictionaryPopLine(rootName, destinationName, key, hasDefault,
+                    defaultValue, sourcePath, sourceLine)
             };
             return true;
         }
@@ -1864,6 +2897,907 @@ namespace StoryAPI.Runtime
             }
         }
 
+        private sealed class MinListAssignmentLine : Line, IApply
+        {
+            private readonly string _destinationName;
+            private readonly string _rootName;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public MinListAssignmentLine(string destinationName, string rootName,
+                string sourcePath, int sourceLine)
+            {
+                _destinationName = destinationName;
+                _rootName = rootName;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                Log.Info("Starting min() assignment for '" + _rootName + "' at " +
+                    _sourcePath + ":" + _sourceLine + ".");
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object source) ||
+                        !(source is IList sourceList))
+                        throw new InvalidOperationException("min() requires a list variable");
+                    if (sourceList.Count == 0)
+                        throw new InvalidOperationException("min() cannot select a value from an empty list");
+
+                    object first = sourceList[0];
+                    bool strings = first is string;
+                    bool numbers = IsNumericScalar(first);
+                    if (!strings && !numbers)
+                        throw new InvalidOperationException("min() supports homogeneous string or numeric lists only");
+
+                    object minimum = first;
+                    for (int i = 1; i < sourceList.Count; i++)
+                    {
+                        object value = sourceList[i];
+                        if ((strings && !(value is string)) ||
+                            (numbers && !IsNumericScalar(value)))
+                            throw new InvalidOperationException(
+                                "min() requires all items to have the same sortable scalar type");
+
+                        int comparison = strings
+                            ? string.CompareOrdinal((string)value, (string)minimum)
+                            : Convert.ToDouble(value, CultureInfo.InvariantCulture).CompareTo(
+                                Convert.ToDouble(minimum, CultureInfo.InvariantCulture));
+                        if (comparison < 0)
+                            minimum = value;
+                    }
+
+                    // Normalize numeric results to Single like sum(), avoiding relying on a
+                    // game-build-specific implicit conversion for boxed integer/double items.
+                    object result = numbers
+                        ? (object)Convert.ToSingle(minimum, CultureInfo.InvariantCulture)
+                        : minimum;
+                    if (!GameBridge.TrySetVariableLiteral(_destinationName, result, false, context))
+                        throw new InvalidOperationException(
+                            "could not assign min() result to '" + _destinationName + "'. Result type: " +
+                            result.GetType().FullName);
+
+                    Log.Info("Applied min() to '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not apply min() to '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+
+            private static bool IsNumericScalar(object value)
+            {
+                if (value == null) return false;
+                switch (Type.GetTypeCode(value.GetType()))
+                {
+                    case TypeCode.SByte:
+                    case TypeCode.Byte:
+                    case TypeCode.Int16:
+                    case TypeCode.UInt16:
+                    case TypeCode.Int32:
+                    case TypeCode.UInt32:
+                    case TypeCode.Int64:
+                    case TypeCode.UInt64:
+                    case TypeCode.Single:
+                    case TypeCode.Double:
+                    case TypeCode.Decimal:
+                        return true;
+                    default:
+                        return false;
+                }
+            }
+        }
+
+        private sealed class MaxListAssignmentLine : Line, IApply
+        {
+            private readonly string _destinationName;
+            private readonly string _rootName;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public MaxListAssignmentLine(string destinationName, string rootName,
+                string sourcePath, int sourceLine)
+            {
+                _destinationName = destinationName;
+                _rootName = rootName;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                Log.Info("Starting max() assignment for '" + _rootName + "' at " +
+                    _sourcePath + ":" + _sourceLine + ".");
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object source) ||
+                        !(source is IList sourceList))
+                        throw new InvalidOperationException("max() requires a list variable");
+                    if (sourceList.Count == 0)
+                        throw new InvalidOperationException("max() cannot select a value from an empty list");
+
+                    object first = sourceList[0];
+                    bool strings = first is string;
+                    bool numbers = IsNumericScalar(first);
+                    if (!strings && !numbers)
+                        throw new InvalidOperationException("max() supports homogeneous string or numeric lists only");
+
+                    object maximum = first;
+                    for (int i = 1; i < sourceList.Count; i++)
+                    {
+                        object value = sourceList[i];
+                        if ((strings && !(value is string)) ||
+                            (numbers && !IsNumericScalar(value)))
+                            throw new InvalidOperationException(
+                                "max() requires all items to have the same sortable scalar type");
+
+                        int comparison = strings
+                            ? string.CompareOrdinal((string)value, (string)maximum)
+                            : Convert.ToDouble(value, CultureInfo.InvariantCulture).CompareTo(
+                                Convert.ToDouble(maximum, CultureInfo.InvariantCulture));
+                        if (comparison > 0)
+                            maximum = value;
+                    }
+
+                    // Normalize numeric results to Single like sum(), avoiding relying on a
+                    // game-build-specific implicit conversion for boxed integer/double items.
+                    object result = numbers
+                        ? (object)Convert.ToSingle(maximum, CultureInfo.InvariantCulture)
+                        : maximum;
+                    if (!GameBridge.TrySetVariableLiteral(_destinationName, result, false, context))
+                        throw new InvalidOperationException(
+                            "could not assign max() result to '" + _destinationName + "'. Result type: " +
+                            result.GetType().FullName);
+
+                    Log.Info("Applied max() to '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not apply max() to '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+
+            private static bool IsNumericScalar(object value)
+            {
+                if (value == null) return false;
+                switch (Type.GetTypeCode(value.GetType()))
+                {
+                    case TypeCode.SByte:
+                    case TypeCode.Byte:
+                    case TypeCode.Int16:
+                    case TypeCode.UInt16:
+                    case TypeCode.Int32:
+                    case TypeCode.UInt32:
+                    case TypeCode.Int64:
+                    case TypeCode.UInt64:
+                    case TypeCode.Single:
+                    case TypeCode.Double:
+                    case TypeCode.Decimal:
+                        return true;
+                    default:
+                        return false;
+                }
+            }
+        }
+
+        private sealed class AnyListAssignmentLine : Line, IApply
+        {
+            private readonly string _destinationName;
+            private readonly string _rootName;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public AnyListAssignmentLine(string destinationName, string rootName,
+                string sourcePath, int sourceLine)
+            {
+                _destinationName = destinationName;
+                _rootName = rootName;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                Log.Info("Starting any() assignment for '" + _rootName + "' at " +
+                    _sourcePath + ":" + _sourceLine + ".");
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object source) ||
+                        !(source is IList sourceList))
+                        throw new InvalidOperationException("any() requires a list variable");
+
+                    bool result = false;
+                    for (int i = 0; i < sourceList.Count; i++)
+                    {
+                        object value = sourceList[i];
+                        if (!TryGetScalarTruthiness(value, out bool truthy))
+                            throw new InvalidOperationException(
+                                "any() supports None, boolean, numeric and string list items only");
+                        if (truthy)
+                        {
+                            // Match Python any(): stop at the first truthy item.
+                            result = true;
+                            break;
+                        }
+                    }
+
+                    if (!GameBridge.TrySetVariableLiteral(_destinationName, result, false, context))
+                        throw new InvalidOperationException(
+                            "could not assign any() result to '" + _destinationName + "'.");
+
+                    Log.Info("Applied any() to '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not apply any() to '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+
+            private static bool TryGetScalarTruthiness(object value, out bool truthy)
+            {
+                if (value == null)
+                {
+                    truthy = false;
+                    return true;
+                }
+
+                if (value is bool booleanValue)
+                {
+                    truthy = booleanValue;
+                    return true;
+                }
+
+                if (value is string stringValue)
+                {
+                    truthy = stringValue.Length > 0;
+                    return true;
+                }
+
+                switch (Type.GetTypeCode(value.GetType()))
+                {
+                    case TypeCode.SByte:
+                    case TypeCode.Byte:
+                    case TypeCode.Int16:
+                    case TypeCode.UInt16:
+                    case TypeCode.Int32:
+                    case TypeCode.UInt32:
+                    case TypeCode.Int64:
+                    case TypeCode.UInt64:
+                    case TypeCode.Single:
+                    case TypeCode.Double:
+                    case TypeCode.Decimal:
+                        truthy = Convert.ToDouble(value, CultureInfo.InvariantCulture) != 0d;
+                        return true;
+                    default:
+                        truthy = false;
+                        return false;
+                }
+            }
+        }
+
+        private sealed class AllListAssignmentLine : Line, IApply
+        {
+            private readonly string _destinationName;
+            private readonly string _rootName;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public AllListAssignmentLine(string destinationName, string rootName,
+                string sourcePath, int sourceLine)
+            {
+                _destinationName = destinationName;
+                _rootName = rootName;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                Log.Info("Starting all() assignment for '" + _rootName + "' at " +
+                    _sourcePath + ":" + _sourceLine + ".");
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object source) ||
+                        !(source is IList sourceList))
+                        throw new InvalidOperationException("all() requires a list variable");
+
+                    bool result = true;
+                    for (int i = 0; i < sourceList.Count; i++)
+                    {
+                        object value = sourceList[i];
+                        if (!TryGetScalarTruthiness(value, out bool truthy))
+                            throw new InvalidOperationException(
+                                "all() supports None, boolean, numeric and string list items only");
+                        if (!truthy)
+                        {
+                            // Match Python all(): stop at the first falsey item.
+                            result = false;
+                            break;
+                        }
+                    }
+
+                    if (!GameBridge.TrySetVariableLiteral(_destinationName, result, false, context))
+                        throw new InvalidOperationException(
+                            "could not assign all() result to '" + _destinationName + "'.");
+
+                    Log.Info("Applied all() to '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not apply all() to '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+
+            private static bool TryGetScalarTruthiness(object value, out bool truthy)
+            {
+                if (value == null)
+                {
+                    truthy = false;
+                    return true;
+                }
+
+                if (value is bool booleanValue)
+                {
+                    truthy = booleanValue;
+                    return true;
+                }
+
+                if (value is string stringValue)
+                {
+                    truthy = stringValue.Length > 0;
+                    return true;
+                }
+
+                switch (Type.GetTypeCode(value.GetType()))
+                {
+                    case TypeCode.SByte:
+                    case TypeCode.Byte:
+                    case TypeCode.Int16:
+                    case TypeCode.UInt16:
+                    case TypeCode.Int32:
+                    case TypeCode.UInt32:
+                    case TypeCode.Int64:
+                    case TypeCode.UInt64:
+                    case TypeCode.Single:
+                    case TypeCode.Double:
+                    case TypeCode.Decimal:
+                        truthy = Convert.ToDouble(value, CultureInfo.InvariantCulture) != 0d;
+                        return true;
+                    default:
+                        truthy = false;
+                        return false;
+                }
+            }
+        }
+
+        private sealed class SumListAssignmentLine : Line, IApply
+        {
+            private readonly string _destinationName;
+            private readonly string _rootName;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public SumListAssignmentLine(string destinationName, string rootName,
+                string sourcePath, int sourceLine)
+            {
+                _destinationName = destinationName;
+                _rootName = rootName;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object source) ||
+                        !(source is IList sourceList))
+                        throw new InvalidOperationException("sum() requires a list variable");
+
+                    float total = 0f;
+                    for (int i = 0; i < sourceList.Count; i++)
+                    {
+                        object value = sourceList[i];
+                        if (!IsNumericScalar(value))
+                            throw new InvalidOperationException(
+                                "sum() supports numeric lists only");
+                        total += Convert.ToSingle(value, CultureInfo.InvariantCulture);
+                    }
+
+                    if (!GameBridge.TrySetVariableLiteral(_destinationName, total, false, context))
+                        throw new InvalidOperationException(
+                            "could not assign sum() result to '" + _destinationName + "'");
+
+                    Log.Info("Applied sum() to '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not apply sum() to '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+
+            private static bool IsNumericScalar(object value)
+            {
+                if (value == null) return false;
+                switch (Type.GetTypeCode(value.GetType()))
+                {
+                    case TypeCode.SByte:
+                    case TypeCode.Byte:
+                    case TypeCode.Int16:
+                    case TypeCode.UInt16:
+                    case TypeCode.Int32:
+                    case TypeCode.UInt32:
+                    case TypeCode.Int64:
+                    case TypeCode.UInt64:
+                    case TypeCode.Single:
+                    case TypeCode.Double:
+                    case TypeCode.Decimal:
+                        return true;
+                    default:
+                        return false;
+                }
+            }
+        }
+
+        private sealed class SortedListAssignmentLine : Line, IApply
+        {
+            private readonly string _destinationName;
+            private readonly string _rootName;
+            private readonly bool _reverse;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public SortedListAssignmentLine(string destinationName, string rootName, bool reverse,
+                string sourcePath, int sourceLine)
+            {
+                _destinationName = destinationName;
+                _rootName = rootName;
+                _reverse = reverse;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object source) ||
+                        !(source is IList sourceList))
+                        throw new InvalidOperationException("sorted() requires a list variable");
+
+                    var sorted = new List<object>(sourceList.Count);
+                    for (int i = 0; i < sourceList.Count; i++)
+                        sorted.Add(sourceList[i]);
+
+                    // Sort a copy and validate supported scalar types before assigning a result.
+                    if (sorted.Count > 1)
+                    {
+                        bool strings = sorted[0] is string;
+                        bool numbers = IsNumericScalar(sorted[0]);
+                        if (!strings && !numbers)
+                            throw new InvalidOperationException(
+                                "sorted() supports homogeneous string or numeric lists only");
+
+                        for (int i = 1; i < sorted.Count; i++)
+                        {
+                            if ((strings && !(sorted[i] is string)) ||
+                                (numbers && !IsNumericScalar(sorted[i])))
+                                throw new InvalidOperationException(
+                                    "sorted() requires all items to have the same sortable scalar type");
+                        }
+
+                        sorted.Sort(delegate(object left, object right)
+                        {
+                            if (strings)
+                                return string.CompareOrdinal((string)left, (string)right);
+                            return Convert.ToDouble(left, CultureInfo.InvariantCulture).CompareTo(
+                                Convert.ToDouble(right, CultureInfo.InvariantCulture));
+                        });
+
+                        if (_reverse)
+                            sorted.Reverse();
+                    }
+
+                    if (!GameBridge.TrySetVariableLiteral(_destinationName, sorted, false, context))
+                        throw new InvalidOperationException(
+                            "could not assign sorted() result to '" + _destinationName + "'");
+
+                    Log.Info("Applied sorted() to '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not apply sorted() to '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+
+            private static bool IsNumericScalar(object value)
+            {
+                if (value == null) return false;
+                switch (Type.GetTypeCode(value.GetType()))
+                {
+                    case TypeCode.SByte:
+                    case TypeCode.Byte:
+                    case TypeCode.Int16:
+                    case TypeCode.UInt16:
+                    case TypeCode.Int32:
+                    case TypeCode.UInt32:
+                    case TypeCode.Int64:
+                    case TypeCode.UInt64:
+                    case TypeCode.Single:
+                    case TypeCode.Double:
+                    case TypeCode.Decimal:
+                        return true;
+                    default:
+                        return false;
+                }
+            }
+        }
+
+        private sealed class ListCopyLine : Line, IApply
+        {
+            private readonly string _destinationName;
+            private readonly string _rootName;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public ListCopyLine(string destinationName, string rootName,
+                string sourcePath, int sourceLine)
+            {
+                _destinationName = destinationName;
+                _rootName = rootName;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object source) ||
+                        !(source is IList sourceList))
+                        throw new InvalidOperationException("list.copy() requires a list target");
+
+                    IList copy = null;
+                    try
+                    {
+                        copy = Activator.CreateInstance(source.GetType()) as IList;
+                    }
+                    catch
+                    {
+                        // Some IList implementations do not expose a public parameterless
+                        // constructor; use a mutable fallback in that case.
+                    }
+
+                    if (copy == null || copy.IsReadOnly || copy.IsFixedSize)
+                        copy = new ArrayList();
+
+                    foreach (object value in sourceList)
+                        copy.Add(value);
+
+                    if (!GameBridge.TrySetVariableLiteral(_destinationName, copy, false, context))
+                        throw new InvalidOperationException(
+                            "could not assign list.copy() result to '" + _destinationName + "'");
+
+                    Log.Info("Applied list.copy on '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not apply list.copy on '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+        }
+
+        private sealed class ListIndexLine : Line, IApply
+        {
+            private readonly string _destinationName;
+            private readonly string _rootName;
+            private readonly object _soughtValue;
+            private readonly bool _hasStart;
+            private readonly int _start;
+            private readonly bool _hasStop;
+            private readonly int _stop;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public ListIndexLine(string destinationName, string rootName, object soughtValue,
+                bool hasStart, int start, bool hasStop, int stop, string sourcePath, int sourceLine)
+            {
+                _destinationName = destinationName;
+                _rootName = rootName;
+                _soughtValue = soughtValue;
+                _hasStart = hasStart;
+                _start = start;
+                _hasStop = hasStop;
+                _stop = stop;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object target) ||
+                        !(target is IList list))
+                        throw new InvalidOperationException("list.index() requires a list target");
+
+                    int start = _hasStart ? NormalizeIndexBound(_start, list.Count) : 0;
+                    int stop = _hasStop ? NormalizeIndexBound(_stop, list.Count) : list.Count;
+                    int index = -1;
+                    for (int i = start; i < stop; i++)
+                    {
+                        if (ScalarValuesEqual(list[i], _soughtValue))
+                        {
+                            index = i;
+                            break;
+                        }
+                    }
+
+                    if (index < 0)
+                        throw new InvalidOperationException(
+                            "index(value) could not find a matching list item in the requested range");
+
+                    if (!GameBridge.TrySetVariableLiteral(_destinationName, index, false, context))
+                        throw new InvalidOperationException(
+                            "could not assign list.index() result to '" + _destinationName + "'");
+
+                    Log.Info("Applied list.index on '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not apply list.index on '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+
+            private static int NormalizeIndexBound(int bound, int count)
+            {
+                long normalized = bound;
+                if (normalized < 0) normalized += count;
+                if (normalized < 0) normalized = 0;
+                if (normalized > count) normalized = count;
+                return (int)normalized;
+            }
+        }
+
+        private sealed class ListCountLine : Line, IApply
+        {
+            private readonly string _destinationName;
+            private readonly string _rootName;
+            private readonly object _soughtValue;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public ListCountLine(string destinationName, string rootName, object soughtValue,
+                string sourcePath, int sourceLine)
+            {
+                _destinationName = destinationName;
+                _rootName = rootName;
+                _soughtValue = soughtValue;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object target) ||
+                        !(target is IList list))
+                        throw new InvalidOperationException("list.count() requires a list target");
+
+                    int count = 0;
+                    for (int i = 0; i < list.Count; i++)
+                    {
+                        if (ScalarValuesEqual(list[i], _soughtValue))
+                            count++;
+                    }
+
+                    if (!GameBridge.TrySetVariableLiteral(_destinationName, count, false, context))
+                        throw new InvalidOperationException(
+                            "could not assign list.count() result to '" + _destinationName + "'");
+
+                    Log.Info("Applied list.count on '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not apply list.count on '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+        }
+
+        private sealed class ListSortLine : Line, IApply
+        {
+            private readonly string _rootName;
+            private readonly bool _reverse;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public ListSortLine(string rootName, bool reverse, string sourcePath, int sourceLine)
+            {
+                _rootName = rootName;
+                _reverse = reverse;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object target) ||
+                        !(target is IList list))
+                        throw new InvalidOperationException("list.sort() requires a list target");
+                    if (list.IsReadOnly || list.IsFixedSize)
+                        throw new InvalidOperationException("list.sort() target is not mutable");
+
+                    // Validate and sort a snapshot first so unsupported mixed values leave
+                    // the source list untouched.
+                    var sorted = new List<object>(list.Count);
+                    for (int i = 0; i < list.Count; i++)
+                        sorted.Add(list[i]);
+
+                    if (sorted.Count > 1)
+                    {
+                        bool strings = sorted[0] is string;
+                        bool numbers = IsNumericScalar(sorted[0]);
+                        if (!strings && !numbers)
+                            throw new InvalidOperationException(
+                                "list.sort() supports homogeneous string or numeric lists only");
+
+                        for (int i = 1; i < sorted.Count; i++)
+                        {
+                            if ((strings && !(sorted[i] is string)) ||
+                                (numbers && !IsNumericScalar(sorted[i])))
+                                throw new InvalidOperationException(
+                                    "list.sort() requires all items to have the same sortable scalar type");
+                        }
+
+                        sorted.Sort(delegate(object left, object right)
+                        {
+                            if (strings)
+                                return string.CompareOrdinal((string)left, (string)right);
+
+                            return Convert.ToDouble(left, CultureInfo.InvariantCulture).CompareTo(
+                                Convert.ToDouble(right, CultureInfo.InvariantCulture));
+                        });
+
+                        if (_reverse)
+                            sorted.Reverse();
+
+                        for (int i = 0; i < sorted.Count; i++)
+                            list[i] = sorted[i];
+                    }
+
+                    Log.Info("Applied list.sort on '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not sort list '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+
+            private static bool IsNumericScalar(object value)
+            {
+                if (value == null) return false;
+                switch (Type.GetTypeCode(value.GetType()))
+                {
+                    case TypeCode.SByte:
+                    case TypeCode.Byte:
+                    case TypeCode.Int16:
+                    case TypeCode.UInt16:
+                    case TypeCode.Int32:
+                    case TypeCode.UInt32:
+                    case TypeCode.Int64:
+                    case TypeCode.UInt64:
+                    case TypeCode.Single:
+                    case TypeCode.Double:
+                    case TypeCode.Decimal:
+                        return true;
+                    default:
+                        return false;
+                }
+            }
+        }
+
+        private sealed class ListReverseLine : Line, IApply
+        {
+            private readonly string _rootName;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public ListReverseLine(string rootName, string sourcePath, int sourceLine)
+            {
+                _rootName = rootName;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object target) ||
+                        !(target is IList list))
+                        throw new InvalidOperationException("list.reverse() requires a list target");
+                    if (list.IsReadOnly || list.IsFixedSize)
+                        throw new InvalidOperationException("list.reverse() target is not mutable");
+
+                    int left = 0;
+                    int right = list.Count - 1;
+                    while (left < right)
+                    {
+                        object value = list[left];
+                        list[left] = list[right];
+                        list[right] = value;
+                        left++;
+                        right--;
+                    }
+
+                    Log.Info("Applied list.reverse on '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not reverse list '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+        }
+
         private sealed class ListExtendLine : Line, IApply
         {
             private readonly string _rootName;
@@ -1971,20 +3905,240 @@ namespace StoryAPI.Runtime
             }
         }
 
+        private sealed class NoneComparisonLine : Line, IApply
+        {
+            private readonly string _variableName;
+            private readonly string _resultName;
+            private readonly bool _notEqual;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public NoneComparisonLine(string variableName, string resultName, bool notEqual,
+                string sourcePath, int sourceLine)
+            {
+                _variableName = variableName;
+                _resultName = resultName;
+                _notEqual = notEqual;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                if (context == null)
+                {
+                    Log.Warn("Could not evaluate None comparison for '" + _variableName +
+                        "' at " + _sourcePath + ":" + _sourceLine + ": no live context.");
+                    return;
+                }
+
+                try
+                {
+                    DataValue value;
+                    bool resolved = context.ResolveVariable(_variableName, out value);
+                    // Unknown is the engine's default DataValue representation for Python None.
+                    // ValueType.Equals compares the discriminator and backing fields together.
+                    bool isNone = resolved && object.Equals(value, default(DataValue));
+                    bool result = resolved && (_notEqual ? !isNone : isNone);
+
+                    if (!GameBridge.TrySetVariableLiteral(_resultName, result, false, context))
+                        throw new InvalidOperationException("could not assign boolean result");
+
+                    Log.Info("Evaluated None comparison for '" + _variableName + "' at " +
+                        _sourcePath + ":" + _sourceLine + " as " + result + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not evaluate None comparison for '" + _variableName +
+                        "' at " + _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+        }
+
+        private sealed class DictionaryCopyLine : Line, IApply
+        {
+            private readonly string _destinationName;
+            private readonly string _rootName;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public DictionaryCopyLine(string destinationName, string rootName,
+                string sourcePath, int sourceLine)
+            {
+                _destinationName = destinationName;
+                _rootName = rootName;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object source) ||
+                        !(source is IDictionary sourceDictionary))
+                        throw new InvalidOperationException("dict.copy() requires a dictionary target");
+
+                    IDictionary copy = null;
+                    try
+                    {
+                        copy = Activator.CreateInstance(source.GetType()) as IDictionary;
+                    }
+                    catch
+                    {
+                        // A fallback dictionary is used when the runtime dictionary type
+                        // does not expose a public parameterless constructor.
+                    }
+
+                    if (copy == null || copy.IsReadOnly || copy.IsFixedSize)
+                        copy = new Hashtable();
+
+                    foreach (DictionaryEntry entry in sourceDictionary)
+                        copy.Add(entry.Key, entry.Value);
+
+                    if (!GameBridge.TrySetVariableLiteral(_destinationName, copy, false, context))
+                        throw new InvalidOperationException(
+                            "could not assign dict.copy() result to '" + _destinationName + "'");
+
+                    Log.Info("Applied dict.copy on '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not apply dict.copy on '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " + e.GetBaseException().Message);
+                }
+            }
+        }
+
+        private sealed class DictionarySetDefaultLine : Line, IApply
+        {
+            private readonly string _destinationName;
+            private readonly string _rootName;
+            private readonly string _key;
+            private readonly bool _hasDefault;
+            private readonly object _defaultValue;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public DictionarySetDefaultLine(string destinationName, string rootName, string key,
+                bool hasDefault, object defaultValue, string sourcePath, int sourceLine)
+            {
+                _destinationName = destinationName;
+                _rootName = rootName;
+                _key = key;
+                _hasDefault = hasDefault;
+                _defaultValue = defaultValue;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object source) ||
+                        !(source is IDictionary dictionary))
+                        throw new InvalidOperationException("dict.setdefault() requires a dictionary target");
+
+                    bool exists = dictionary.Contains(_key);
+                    if (!exists && (dictionary.IsReadOnly || dictionary.IsFixedSize))
+                        throw new InvalidOperationException("dict.setdefault() target is not mutable");
+
+                    object value = exists
+                        ? dictionary[_key]
+                        : (_hasDefault ? _defaultValue : null);
+                    if (!GameBridge.TrySetVariableLiteral(_destinationName, value, false, context))
+                        throw new InvalidOperationException(
+                            "could not assign dict.setdefault() result to '" + _destinationName + "'");
+
+                    if (!exists)
+                        dictionary[_key] = value;
+
+                    Log.Info("Applied dict.setdefault on '" + _rootName + "' for key '" + _key +
+                        "' at " + _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not apply dict.setdefault on '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " + e.GetBaseException().Message);
+                }
+            }
+        }
+
+        private sealed class DictionaryGetLine : Line, IApply
+        {
+            private readonly string _destinationName;
+            private readonly string _rootName;
+            private readonly string _key;
+            private readonly bool _hasDefault;
+            private readonly object _defaultValue;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public DictionaryGetLine(string destinationName, string rootName, string key,
+                bool hasDefault, object defaultValue, string sourcePath, int sourceLine)
+            {
+                _destinationName = destinationName;
+                _rootName = rootName;
+                _key = key;
+                _hasDefault = hasDefault;
+                _defaultValue = defaultValue;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object source) ||
+                        !(source is IDictionary dictionary))
+                        throw new InvalidOperationException("dict.get() requires a dictionary target");
+
+                    object value = dictionary.Contains(_key)
+                        ? dictionary[_key]
+                        : (_hasDefault ? _defaultValue : null);
+                    if (!GameBridge.TrySetVariableLiteral(_destinationName, value, false, context))
+                        throw new InvalidOperationException(
+                            "could not assign dict.get() result to '" + _destinationName + "'");
+
+                    Log.Info("Applied dict.get on '" + _rootName + "' for key '" + _key +
+                        "' at " + _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not apply dict.get on '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " + e.GetBaseException().Message);
+                }
+            }
+        }
+
         private sealed class DictionaryPopLine : Line, IApply
         {
             private readonly string _rootName;
             private readonly string _destinationName;
             private readonly string _key;
+            private readonly bool _hasDefault;
+            private readonly object _defaultValue;
             private readonly string _sourcePath;
             private readonly int _sourceLine;
 
             public DictionaryPopLine(string rootName, string destinationName, string key,
-                string sourcePath, int sourceLine)
+                bool hasDefault, object defaultValue, string sourcePath, int sourceLine)
             {
                 _rootName = rootName;
                 _destinationName = destinationName;
                 _key = key;
+                _hasDefault = hasDefault;
+                _defaultValue = defaultValue;
                 _sourcePath = sourcePath;
                 _sourceLine = sourceLine;
             }
@@ -2001,7 +4155,19 @@ namespace StoryAPI.Runtime
                     if (dictionary.IsReadOnly || dictionary.IsFixedSize)
                         throw new InvalidOperationException("dict.pop() target is not mutable");
                     if (!dictionary.Contains(_key))
-                        throw new InvalidOperationException("dictionary key '" + _key + "' was not found");
+                    {
+                        if (!_hasDefault)
+                            throw new InvalidOperationException("dictionary key '" + _key + "' was not found");
+
+                        if (_destinationName != null &&
+                            !GameBridge.TrySetVariableLiteral(_destinationName, _defaultValue, false, context))
+                            throw new InvalidOperationException(
+                                "could not assign the dict.pop() default to '" + _destinationName + "'");
+
+                        Log.Info("Applied dict.pop default for missing key '" + _key + "' on '" +
+                            _rootName + "' at " + _sourcePath + ":" + _sourceLine + ".");
+                        return;
+                    }
 
                     object removed = dictionary[_key];
                     if (_destinationName != null &&
@@ -2593,7 +4759,7 @@ namespace StoryAPI.Runtime
             string sourcePath, int sourceLine, out Line line)
         {
             return TryCreateForEachPreparationLine(
-                sourceName, destinationName, false, false, sourcePath, sourceLine, out line);
+                sourceName, destinationName, false, false, false, sourcePath, sourceLine, out line);
         }
 
         // Backwards-compatible overload: true means dictionary.items() key/value pairs.
@@ -2601,22 +4767,43 @@ namespace StoryAPI.Runtime
             bool includeDictionaryItems, string sourcePath, int sourceLine, out Line line)
         {
             return TryCreateForEachPreparationLine(
-                sourceName, destinationName, includeDictionaryItems, false,
+                sourceName, destinationName, includeDictionaryItems, false, false,
                 sourcePath, sourceLine, out line);
         }
 
+        // Backwards-compatible overload: the second flag selects dictionary.values().
         public static bool TryCreateForEachPreparationLine(string sourceName, string destinationName,
             bool includeDictionaryItems, bool dictionaryValuesOnly,
             string sourcePath, int sourceLine, out Line line)
         {
+            return TryCreateForEachPreparationLine(
+                sourceName, destinationName, includeDictionaryItems, dictionaryValuesOnly, false,
+                sourcePath, sourceLine, out line);
+        }
+
+        public static bool TryCreateForEachPreparationLine(string sourceName, string destinationName,
+            bool includeDictionaryItems, bool dictionaryValuesOnly, bool dictionaryKeysOnly,
+            string sourcePath, int sourceLine, out Line line)
+        {
+            return TryCreateForEachPreparationLine(sourceName, destinationName,
+                includeDictionaryItems, dictionaryValuesOnly, dictionaryKeysOnly, false,
+                sourcePath, sourceLine, out line);
+        }
+
+        public static bool TryCreateForEachPreparationLine(string sourceName, string destinationName,
+            bool includeDictionaryItems, bool dictionaryValuesOnly, bool dictionaryKeysOnly,
+            bool reverseList, string sourcePath, int sourceLine, out Line line)
+        {
             line = null;
+            int selectedModes = (includeDictionaryItems ? 1 : 0) +
+                (dictionaryValuesOnly ? 1 : 0) + (dictionaryKeysOnly ? 1 : 0);
             if (!IsSimpleIdentifier(sourceName) || !IsSimpleIdentifier(destinationName) ||
-                (includeDictionaryItems && dictionaryValuesOnly))
+                selectedModes > 1 || (reverseList && selectedModes != 0))
                 return false;
 
             line = new ForEachPreparationLine(
                 sourceName, destinationName, includeDictionaryItems, dictionaryValuesOnly,
-                sourcePath, sourceLine);
+                dictionaryKeysOnly, reverseList, sourcePath, sourceLine);
             return true;
         }
 
@@ -2663,17 +4850,21 @@ namespace StoryAPI.Runtime
             private readonly string _destinationName;
             private readonly bool _includeDictionaryItems;
             private readonly bool _dictionaryValuesOnly;
+            private readonly bool _dictionaryKeysOnly;
+            private readonly bool _reverseList;
             private readonly string _sourcePath;
             private readonly int _sourceLine;
 
             public ForEachPreparationLine(string sourceName, string destinationName,
-                bool includeDictionaryItems, bool dictionaryValuesOnly,
-                string sourcePath, int sourceLine)
+                bool includeDictionaryItems, bool dictionaryValuesOnly, bool dictionaryKeysOnly,
+                bool reverseList, string sourcePath, int sourceLine)
             {
                 _sourceName = sourceName;
                 _destinationName = destinationName;
                 _includeDictionaryItems = includeDictionaryItems;
                 _dictionaryValuesOnly = dictionaryValuesOnly;
+                _dictionaryKeysOnly = dictionaryKeysOnly;
+                _reverseList = reverseList;
                 _sourcePath = sourcePath;
                 _sourceLine = sourceLine;
             }
@@ -2689,7 +4880,19 @@ namespace StoryAPI.Runtime
                             "' is not an object-backed list or dictionary");
 
                     object iterationItems;
-                    if (_includeDictionaryItems)
+                    if (_reverseList)
+                    {
+                        if (!(source is IList reverseSource))
+                            throw new InvalidOperationException(
+                                "reversed() iteration requires a list source");
+
+                        // Snapshot the source from its final item to its first item.
+                        var reversedItems = new List<object>(reverseSource.Count);
+                        for (int i = reverseSource.Count - 1; i >= 0; i--)
+                            reversedItems.Add(reverseSource[i]);
+                        iterationItems = reversedItems;
+                    }
+                    else if (_includeDictionaryItems)
                     {
                         if (!(source is IDictionary entryDictionary))
                             throw new InvalidOperationException(
@@ -2715,6 +4918,18 @@ namespace StoryAPI.Runtime
                         foreach (object value in valuesDictionary.Values)
                             values.Add(value);
                         iterationItems = values;
+                    }
+                    else if (_dictionaryKeysOnly)
+                    {
+                        if (!(source is IDictionary keysDictionary))
+                            throw new InvalidOperationException(
+                                "dictionary.keys() requires a dictionary source");
+
+                        // Explicit .keys() iteration always snapshots dictionary keys.
+                        var keys = new List<object>();
+                        foreach (object key in keysDictionary.Keys)
+                            keys.Add(key);
+                        iterationItems = keys;
                     }
                     else if (source is IList items)
                     {

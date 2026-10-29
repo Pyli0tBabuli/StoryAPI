@@ -615,14 +615,39 @@ namespace StoryAPI.Scripting
             }
             else
             {
-                if (Current.Type != TokenType.Identifier)
-                    throw new ScriptSyntaxException(
-                        "Expected a named list or range(start, stop[, step]) after 'in'.", Current.Line);
-                string collection = Advance().Text;
+                bool isReversed = false;
+                string collection;
+                if (Current.Type == TokenType.Identifier && Current.Text == "reversed" &&
+                    Ahead(1).Text == "(")
+                {
+                    if (valueVariable != null)
+                        throw new ScriptSyntaxException(
+                            "reversed() iteration accepts only one loop variable.", Current.Line);
+                    _index += 2; // reversed(
+                    if (Current.Type != TokenType.Identifier)
+                        throw new ScriptSyntaxException(
+                            "reversed() requires a named list variable.", Current.Line);
+                    collection = Advance().Text;
+                    if (Current.Text != ")")
+                        throw new ScriptSyntaxException(
+                            "reversed() accepts exactly one named list variable.", Current.Line);
+                    _index++; // )
+                    isReversed = true;
+                }
+                else
+                {
+                    if (Current.Type != TokenType.Identifier)
+                        throw new ScriptSyntaxException(
+                            "Expected a named list, reversed(list), or range(start, stop[, step]) after 'in'.",
+                            Current.Line);
+                    collection = Advance().Text;
+                }
                 bool isDictionaryItems = false;
                 bool isDictionaryValues = false;
-                if (Current.Text == "." &&
-                    (Ahead(1).Text == "items" || Ahead(1).Text == "values") &&
+                bool isDictionaryKeys = false;
+                if (!isReversed && Current.Text == "." &&
+                    (Ahead(1).Text == "items" || Ahead(1).Text == "values" ||
+                     Ahead(1).Text == "keys") &&
                     Ahead(2).Text == "(" && Ahead(3).Text == ")")
                 {
                     string dictionaryMethod = Ahead(1).Text;
@@ -638,9 +663,12 @@ namespace StoryAPI.Scripting
                     {
                         if (valueVariable != null)
                             throw new ScriptSyntaxException(
-                                "dictionary.values() iteration accepts only one loop variable.",
-                                Current.Line);
-                        isDictionaryValues = true;
+                                "dictionary." + dictionaryMethod +
+                                "() iteration accepts only one loop variable.", Current.Line);
+                        if (dictionaryMethod == "values")
+                            isDictionaryValues = true;
+                        else
+                            isDictionaryKeys = true;
                     }
                     _index += 4;
                 }
@@ -652,7 +680,7 @@ namespace StoryAPI.Scripting
 
                 if (Current.Type != TokenType.Colon)
                     throw new ScriptSyntaxException(
-                        "Only a named list, dictionary.items(), or dictionary.values() is supported after 'in'.",
+                        "Only a named list, reversed(list), dictionary.keys(), dictionary.items(), or dictionary.values() is supported after 'in'.",
                         Current.Line);
 
                 ExpectColon();
@@ -661,8 +689,10 @@ namespace StoryAPI.Scripting
                     Variable = variable,
                     ValueVariable = valueVariable,
                     Collection = collection,
+                    IsReversed = isReversed,
                     IsDictionaryItems = isDictionaryItems,
                     IsDictionaryValues = isDictionaryValues,
+                    IsDictionaryKeys = isDictionaryKeys,
                     Line = line,
                 };
             }

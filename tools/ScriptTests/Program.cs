@@ -3165,19 +3165,19 @@ namespace StoryAPI.Tests
         {
             const string sourcePath = "reversed-list-test.rpy";
             var statements = Parse(
-                "label reversed_list_test:\\n" +
-                "    for item in reversed(inventory):\\n" +
-                "        pass\\n" +
-                "    return\\n");
+                "label reversed_list_test:\n" +
+                "    for item in reversed(inventory):\n" +
+                "        pass\n" +
+                "    return\n");
             var label = Require<LabelStatement>(statements[0], "Expected reversed-list label.");
             var loop = Require<ForStatement>(label.Body[0], "Expected reversed-list loop.");
             Check(loop.IsReversed && loop.Collection == "inventory" && !loop.IsRange,
                 "reversed(inventory) should be represented as reverse iteration over inventory.");
 
             ExpectSyntaxError(
-                "label reversed_two_names:\\n" +
-                "    for key, value in reversed(inventory):\\n" +
-                "        pass\\n",
+                "label reversed_two_names:\n" +
+                "    for key, value in reversed(inventory):\n" +
+                "        pass\n",
                 "one loop variable");
 
             var context = new RenpyParser.DynamicIndexTestContext();

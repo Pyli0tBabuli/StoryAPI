@@ -4785,16 +4785,25 @@ namespace StoryAPI.Runtime
             bool includeDictionaryItems, bool dictionaryValuesOnly, bool dictionaryKeysOnly,
             string sourcePath, int sourceLine, out Line line)
         {
+            return TryCreateForEachPreparationLine(sourceName, destinationName,
+                includeDictionaryItems, dictionaryValuesOnly, dictionaryKeysOnly, false,
+                sourcePath, sourceLine, out line);
+        }
+
+        public static bool TryCreateForEachPreparationLine(string sourceName, string destinationName,
+            bool includeDictionaryItems, bool dictionaryValuesOnly, bool dictionaryKeysOnly,
+            bool reverseList, string sourcePath, int sourceLine, out Line line)
+        {
             line = null;
             int selectedModes = (includeDictionaryItems ? 1 : 0) +
                 (dictionaryValuesOnly ? 1 : 0) + (dictionaryKeysOnly ? 1 : 0);
             if (!IsSimpleIdentifier(sourceName) || !IsSimpleIdentifier(destinationName) ||
-                selectedModes > 1)
+                selectedModes > 1 || (reverseList && selectedModes != 0))
                 return false;
 
             line = new ForEachPreparationLine(
                 sourceName, destinationName, includeDictionaryItems, dictionaryValuesOnly,
-                dictionaryKeysOnly, sourcePath, sourceLine);
+                dictionaryKeysOnly, reverseList, sourcePath, sourceLine);
             return true;
         }
 
@@ -4842,18 +4851,20 @@ namespace StoryAPI.Runtime
             private readonly bool _includeDictionaryItems;
             private readonly bool _dictionaryValuesOnly;
             private readonly bool _dictionaryKeysOnly;
+            private readonly bool _reverseList;
             private readonly string _sourcePath;
             private readonly int _sourceLine;
 
             public ForEachPreparationLine(string sourceName, string destinationName,
                 bool includeDictionaryItems, bool dictionaryValuesOnly, bool dictionaryKeysOnly,
-                string sourcePath, int sourceLine)
+                bool reverseList, string sourcePath, int sourceLine)
             {
                 _sourceName = sourceName;
                 _destinationName = destinationName;
                 _includeDictionaryItems = includeDictionaryItems;
                 _dictionaryValuesOnly = dictionaryValuesOnly;
                 _dictionaryKeysOnly = dictionaryKeysOnly;
+                _reverseList = reverseList;
                 _sourcePath = sourcePath;
                 _sourceLine = sourceLine;
             }
@@ -4869,7 +4880,19 @@ namespace StoryAPI.Runtime
                             "' is not an object-backed list or dictionary");
 
                     object iterationItems;
-                    if (_includeDictionaryItems)
+                    if (_reverseList)
+                    {
+                        if (!(source is IList reverseSource))
+                            throw new InvalidOperationException(
+                                "reversed() iteration requires a list source");
+
+                        // Snapshot the source from its final item to its first item.
+                        var reversedItems = new List<object>(reverseSource.Count);
+                        for (int i = reverseSource.Count - 1; i >= 0; i--)
+                            reversedItems.Add(reverseSource[i]);
+                        iterationItems = reversedItems;
+                    }
+                    else if (_includeDictionaryItems)
                     {
                         if (!(source is IDictionary entryDictionary))
                             throw new InvalidOperationException(

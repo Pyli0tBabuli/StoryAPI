@@ -618,6 +618,7 @@ namespace StoryAPI.Scripting
                 bool isReversed = false;
                 bool isEnumerate = false;
                 int enumerateStart = 0;
+                string enumerateStartExpression = null;
                 string collection;
                 if (Current.Type == TokenType.Identifier && Current.Text == "enumerate" &&
                     Ahead(1).Text == "(")
@@ -634,16 +635,54 @@ namespace StoryAPI.Scripting
                     if (Current.Text == ",")
                     {
                         _index++;
-                        if (Current.Type != TokenType.Number ||
-                            !int.TryParse(Current.Text, NumberStyles.Integer,
-                                CultureInfo.InvariantCulture, out enumerateStart))
+                        if (Current.Text == ")" || Current.Type == TokenType.Newline ||
+                            Current.Type == TokenType.EndOfFile)
                             throw new ScriptSyntaxException(
-                                "enumerate() start must be an integer literal.", Current.Line);
-                        _index++;
+                                "enumerate() start expression cannot be empty.", Current.Line);
+
+                        int expressionStartIndex = _index;
+                        int parenDepth = 0;
+                        int bracketDepth = 0;
+                        while (!AtEnd && Current.Type != TokenType.Newline &&
+                            Current.Type != TokenType.Dedent)
+                        {
+                            if (Current.Text == ")" && parenDepth == 0 && bracketDepth == 0)
+                                break;
+                            if (Current.Text == "," && parenDepth == 0 && bracketDepth == 0)
+                                throw new ScriptSyntaxException(
+                                    "enumerate() accepts only one optional start argument.", Current.Line);
+
+                            if (Current.Text == "(") parenDepth++;
+                            else if (Current.Text == ")" && parenDepth > 0) parenDepth--;
+                            else if (Current.Text == "[") bracketDepth++;
+                            else if (Current.Text == "]" && bracketDepth > 0) bracketDepth--;
+                            _index++;
+                        }
+
+                        if (_index == expressionStartIndex)
+                            throw new ScriptSyntaxException(
+                                "enumerate() start expression cannot be empty.", Current.Line);
+
+                        Token first = _tokens[expressionStartIndex];
+                        Token last = _tokens[_index - 1];
+                        string expression = _source.Substring(
+                            first.Start, last.Start + last.Length - first.Start).Trim();
+
+                        if (expressionStartIndex + 1 == _index && first.Type == TokenType.Number)
+                        {
+                            if (!int.TryParse(expression, NumberStyles.Integer,
+                                CultureInfo.InvariantCulture, out enumerateStart))
+                                throw new ScriptSyntaxException(
+                                    "enumerate() integer literal must fit a signed 32-bit integer.", first.Line);
+                        }
+                        else
+                        {
+                            enumerateStartExpression = expression;
+                        }
                     }
                     if (Current.Text != ")")
                         throw new ScriptSyntaxException(
-                            "enumerate() accepts a named list and an optional integer start.", Current.Line);
+                            "enumerate() accepts a named list and an optional scalar start expression.", Current.Line);
                     _index++; // )
                     isEnumerate = true;
                 }
@@ -722,6 +761,7 @@ namespace StoryAPI.Scripting
                     IsReversed = isReversed,
                     IsEnumerate = isEnumerate,
                     EnumerateStart = enumerateStart,
+                    EnumerateStartExpression = enumerateStartExpression,
                     IsDictionaryItems = isDictionaryItems,
                     IsDictionaryValues = isDictionaryValues,
                     IsDictionaryKeys = isDictionaryKeys,

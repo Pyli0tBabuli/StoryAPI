@@ -319,6 +319,7 @@ namespace StoryAPI.Scripting
         public bool IsReversed { get; set; }
         public bool IsEnumerate { get; set; }
         public int EnumerateStart { get; set; }
+        public string EnumerateStartExpression { get; set; }
         public bool IsDictionaryItems { get; set; }
         public bool IsDictionaryValues { get; set; }
         public bool IsDictionaryKeys { get; set; }

@@ -3246,6 +3246,30 @@ namespace StoryAPI.Tests
             Check(negativeStartLoop.EnumerateStart == -2,
                 "enumerate(inventory, -2) should allow a negative integer start.");
 
+            var variableStartStatements = Parse(
+                "label enumerate_variable_start:\n" +
+                "    for index, item in enumerate(inventory, start_index):\n" +
+                "        pass\n" +
+                "    return\n");
+            var variableStartLoop = Require<ForStatement>(
+                Require<LabelStatement>(variableStartStatements[0],
+                    "Expected variable-start enumerate label.").Body[0],
+                "Expected enumerate() loop with a variable start.");
+            Check(variableStartLoop.EnumerateStartExpression == "start_index",
+                "enumerate() should preserve a variable start expression.");
+
+            var arithmeticStartStatements = Parse(
+                "label enumerate_arithmetic_start:\n" +
+                "    for index, item in enumerate(inventory, start_index + 2):\n" +
+                "        pass\n" +
+                "    return\n");
+            var arithmeticStartLoop = Require<ForStatement>(
+                Require<LabelStatement>(arithmeticStartStatements[0],
+                    "Expected arithmetic-start enumerate label.").Body[0],
+                "Expected enumerate() loop with an arithmetic start.");
+            Check(arithmeticStartLoop.EnumerateStartExpression == "start_index + 2",
+                "enumerate() should preserve scalar arithmetic in the start expression.");
+
             ExpectSyntaxError(
                 "label enumerate_one_name:\n" +
                 "    for item in enumerate(inventory):\n" +
@@ -3255,7 +3279,7 @@ namespace StoryAPI.Tests
                 "label enumerate_extra_argument:\n" +
                 "    for index, item in enumerate(inventory, 1, 2):\n" +
                 "        pass\n",
-                "optional integer start");
+                "only one optional start argument");
             ExpectSyntaxError(
                 "label enumerate_non_integer_start:\n" +
                 "    for index, item in enumerate(inventory, 1.5):\n" +
@@ -3304,6 +3328,29 @@ namespace StoryAPI.Tests
             Check(GameBridge.TryGetLastTestLiteral("index", out observedIndex) &&
                     Math.Abs(Convert.ToSingle(observedIndex, CultureInfo.InvariantCulture) - 5f) < 0.0001f,
                 "enumerate() should add the custom start to the current list index.");
+
+            context.SetVariable("_stage43_start", new SimpleExpressionEngine.DataValue(7f));
+            RenPyParser.Line dynamicStartItemLine;
+            Check(VariableIndexExpressionLine.TryCreateForEachItemLine(
+                    "index", "item", "_stage41_items", "_stage41_index", "_stage41_gate",
+                    true, 0, "_stage43_start", sourcePath, 6, out dynamicStartItemLine),
+                "The runtime should create an enumerate() item instruction with a dynamic start.");
+            ((RenPyParser.Images.IApply)dynamicStartItemLine).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("index", out observedIndex) &&
+                    Math.Abs(Convert.ToSingle(observedIndex, CultureInfo.InvariantCulture) - 7f) < 0.0001f,
+                "enumerate() should read the evaluated start variable.");
+
+            context.SetVariable("_stage41_index", new SimpleExpressionEngine.DataValue(0f));
+            context.SetVariable("_stage41_gate", new SimpleExpressionEngine.DataValue(true));
+            context.SetVariable("_stage43_start", new SimpleExpressionEngine.DataValue(7.5f));
+            ((RenPyParser.Images.IApply)dynamicStartItemLine).Apply(context);
+            object observedGate;
+            Check(GameBridge.TryGetLastTestLiteral("_stage41_gate", out observedGate) &&
+                    Equals(observedGate, false),
+                "enumerate() should stop the loop when a dynamic start is not an integer.");
+            Check(GameBridge.TryGetLastTestLiteral("_stage41_index", out observedIndex) &&
+                    Math.Abs(Convert.ToSingle(observedIndex, CultureInfo.InvariantCulture) - values.Count) < 0.0001f,
+                "An invalid dynamic enumerate() start should force the loop to exit.");
 
             context.SetVariable("_stage41_index", new SimpleExpressionEngine.DataValue(1f));
             ((RenPyParser.Images.IApply)itemLine).Apply(context);

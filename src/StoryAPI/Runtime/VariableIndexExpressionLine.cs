@@ -877,6 +877,54 @@ namespace StoryAPI.Runtime
         }
 
         /// <summary>
+        /// Recognizes sorted(listVariable) assigned to a simple variable. It returns a new
+        /// ascending list and does not modify the source list.
+        /// </summary>
+        public static bool TryCreateSortedListAssignmentLine(string code, string sourcePath,
+            int sourceLine, out Line line)
+        {
+            line = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int destinationStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string destinationName = code.Substring(destinationStart, cursor - destinationStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '=' ||
+                (cursor < code.Length && code[cursor] == '=')) return false;
+            SkipWhitespace(code, ref cursor);
+
+            const string builtinName = "sorted";
+            if (cursor + builtinName.Length > code.Length ||
+                string.Compare(code, cursor, builtinName, 0, builtinName.Length,
+                    StringComparison.Ordinal) != 0)
+                return false;
+            cursor += builtinName.Length;
+            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '(') return false;
+            SkipWhitespace(code, ref cursor);
+
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int rootStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string rootName = code.Substring(rootStart, cursor - rootStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != ')') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor != code.Length) return false;
+
+            line = new SortedListAssignmentLine(destinationName, rootName, sourcePath, sourceLine);
+            return true;
+        }
+
+        /// <summary>
         /// Recognizes assignment from a no-argument list.copy() call.
         /// </summary>
         public static bool TryCreateListCopyLine(string code, string sourcePath,
@@ -2563,6 +2611,100 @@ namespace StoryAPI.Runtime
                     Log.Warn("Could not clear collection '" + _rootName + "' at " +
                         _sourcePath + ":" + _sourceLine + ": " +
                         e.GetBaseException().Message);
+                }
+            }
+        }
+
+        private sealed class SortedListAssignmentLine : Line, IApply
+        {
+            private readonly string _destinationName;
+            private readonly string _rootName;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public SortedListAssignmentLine(string destinationName, string rootName,
+                string sourcePath, int sourceLine)
+            {
+                _destinationName = destinationName;
+                _rootName = rootName;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object source) ||
+                        !(source is IList sourceList))
+                        throw new InvalidOperationException("sorted() requires a list variable");
+
+                    var sorted = new List<object>(sourceList.Count);
+                    for (int i = 0; i < sourceList.Count; i++)
+                        sorted.Add(sourceList[i]);
+
+                    // Sort a copy and validate supported scalar types before assigning a result.
+                    if (sorted.Count > 1)
+                    {
+                        bool strings = sorted[0] is string;
+                        bool numbers = IsNumericScalar(sorted[0]);
+                        if (!strings && !numbers)
+                            throw new InvalidOperationException(
+                                "sorted() supports homogeneous string or numeric lists only");
+
+                        for (int i = 1; i < sorted.Count; i++)
+                        {
+                            if ((strings && !(sorted[i] is string)) ||
+                                (numbers && !IsNumericScalar(sorted[i])))
+                                throw new InvalidOperationException(
+                                    "sorted() requires all items to have the same sortable scalar type");
+                        }
+
+                        sorted.Sort(delegate(object left, object right)
+                        {
+                            if (strings)
+                                return string.CompareOrdinal((string)left, (string)right);
+                            return Convert.ToDouble(left, CultureInfo.InvariantCulture).CompareTo(
+                                Convert.ToDouble(right, CultureInfo.InvariantCulture));
+                        });
+                    }
+
+                    if (!GameBridge.TrySetVariableLiteral(_destinationName, sorted, false, context))
+                        throw new InvalidOperationException(
+                            "could not assign sorted() result to '" + _destinationName + "'");
+
+                    Log.Info("Applied sorted() to '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not apply sorted() to '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+
+            private static bool IsNumericScalar(object value)
+            {
+                if (value == null) return false;
+                switch (Type.GetTypeCode(value.GetType()))
+                {
+                    case TypeCode.SByte:
+                    case TypeCode.Byte:
+                    case TypeCode.Int16:
+                    case TypeCode.UInt16:
+                    case TypeCode.Int32:
+                    case TypeCode.UInt32:
+                    case TypeCode.Int64:
+                    case TypeCode.UInt64:
+                    case TypeCode.Single:
+                    case TypeCode.Double:
+                    case TypeCode.Decimal:
+                        return true;
+                    default:
+                        return false;
                 }
             }
         }

@@ -34,6 +34,7 @@ namespace StoryAPI.Tests
             Run("list and dictionary clear methods", TestCollectionClearMethods);
             Run("list reverse method", TestListReverseMethod);
             Run("list sort method", TestListSortMethod);
+            Run("sorted() builtin", TestSortedListBuiltin);
             Run("list count method", TestListCountMethod);
             Run("list index method", TestListIndexMethod);
             Run("list copy method", TestListCopyMethod);
@@ -1989,6 +1990,101 @@ namespace StoryAPI.Tests
                     "The index() call should parse as a Python statement.").Code ==
                     "battery_index = inventory.index(\"battery\")",
                 "The parser should preserve list index assignments.");
+        }
+
+        private static void TestSortedListBuiltin()
+        {
+            const string sourcePath = "sorted-builtin-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var inventory = new List<object> { "pear", "apple", "banana", "Apple" };
+            context.SetVariable("inventory",
+                new SimpleExpressionEngine.DataValue((object)inventory));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "sorted_inventory = sorted(inventory)", sourcePath, 3, out line),
+                "sorted(inventory) assignment should be recognized.");
+            Check(line.GetType().Name == "SortedListAssignmentLine",
+                "sorted() should emit a dedicated sorted-list instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("sorted_inventory", out observed) &&
+                    observed is List<object>,
+                "sorted() should assign a list object.");
+            var sorted = (List<object>)observed;
+            Check(sorted.SequenceEqual(new object[] { "Apple", "apple", "banana", "pear" }),
+                "sorted() should sort strings by ordinal ascending order.");
+            Check(!object.ReferenceEquals(inventory, sorted),
+                "sorted() should return a new list, not the source list.");
+            Check(inventory.SequenceEqual(new object[] { "pear", "apple", "banana", "Apple" }),
+                "sorted() must leave the source list unchanged.");
+
+            var numbers = new List<object> { 9f, -2f, 3f, 0f };
+            context.SetVariable("numbers",
+                new SimpleExpressionEngine.DataValue((object)numbers));
+            Check(VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "sorted_numbers = sorted(numbers)", sourcePath, 4, out line),
+                "sorted() should accept a numeric list.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("sorted_numbers", out observed) &&
+                    observed is List<object> sortedNumbers &&
+                    sortedNumbers.SequenceEqual(new object[] { -2f, 0f, 3f, 9f }),
+                "sorted() should return ascending numeric order.");
+
+            var mixed = new List<object> { "battery", 2f };
+            context.SetVariable("mixed",
+                new SimpleExpressionEngine.DataValue((object)mixed));
+            context.SetVariable("mixed_sorted",
+                new SimpleExpressionEngine.DataValue(77f));
+            GameBridge.TrySetVariableLiteral("mixed_sorted", 77f, false, context);
+            Check(VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "mixed_sorted = sorted(mixed)", sourcePath, 5, out line),
+                "sorted() should recognize a named list with unsupported items.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("mixed_sorted", out observed) &&
+                    Convert.ToSingle(observed) == 77f,
+                "Unsupported mixed lists should leave the destination unchanged.");
+            Check(mixed.SequenceEqual(new object[] { "battery", 2f }),
+                "Unsupported mixed lists should leave the source unchanged.");
+
+            var empty = new List<object>();
+            context.SetVariable("empty_inventory",
+                new SimpleExpressionEngine.DataValue((object)empty));
+            Check(VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "sorted_empty = sorted(empty_inventory)", sourcePath, 6, out line),
+                "sorted() should recognize an empty list.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("sorted_empty", out observed) &&
+                    observed is List<object> emptySorted && emptySorted.Count == 0,
+                "sorted() on an empty list should return a new empty list.");
+
+            Check(!VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "sorted_inventory = sorted(inventory, reverse=True)", sourcePath, 20, out line),
+                "The initial sorted() form should reject keyword arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "sorted_inventory = sorted(inventory, other_list)", sourcePath, 21, out line),
+                "sorted() should reject additional arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "sorted_inventory = sorted(inventory[0])", sourcePath, 22, out line),
+                "sorted() should reject indexed source expressions.");
+            Check(!VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "sorted(inventory)", sourcePath, 23, out line),
+                "The restricted sorted() form should require an assignment target.");
+            Check(!VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
+                    "sorted_inventory = sorted(inventory); inventory.clear()", sourcePath, 24, out line),
+                "sorted() should reject multiple statements.");
+
+            var statements = Parse(
+                "label sorted_builtin_test:\n" +
+                "    $ sorted_inventory = sorted(inventory)\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing sorted().");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The sorted() assignment should parse as a Python statement.").Code ==
+                    "sorted_inventory = sorted(inventory)",
+                "The parser should preserve sorted() assignments.");
         }
 
         private static void TestListSortMethod()

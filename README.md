@@ -166,7 +166,11 @@ the same restricted dynamic scalar indexes supported by reads. Assignment values
 expressions; collection reads on the right-hand side are resolved before the assignment. Compound assignments to simple scalar variables and indexed list/dictionary entries support
 `+=`, `-=`, `*=`, `/=`, and `%=`; their right-hand side may use supported scalar expressions and
 collection index reads. Other compound operators such as `**=`, slices, and assigning a new value
-beyond the end of a list remain unsupported. Lists support `$ inventory.sort()` and `$ inventory.sort(reverse=True)`. Sorting is in place:
+beyond the end of a list remain unsupported. The built-in assignment form `$ sorted_inventory = sorted(inventory)` creates a new list sorted in
+ascending order, using ordinal ordering for homogeneous strings and numeric ordering for homogeneous
+numbers. The source list is not modified. Mixed or unsupported item types leave the destination
+unchanged with a warning; keyword arguments and additional arguments are not yet supported.
+Lists support `$ inventory.sort()` and `$ inventory.sort(reverse=True)`. Sorting is in place:
 homogeneous string lists use ordinal ordering, and homogeneous numeric lists use numeric ordering.
 The optional `reverse` keyword accepts only the literal `True` or `False`; `True` sorts in
 descending order and `False` (the default) sorts in ascending order. Mixed or unsupported item

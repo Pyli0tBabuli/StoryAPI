@@ -822,17 +822,29 @@ namespace StoryAPI.Scripting
                 });
             }
 
-            // Lists are reused; dictionaries are converted into a snapshot of their keys.
+            // Materialize only the iterable wrappers that require a snapshot.
             Line preparationLine;
-            bool prepared = statement.IsZip
-                ? VariableIndexExpressionLine.TryCreateForZipPreparationLine(
+            bool prepared;
+            if (statement.IsSorted)
+            {
+                prepared = VariableIndexExpressionLine.TryCreateSortedForEachPreparationLine(
+                    statement.Collection, iterationCollectionName, statement.SortReverse,
+                    _textLabel ?? "unknown", statement.Line, out preparationLine);
+            }
+            else if (statement.IsZip)
+            {
+                prepared = VariableIndexExpressionLine.TryCreateForZipPreparationLine(
                     statement.Collection, statement.ZipSecondCollection, iterationCollectionName,
-                    _textLabel ?? "unknown", statement.Line, out preparationLine)
-                : VariableIndexExpressionLine.TryCreateForEachPreparationLine(
+                    _textLabel ?? "unknown", statement.Line, out preparationLine);
+            }
+            else
+            {
+                prepared = VariableIndexExpressionLine.TryCreateForEachPreparationLine(
                     statement.Collection, iterationCollectionName, statement.IsDictionaryItems,
                     statement.IsDictionaryValues, statement.IsDictionaryKeys, statement.IsReversed,
                     statement.IsEnumerate && !statement.IsDictionaryValues,
                     _textLabel ?? "unknown", statement.Line, out preparationLine);
+            }
             if (!prepared)
                 throw new InvalidOperationException(
                     "for loops require simple variable names and supported collection sources (line " +

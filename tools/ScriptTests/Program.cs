@@ -1898,6 +1898,7 @@ namespace StoryAPI.Tests
                 "index(None) should find the first null entry.");
 
             context.SetVariable("missing_index", new SimpleExpressionEngine.DataValue(77f));
+            GameBridge.TrySetVariableLiteral("missing_index", 77f, false, context);
             Check(VariableIndexExpressionLine.TryCreateListIndexLine(
                     "missing_index = inventory.index(\"absent\")", sourcePath, 7, out line),
                 "index() should recognize an absent scalar value.");

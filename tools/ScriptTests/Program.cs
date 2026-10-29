@@ -3214,10 +3214,10 @@ namespace StoryAPI.Tests
         {
             const string sourcePath = "zip-list-test.rpy";
             var statements = Parse(
-                "label zip_list_test:\\n" +
-                "    for left_item, right_item in zip(left_values, right_values):\\n" +
-                "        pass\\n" +
-                "    return\\n");
+                "label zip_list_test:\n" +
+                "    for left_item, right_item in zip(left_values, right_values):\n" +
+                "        pass\n" +
+                "    return\n");
             var label = Require<LabelStatement>(statements[0], "Expected zip-list label.");
             var loop = Require<ForStatement>(label.Body[0], "Expected zip() loop.");
             Check(loop.IsZip && loop.Collection == "left_values" &&
@@ -3227,19 +3227,19 @@ namespace StoryAPI.Tests
                 "zip(left_values, right_values) should bind two list variables.");
 
             ExpectSyntaxError(
-                "label zip_one_target:\\n" +
-                "    for item in zip(left_values, right_values):\\n" +
-                "        pass\\n",
+                "label zip_one_target:\n" +
+                "    for item in zip(left_values, right_values):\n" +
+                "        pass\n",
                 "requires 'for left, right");
             ExpectSyntaxError(
-                "label zip_three_targets:\\n" +
-                "    for index, left_item, right_item in zip(left_values, right_values):\\n" +
-                "        pass\\n",
+                "label zip_three_targets:\n" +
+                "    for index, left_item, right_item in zip(left_values, right_values):\n" +
+                "        pass\n",
                 "zip() loops accept only two loop variables");
             ExpectSyntaxError(
-                "label zip_extra_argument:\\n" +
-                "    for left_item, right_item in zip(left_values, right_values, extras):\\n" +
-                "        pass\\n",
+                "label zip_extra_argument:\n" +
+                "    for left_item, right_item in zip(left_values, right_values, extras):\n" +
+                "        pass\n",
                 "exactly two named list arguments");
 
             var context = new RenpyParser.DynamicIndexTestContext();

@@ -4810,8 +4810,7 @@ namespace StoryAPI.Runtime
                 !dictionaryValuesOnly && !dictionaryKeysOnly && !reverseList;
             if (!IsSimpleIdentifier(sourceName) || !IsSimpleIdentifier(destinationName) ||
                 selectedModes > 1 ||
-                ((reverseList || enumerateList) && selectedModes != 0 && !enumeratedDictionaryItems) ||
-                (reverseList && enumerateList))
+                ((reverseList || enumerateList) && selectedModes != 0 && !enumeratedDictionaryItems))
                 return false;
 
             line = new ForEachPreparationLine(

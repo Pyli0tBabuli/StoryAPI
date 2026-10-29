@@ -4810,7 +4810,8 @@ namespace StoryAPI.Runtime
                 !dictionaryValuesOnly && !dictionaryKeysOnly && !reverseList;
             if (!IsSimpleIdentifier(sourceName) || !IsSimpleIdentifier(destinationName) ||
                 selectedModes > 1 ||
-                ((reverseList || enumerateList) && selectedModes != 0 && !enumeratedDictionaryItems))
+                ((reverseList || enumerateList) && selectedModes != 0 && !enumeratedDictionaryItems &&
+                    !(reverseList && dictionaryValuesOnly)))
                 return false;
 
             line = new ForEachPreparationLine(
@@ -5065,12 +5066,24 @@ namespace StoryAPI.Runtime
                         }
                         else if (source is IDictionary reverseDictionary)
                         {
-                            // A dict iterates over keys; reversed(dict) reverses that key snapshot.
-                            var reversedKeys = new List<object>();
-                            foreach (object key in reverseDictionary.Keys)
-                                reversedKeys.Add(key);
-                            reversedKeys.Reverse();
-                            iterationItems = reversedKeys;
+                            if (_dictionaryValuesOnly)
+                            {
+                                // Preserve key/value association while reversing dictionary values.
+                                var reversedValues = new List<object>();
+                                foreach (object key in reverseDictionary.Keys)
+                                    reversedValues.Add(reverseDictionary[key]);
+                                reversedValues.Reverse();
+                                iterationItems = reversedValues;
+                            }
+                            else
+                            {
+                                // A dict normally iterates over keys; reverse that key snapshot.
+                                var reversedKeys = new List<object>();
+                                foreach (object key in reverseDictionary.Keys)
+                                    reversedKeys.Add(key);
+                                reversedKeys.Reverse();
+                                iterationItems = reversedKeys;
+                            }
                         }
                         else
                         {

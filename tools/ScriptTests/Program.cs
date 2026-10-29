@@ -1884,7 +1884,7 @@ namespace StoryAPI.Tests
             Check(VariableIndexExpressionLine.TryCreateListIndexLine(
                     "bool_index = inventory.index(True)", sourcePath, 5, out line),
                 "index() should accept a boolean literal.");
-            ((RenpyParser.Images.IApply)line).Apply(context);
+            ((RenPyParser.Images.IApply)line).Apply(context);
             Check(GameBridge.TryGetLastTestLiteral("bool_index", out observed) &&
                     Convert.ToInt32(observed) == 6,
                 "index() should distinguish a boolean from numeric values.");

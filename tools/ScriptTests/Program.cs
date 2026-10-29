@@ -58,6 +58,7 @@ namespace StoryAPI.Tests
             Run("while and loop-control statements", TestWhileAndLoopControl);
             Run("for-list iteration and loop control", TestForListIteration);
             Run("for-reversed-list iteration", TestForReversedListIteration);
+            Run("for-zip-list iteration", TestForZipListIteration);
             Run("for-enumerate-list iteration", TestForEnumerateListIteration);
             Run("for-dictionary key iteration", TestForDictionaryIteration);
             Run("for-dictionary key/value iteration", TestForDictionaryItemsIteration);
@@ -3207,6 +3208,88 @@ namespace StoryAPI.Tests
                     "settings", "_stage40_invalid", true, false, false, true,
                     sourcePath, 6, out preparation),
                 "reversed() should not be combined with a dictionary-items iteration mode.");
+        }
+
+        private static void TestForZipListIteration()
+        {
+            const string sourcePath = "zip-list-test.rpy";
+            var statements = Parse(
+                "label zip_list_test:\\n" +
+                "    for left_item, right_item in zip(left_values, right_values):\\n" +
+                "        pass\\n" +
+                "    return\\n");
+            var label = Require<LabelStatement>(statements[0], "Expected zip-list label.");
+            var loop = Require<ForStatement>(label.Body[0], "Expected zip() loop.");
+            Check(loop.IsZip && loop.Collection == "left_values" &&
+                    loop.ZipSecondCollection == "right_values" &&
+                    loop.Variable == "left_item" && loop.ValueVariable == "right_item" &&
+                    loop.ThirdVariable == null,
+                "zip(left_values, right_values) should bind two list variables.");
+
+            ExpectSyntaxError(
+                "label zip_one_target:\\n" +
+                "    for item in zip(left_values, right_values):\\n" +
+                "        pass\\n",
+                "requires 'for left, right");
+            ExpectSyntaxError(
+                "label zip_three_targets:\\n" +
+                "    for index, left_item, right_item in zip(left_values, right_values):\\n" +
+                "        pass\\n",
+                "zip() loops accept only two loop variables");
+            ExpectSyntaxError(
+                "label zip_extra_argument:\\n" +
+                "    for left_item, right_item in zip(left_values, right_values, extras):\\n" +
+                "        pass\\n",
+                "exactly two named list arguments");
+
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var leftValues = new List<object> { "A", "B", "C" };
+            var rightValues = new List<object> { 10f, 20f };
+            context.SetVariable("left_values", new SimpleExpressionEngine.DataValue((object)leftValues));
+            context.SetVariable("right_values", new SimpleExpressionEngine.DataValue((object)rightValues));
+
+            RenPyParser.Line preparation;
+            Check(VariableIndexExpressionLine.TryCreateForZipPreparationLine(
+                    "left_values", "right_values", "_stage47_pairs", sourcePath, 12, out preparation),
+                "The runtime should create a zip() preparation line.");
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
+            object preparedValue;
+            Check(GameBridge.TryGetLastTestLiteral("_stage47_pairs", out preparedValue) &&
+                    preparedValue is List<object>,
+                "zip() should prepare a list of paired values.");
+            var pairs = preparedValue as List<object>;
+            Check(pairs != null && pairs.Count == 2,
+                "zip() should stop at the shorter source list.");
+            Check(pairs.All(pair => pair is object[] values && values.Length == 2),
+                "Each zip() item should contain exactly two values.");
+            rightValues.Add(30f);
+            Check(pairs.Count == 2,
+                "The active zip() pairs should be snapshotted when the loop begins.");
+
+            context.SetVariable("_stage47_pairs", new SimpleExpressionEngine.DataValue((object)pairs));
+            RenPyParser.Line itemLine;
+            Check(VariableIndexExpressionLine.TryCreateForEachItemLine(
+                    "left_item", "right_item", "_stage47_pairs", "_stage47_index", "_stage47_gate",
+                    sourcePath, 13, out itemLine),
+                "The runtime should create an item line for zipped pairs.");
+            context.SetVariable("_stage47_index", new SimpleExpressionEngine.DataValue(0f));
+            context.SetVariable("_stage47_gate", new SimpleExpressionEngine.DataValue(true));
+            ((RenPyParser.Images.IApply)itemLine).Apply(context);
+            object leftObserved, rightObserved;
+            Check(GameBridge.TryGetLastTestLiteral("left_item", out leftObserved) && Equals(leftObserved, "A"),
+                "The first zip() pair should assign the first value from the left list.");
+            Check(GameBridge.TryGetLastTestLiteral("right_item", out rightObserved) &&
+                    Math.Abs(Convert.ToSingle(rightObserved, CultureInfo.InvariantCulture) - 10f) < 0.0001f,
+                "The first zip() pair should assign the first value from the right list.");
+
+            context.SetVariable("_stage47_index", new SimpleExpressionEngine.DataValue(1f));
+            context.SetVariable("_stage47_gate", new SimpleExpressionEngine.DataValue(true));
+            ((RenPyParser.Images.IApply)itemLine).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("left_item", out leftObserved) && Equals(leftObserved, "B"),
+                "The second zip() pair should assign the next left value.");
+            Check(GameBridge.TryGetLastTestLiteral("right_item", out rightObserved) &&
+                    Math.Abs(Convert.ToSingle(rightObserved, CultureInfo.InvariantCulture) - 20f) < 0.0001f,
+                "The second zip() pair should assign the next right value.");
         }
 
         private static void TestForEnumerateListIteration()

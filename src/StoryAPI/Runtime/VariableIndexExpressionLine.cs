@@ -879,7 +879,11 @@ namespace StoryAPI.Runtime
         /// <summary>
         /// Recognizes assignment from a no-argument list.copy() call.
         /// </summary>
-        public static bool TryCreateListCopyLine(string code, string sourcePath,
+        /// <summary>
+        /// Recognizes sorted(listVariable) assigned to a simple variable. It returns a new
+        /// ascending list and does not modify the source list.
+        /// </summary>
+        public static bool TryCreateSortedListAssignmentLine(string code, string sourcePath,
             int sourceLine, out Line line)
         {
             line = null;
@@ -897,33 +901,34 @@ namespace StoryAPI.Runtime
                 (cursor < code.Length && code[cursor] == '=')) return false;
             SkipWhitespace(code, ref cursor);
 
+            const string builtinName = "sorted";
+            if (cursor + builtinName.Length > code.Length ||
+                string.Compare(code, cursor, builtinName, 0, builtinName.Length,
+                    StringComparison.Ordinal) != 0)
+                return false;
+            cursor += builtinName.Length;
+            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '(') return false;
+            SkipWhitespace(code, ref cursor);
+
             if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
             int rootStart = cursor++;
             while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
             string rootName = code.Substring(rootStart, cursor - rootStart);
 
             SkipWhitespace(code, ref cursor);
-            if (cursor >= code.Length || code[cursor++] != '.') return false;
-            SkipWhitespace(code, ref cursor);
-            const string methodName = "copy";
-            if (cursor + methodName.Length > code.Length ||
-                string.Compare(code, cursor, methodName, 0, methodName.Length,
-                    StringComparison.Ordinal) != 0) return false;
-            cursor += methodName.Length;
-            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
-
-            SkipWhitespace(code, ref cursor);
-            if (cursor >= code.Length || code[cursor++] != '(') return false;
-            SkipWhitespace(code, ref cursor);
             if (cursor >= code.Length || code[cursor++] != ')') return false;
             SkipWhitespace(code, ref cursor);
             if (cursor != code.Length) return false;
 
-            line = new ListCopyLine(destinationName, rootName, sourcePath, sourceLine);
+            line = new SortedListAssignmentLine(destinationName, rootName, sourcePath, sourceLine);
             return true;
         }
 
-        /// <summary>
+
+        public static bool TryCreateListCopyLine(string code, string sourcePath,        /// <summary>
         /// Recognizes assignment from list.index(scalarLiteral). The first matching index
         /// is returned; arguments are restricted to scalar literal values.
         /// </summary>
@@ -2567,14 +2572,14 @@ namespace StoryAPI.Runtime
             }
         }
 
-        private sealed class ListCopyLine : Line, IApply
+        private sealed class SortedListAssignmentLine : Line, IApply
         {
             private readonly string _destinationName;
             private readonly string _rootName;
             private readonly string _sourcePath;
             private readonly int _sourceLine;
 
-            public ListCopyLine(string destinationName, string rootName,
+            public SortedListAssignmentLine(string destinationName, string rootName,
                 string sourcePath, int sourceLine)
             {
                 _destinationName = destinationName;
@@ -2591,42 +2596,79 @@ namespace StoryAPI.Runtime
                         throw new InvalidOperationException("no live script context was available");
                     if (!TryGetObjectBackedVariable(_rootName, context, out object source) ||
                         !(source is IList sourceList))
-                        throw new InvalidOperationException("list.copy() requires a list target");
+                        throw new InvalidOperationException("sorted() requires a list variable");
 
-                    IList copy = null;
-                    try
+                    var sorted = new List<object>(sourceList.Count);
+                    for (int i = 0; i < sourceList.Count; i++)
+                        sorted.Add(sourceList[i]);
+
+                    // Match list.sort()'s restricted supported scalar types. Sort a copy so
+                    // even errors cannot mutate the original collection.
+                    if (sorted.Count > 1)
                     {
-                        copy = Activator.CreateInstance(source.GetType()) as IList;
+                        bool strings = sorted[0] is string;
+                        bool numbers = IsNumericScalar(sorted[0]);
+                        if (!strings && !numbers)
+                            throw new InvalidOperationException(
+                                "sorted() supports homogeneous string or numeric lists only");
+
+                        for (int i = 1; i < sorted.Count; i++)
+                        {
+                            if ((strings && !(sorted[i] is string)) ||
+                                (numbers && !IsNumericScalar(sorted[i])))
+                                throw new InvalidOperationException(
+                                    "sorted() requires all items to have the same sortable scalar type");
+                        }
+
+                        sorted.Sort(delegate(object left, object right)
+                        {
+                            if (strings)
+                                return string.CompareOrdinal((string)left, (string)right);
+                            return Convert.ToDouble(left, CultureInfo.InvariantCulture).CompareTo(
+                                Convert.ToDouble(right, CultureInfo.InvariantCulture));
+                        });
                     }
-                    catch
-                    {
-                        // Some IList implementations do not expose a public parameterless
-                        // constructor; use a mutable fallback in that case.
-                    }
 
-                    if (copy == null || copy.IsReadOnly || copy.IsFixedSize)
-                        copy = new ArrayList();
-
-                    foreach (object value in sourceList)
-                        copy.Add(value);
-
-                    if (!GameBridge.TrySetVariableLiteral(_destinationName, copy, false, context))
+                    if (!GameBridge.TrySetVariableLiteral(_destinationName, sorted, false, context))
                         throw new InvalidOperationException(
-                            "could not assign list.copy() result to '" + _destinationName + "'");
+                            "could not assign sorted() result to '" + _destinationName + "'");
 
-                    Log.Info("Applied list.copy on '" + _rootName + "' at " +
+                    Log.Info("Applied sorted() to '" + _rootName + "' at " +
                         _sourcePath + ":" + _sourceLine + ".");
                 }
                 catch (Exception e)
                 {
-                    Log.Warn("Could not apply list.copy on '" + _rootName + "' at " +
+                    Log.Warn("Could not apply sorted() to '" + _rootName + "' at " +
                         _sourcePath + ":" + _sourceLine + ": " +
                         e.GetBaseException().Message);
                 }
             }
+
+            private static bool IsNumericScalar(object value)
+            {
+                if (value == null) return false;
+                switch (Type.GetTypeCode(value.GetType()))
+                {
+                    case TypeCode.SByte:
+                    case TypeCode.Byte:
+                    case TypeCode.Int16:
+                    case TypeCode.UInt16:
+                    case TypeCode.Int32:
+                    case TypeCode.UInt32:
+                    case TypeCode.Int64:
+                    case TypeCode.UInt64:
+                    case TypeCode.Single:
+                    case TypeCode.Double:
+                    case TypeCode.Decimal:
+                        return true;
+                    default:
+                        return false;
+                }
+            }
         }
 
-        private sealed class ListIndexLine : Line, IApply
+
+        private sealed class ListCopyLine : Line, IApply        private sealed class ListIndexLine : Line, IApply
         {
             private readonly string _destinationName;
             private readonly string _rootName;

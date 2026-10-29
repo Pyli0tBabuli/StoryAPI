@@ -924,6 +924,58 @@ namespace StoryAPI.Runtime
         }
 
         /// <summary>
+        /// Recognizes assignment from list.index(scalarLiteral). The first matching index
+        /// is returned; arguments are restricted to scalar literal values.
+        /// </summary>
+        public static bool TryCreateListIndexLine(string code, string sourcePath,
+            int sourceLine, out Line line)
+        {
+            line = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int destinationStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string destinationName = code.Substring(destinationStart, cursor - destinationStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '=' ||
+                (cursor < code.Length && code[cursor] == '=')) return false;
+            SkipWhitespace(code, ref cursor);
+
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int rootStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string rootName = code.Substring(rootStart, cursor - rootStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '.') return false;
+            SkipWhitespace(code, ref cursor);
+            const string methodName = "index";
+            if (cursor + methodName.Length > code.Length ||
+                string.Compare(code, cursor, methodName, 0, methodName.Length,
+                    StringComparison.Ordinal) != 0)
+                return false;
+            cursor += methodName.Length;
+            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '(') return false;
+            SkipWhitespace(code, ref cursor);
+            object soughtValue;
+            if (!TryReadDictionaryGetDefault(code, ref cursor, out soughtValue)) return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != ')') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor != code.Length) return false;
+
+            line = new ListIndexLine(destinationName, rootName, soughtValue, sourcePath, sourceLine);
+            return true;
+        }
+
+        /// <summary>
         /// Recognizes assignment from list.count(scalarLiteral). In this restricted form
         /// the collection variable and destination must be simple names.
         /// </summary>
@@ -2415,6 +2467,63 @@ namespace StoryAPI.Runtime
                 catch (Exception e)
                 {
                     Log.Warn("Could not apply list.copy on '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+        }
+
+        private sealed class ListIndexLine : Line, IApply
+        {
+            private readonly string _destinationName;
+            private readonly string _rootName;
+            private readonly object _soughtValue;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public ListIndexLine(string destinationName, string rootName, object soughtValue,
+                string sourcePath, int sourceLine)
+            {
+                _destinationName = destinationName;
+                _rootName = rootName;
+                _soughtValue = soughtValue;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object target) ||
+                        !(target is IList list))
+                        throw new InvalidOperationException("list.index() requires a list target");
+
+                    int index = -1;
+                    for (int i = 0; i < list.Count; i++)
+                    {
+                        if (ScalarValuesEqual(list[i], _soughtValue))
+                        {
+                            index = i;
+                            break;
+                        }
+                    }
+
+                    if (index < 0)
+                        throw new InvalidOperationException("index(value) could not find a matching list item");
+
+                    if (!GameBridge.TrySetVariableLiteral(_destinationName, index, false, context))
+                        throw new InvalidOperationException(
+                            "could not assign list.index() result to '" + _destinationName + "'");
+
+                    Log.Info("Applied list.index on '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not apply list.index on '" + _rootName + "' at " +
                         _sourcePath + ":" + _sourceLine + ": " +
                         e.GetBaseException().Message);
                 }

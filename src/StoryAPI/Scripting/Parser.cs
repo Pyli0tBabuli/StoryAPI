@@ -679,15 +679,20 @@ namespace StoryAPI.Scripting
                             throw new ScriptSyntaxException(
                                 "reversed() inside enumerate() requires a named list variable.", Current.Line);
                         collection = Advance().Text;
-                        if (Current.Text == "." && Ahead(1).Text == "values" &&
+                        if (Current.Text == "." &&
+                            (Ahead(1).Text == "values" || Ahead(1).Text == "items") &&
                             Ahead(2).Text == "(" && Ahead(3).Text == ")")
                         {
-                            _index += 4; // .values()
-                            enumerateDictionaryValues = true;
+                            string dictionaryMethod = Ahead(1).Text;
+                            _index += 4; // .values() or .items()
+                            if (dictionaryMethod == "values")
+                                enumerateDictionaryValues = true;
+                            else
+                                enumerateDictionaryItems = true;
                         }
                         if (Current.Text != ")")
                             throw new ScriptSyntaxException(
-                                "reversed() inside enumerate() accepts a named list or dictionary.values() source.", Current.Line);
+                                "reversed() inside enumerate() accepts a named list/dictionary or dictionary.values()/items() source.", Current.Line);
                         _index++; // )
                         isReversed = true;
                     }
@@ -790,24 +795,34 @@ namespace StoryAPI.Scripting
                 else if (Current.Type == TokenType.Identifier && Current.Text == "reversed" &&
                     Ahead(1).Text == "(")
                 {
-                    if (valueVariable != null)
-                        throw new ScriptSyntaxException(
-                            "reversed() iteration accepts only one loop variable.", Current.Line);
                     _index += 2; // reversed(
                     if (Current.Type != TokenType.Identifier)
                         throw new ScriptSyntaxException(
                             "reversed() requires a named list or dictionary variable.", Current.Line);
                     collection = Advance().Text;
-                    if (Current.Text == "." && Ahead(1).Text == "values" &&
+                    if (Current.Text == "." &&
+                        (Ahead(1).Text == "values" || Ahead(1).Text == "items") &&
                         Ahead(2).Text == "(" && Ahead(3).Text == ")")
                     {
-                        _index += 4; // .values()
-                        enumerateDictionaryValues = true;
+                        string dictionaryMethod = Ahead(1).Text;
+                        _index += 4; // .values() or .items()
+                        if (dictionaryMethod == "values")
+                            enumerateDictionaryValues = true;
+                        else
+                            enumerateDictionaryItems = true;
                     }
                     if (Current.Text != ")")
                         throw new ScriptSyntaxException(
-                            "reversed() accepts one named list or dictionary.values() source.", Current.Line);
+                            "reversed() accepts a named list/dictionary or dictionary.values()/items() source.", Current.Line);
                     _index++; // )
+                    if (thirdVariable != null)
+                        throw new ScriptSyntaxException(
+                            "Three loop variables require enumerate(reversed(dictionary.items())) iteration.", line);
+                    if ((valueVariable != null && !enumerateDictionaryItems) ||
+                        (valueVariable == null && enumerateDictionaryItems))
+                        throw new ScriptSyntaxException(
+                            "reversed() over a list, dictionary, or dictionary.values() accepts one loop variable; dictionary.items() requires 'for key, value'.",
+                            line);
                     isReversed = true;
                 }
                 else
@@ -848,10 +863,10 @@ namespace StoryAPI.Scripting
                     }
                     _index += 4;
                 }
-                else if (valueVariable != null && !isEnumerate && !isZip)
+                else if (valueVariable != null && !isEnumerate && !isZip && !isDictionaryItems)
                 {
                     throw new ScriptSyntaxException(
-                        "Two loop variables require dictionary.items(), enumerate(...), or zip(list, list) iteration.", Current.Line);
+                        "Two loop variables require dictionary.items(), reversed(dictionary.items()), enumerate(...), or zip(list, list) iteration.", Current.Line);
                 }
 
                 if (thirdVariable != null &&

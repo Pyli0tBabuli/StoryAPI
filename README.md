@@ -285,7 +285,11 @@ targets, as in `for index, key, value in enumerate(settings.items()):`. Dictiona
 key/value pairs are snapshotted at loop entry, so additions during the loop do not change the active sequence.
 Reverse iteration also supports `for value in reversed(settings.values()):` and
 `for index, value in enumerate(reversed(settings.values()), start):`. These forms snapshot the values in reverse
-dictionary iteration order and leave the source dictionary unchanged.
+dictionary iteration order and leave the source dictionary unchanged. Dictionary entries can be iterated as
+key/value pairs in reverse order with `for key, value in reversed(settings.items()):`, or with an index using
+`for index, key, value in enumerate(reversed(settings.items()), start):`. These forms reverse a snapshot of the
+key/value pairs together, so each key remains associated with its original value and dictionary edits do not
+change the active sequence.
 The restricted `zip(first_list, second_list)` loop accepts two named lists and two loop variables:
 `for first, second in zip(first_items, second_items):`. It creates pairs at loop entry, stops at the shorter
 list, and does not modify either source list. The paired values can also be enumerated with

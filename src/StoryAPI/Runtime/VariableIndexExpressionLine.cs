@@ -4807,11 +4807,11 @@ namespace StoryAPI.Runtime
             int selectedModes = (includeDictionaryItems ? 1 : 0) +
                 (dictionaryValuesOnly ? 1 : 0) + (dictionaryKeysOnly ? 1 : 0);
             bool enumeratedDictionaryItems = enumerateList && includeDictionaryItems &&
-                !dictionaryValuesOnly && !dictionaryKeysOnly && !reverseList;
+                !dictionaryValuesOnly && !dictionaryKeysOnly;
             if (!IsSimpleIdentifier(sourceName) || !IsSimpleIdentifier(destinationName) ||
                 selectedModes > 1 ||
                 ((reverseList || enumerateList) && selectedModes != 0 && !enumeratedDictionaryItems &&
-                    !(reverseList && dictionaryValuesOnly)))
+                    !(reverseList && (dictionaryValuesOnly || includeDictionaryItems))))
                 return false;
 
             line = new ForEachPreparationLine(
@@ -5016,6 +5016,8 @@ namespace StoryAPI.Runtime
                         var enumerateEntries = new List<object>();
                         foreach (object key in enumerateItemsDictionary.Keys)
                             enumerateEntries.Add(new object[] { key, enumerateItemsDictionary[key] });
+                        if (_reverseList)
+                            enumerateEntries.Reverse();
                         iterationItems = enumerateEntries;
                     }
                     else if (_enumerateList)
@@ -5074,6 +5076,15 @@ namespace StoryAPI.Runtime
                                     reversedValues.Add(reverseDictionary[key]);
                                 reversedValues.Reverse();
                                 iterationItems = reversedValues;
+                            }
+                            else if (_includeDictionaryItems)
+                            {
+                                // Capture key/value pairs and reverse their iteration sequence.
+                                var reversedEntries = new List<object>();
+                                foreach (object key in reverseDictionary.Keys)
+                                    reversedEntries.Add(new object[] { key, reverseDictionary[key] });
+                                reversedEntries.Reverse();
+                                iterationItems = reversedEntries;
                             }
                             else
                             {

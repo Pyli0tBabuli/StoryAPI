@@ -3302,14 +3302,14 @@ namespace StoryAPI.Tests
                 "enumerate(settings.items(), offset) should yield index, key, and value.");
 
             ExpectSyntaxError(
-                "label enumerate_items_missing_third:\\n" +
-                "    for index, key in enumerate(settings.items()):\\n" +
-                "        pass\\n",
+                "label enumerate_items_missing_third:\n" +
+                "    for index, key in enumerate(settings.items()):\n" +
+                "        pass\n",
                 "requires 'for index, key, value'");
             ExpectSyntaxError(
-                "label enumerate_list_three_targets:\\n" +
-                "    for index, item, extra in enumerate(inventory):\\n" +
-                "        pass\\n",
+                "label enumerate_list_three_targets:\n" +
+                "    for index, item, extra in enumerate(inventory):\n" +
+                "        pass\n",
                 "Three loop variables require enumerate(dictionary.items())");
 
             ExpectSyntaxError(

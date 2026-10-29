@@ -158,6 +158,16 @@ namespace StoryAPI.Scripting
                 return;
             }
 
+            Line maxListLine;
+            if (VariableIndexExpressionLine.TryCreateMaxListAssignmentLine(
+                python.Code, _textLabel ?? "unknown", python.Line, out maxListLine))
+            {
+                Log.Info("[StoryAPI] Compiled max() assignment at " +
+                    (_textLabel ?? "unknown") + ":" + python.Line + ".");
+                _out.Add(maxListLine);
+                return;
+            }
+
             Line sumListLine;
             if (VariableIndexExpressionLine.TryCreateSumListAssignmentLine(
                 python.Code, _textLabel ?? "unknown", python.Line, out sumListLine))

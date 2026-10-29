@@ -148,6 +148,14 @@ namespace StoryAPI.Scripting
                 return;
             }
 
+            Line sumListLine;
+            if (VariableIndexExpressionLine.TryCreateSumListAssignmentLine(
+                python.Code, _textLabel ?? "unknown", python.Line, out sumListLine))
+            {
+                _out.Add(sumListLine);
+                return;
+            }
+
             Line sortedListLine;
             if (VariableIndexExpressionLine.TryCreateSortedListAssignmentLine(
                 python.Code, _textLabel ?? "unknown", python.Line, out sortedListLine))

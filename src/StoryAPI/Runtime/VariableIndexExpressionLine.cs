@@ -1059,17 +1059,52 @@ namespace StoryAPI.Runtime
             SkipWhitespace(code, ref cursor);
             if (cursor >= code.Length || code[cursor++] != '(') return false;
             SkipWhitespace(code, ref cursor);
+
+            bool reverse = false;
+            if (cursor < code.Length && code[cursor] != ')')
+            {
+                const string argumentName = "reverse";
+                if (cursor + argumentName.Length > code.Length ||
+                    string.Compare(code, cursor, argumentName, 0, argumentName.Length,
+                        StringComparison.Ordinal) != 0)
+                    return false;
+                cursor += argumentName.Length;
+                if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+                SkipWhitespace(code, ref cursor);
+                if (cursor >= code.Length || code[cursor++] != '=') return false;
+                SkipWhitespace(code, ref cursor);
+
+                if (cursor + 4 <= code.Length &&
+                    string.Compare(code, cursor, "True", 0, 4, StringComparison.Ordinal) == 0 &&
+                    (cursor + 4 == code.Length || !IsIdentifierPart(code[cursor + 4])))
+                {
+                    reverse = true;
+                    cursor += 4;
+                }
+                else if (cursor + 5 <= code.Length &&
+                    string.Compare(code, cursor, "False", 0, 5, StringComparison.Ordinal) == 0 &&
+                    (cursor + 5 == code.Length || !IsIdentifierPart(code[cursor + 5])))
+                {
+                    reverse = false;
+                    cursor += 5;
+                }
+                else
+                {
+                    return false;
+                }
+
+                SkipWhitespace(code, ref cursor);
+            }
+
             if (cursor >= code.Length || code[cursor++] != ')') return false;
             SkipWhitespace(code, ref cursor);
             if (cursor != code.Length) return false;
 
-            line = new ListSortLine(rootName, sourcePath, sourceLine);
+            line = new ListSortLine(rootName, reverse, sourcePath, sourceLine);
             return true;
         }
 
-        /// <summary>
-        /// Recognizes a no-argument reverse() call on a named list variable.
-        /// </summary>
         public static bool TryCreateListReverseLine(string code, string sourcePath,
             int sourceLine, out Line line)
         {
@@ -2624,12 +2659,14 @@ namespace StoryAPI.Runtime
         private sealed class ListSortLine : Line, IApply
         {
             private readonly string _rootName;
+            private readonly bool _reverse;
             private readonly string _sourcePath;
             private readonly int _sourceLine;
 
-            public ListSortLine(string rootName, string sourcePath, int sourceLine)
+            public ListSortLine(string rootName, bool reverse, string sourcePath, int sourceLine)
             {
                 _rootName = rootName;
+                _reverse = reverse;
                 _sourcePath = sourcePath;
                 _sourceLine = sourceLine;
             }
@@ -2676,6 +2713,9 @@ namespace StoryAPI.Runtime
                             return Convert.ToDouble(left, CultureInfo.InvariantCulture).CompareTo(
                                 Convert.ToDouble(right, CultureInfo.InvariantCulture));
                         });
+
+                        if (_reverse)
+                            sorted.Reverse();
 
                         for (int i = 0; i < sorted.Count; i++)
                             list[i] = sorted[i];

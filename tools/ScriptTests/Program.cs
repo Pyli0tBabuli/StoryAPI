@@ -1923,12 +1923,9 @@ namespace StoryAPI.Tests
                 "index() should reject multiple statements.");
 
             var statements = Parse(
-                "label list_index_test:
-" +
-                "    $ battery_index = inventory.index(\"battery\")
-" +
-                "    return
-");
+                "label list_index_test:\n" +
+                "    $ battery_index = inventory.index(\"battery\")\n" +
+                "    return\n");
             var label = Require<LabelStatement>(statements[0],
                 "Expected a label containing list index().");
             Check(Require<PythonStatement>(label.Body[0],

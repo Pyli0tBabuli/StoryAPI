@@ -631,12 +631,39 @@ namespace StoryAPI.Scripting
             {
                 bool isReversed = false;
                 bool isEnumerate = false;
+                bool isZip = false;
+                string zipSecondCollection = null;
                 bool enumerateDictionaryValues = false;
                 int enumerateStart = 0;
                 string enumerateStartExpression = null;
                 string collection;
                 bool enumerateDictionaryItems = false;
-                if (Current.Type == TokenType.Identifier && Current.Text == "enumerate" &&
+                if (Current.Type == TokenType.Identifier && Current.Text == "zip" &&
+                    Ahead(1).Text == "(")
+                {
+                    if (valueVariable == null)
+                        throw new ScriptSyntaxException(
+                            "zip() iteration requires 'for left, right in zip(first_list, second_list):'.",
+                            Current.Line);
+                    if (thirdVariable != null)
+                        throw new ScriptSyntaxException("zip() loops accept only two loop variables.", line);
+
+                    _index += 2; // zip(
+                    if (Current.Type != TokenType.Identifier)
+                        throw new ScriptSyntaxException("zip() requires a first named list.", Current.Line);
+                    collection = Advance().Text;
+                    if (Current.Text != ",")
+                        throw new ScriptSyntaxException("zip() requires exactly two named list arguments.", Current.Line);
+                    _index++;
+                    if (Current.Type != TokenType.Identifier)
+                        throw new ScriptSyntaxException("zip() requires a second named list.", Current.Line);
+                    zipSecondCollection = Advance().Text;
+                    if (Current.Text != ")")
+                        throw new ScriptSyntaxException("zip() accepts exactly two named list arguments.", Current.Line);
+                    _index++; // )
+                    isZip = true;
+                }
+                else if (Current.Type == TokenType.Identifier && Current.Text == "enumerate" &&
                     Ahead(1).Text == "(")
                 {
                     if (valueVariable == null)
@@ -768,10 +795,10 @@ namespace StoryAPI.Scripting
                     }
                     _index += 4;
                 }
-                else if (valueVariable != null && !isEnumerate)
+                else if (valueVariable != null && !isEnumerate && !isZip)
                 {
                     throw new ScriptSyntaxException(
-                        "Two loop variables require dictionary.items() or enumerate(list) iteration.", Current.Line);
+                        "Two loop variables require dictionary.items(), enumerate(...), or zip(list, list) iteration.", Current.Line);
                 }
 
                 if (thirdVariable != null && (!isEnumerate || !enumerateDictionaryItems))
@@ -783,7 +810,7 @@ namespace StoryAPI.Scripting
 
                 if (Current.Type != TokenType.Colon)
                     throw new ScriptSyntaxException(
-                        "Only a named list, reversed(list), enumerate(list), enumerate(dictionary.values()), enumerate(dictionary.items()), dictionary.keys(), dictionary.items(), or dictionary.values() is supported after 'in'.",
+                        "Only a named list, zip(list, list), reversed(list), enumerate(list), enumerate(dictionary.values()), enumerate(dictionary.items()), dictionary.keys(), dictionary.items(), or dictionary.values() is supported after 'in'.",
                         Current.Line);
 
                 ExpectColon();
@@ -793,6 +820,8 @@ namespace StoryAPI.Scripting
                     ValueVariable = valueVariable,
                     ThirdVariable = thirdVariable,
                     Collection = collection,
+                    ZipSecondCollection = zipSecondCollection,
+                    IsZip = isZip,
                     IsReversed = isReversed,
                     IsEnumerate = isEnumerate,
                     EnumerateStart = enumerateStart,

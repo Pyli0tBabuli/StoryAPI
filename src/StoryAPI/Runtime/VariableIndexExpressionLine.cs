@@ -4794,16 +4794,27 @@ namespace StoryAPI.Runtime
             bool includeDictionaryItems, bool dictionaryValuesOnly, bool dictionaryKeysOnly,
             bool reverseList, string sourcePath, int sourceLine, out Line line)
         {
+            return TryCreateForEachPreparationLine(sourceName, destinationName,
+                includeDictionaryItems, dictionaryValuesOnly, dictionaryKeysOnly,
+                reverseList, false, sourcePath, sourceLine, out line);
+        }
+
+        public static bool TryCreateForEachPreparationLine(string sourceName, string destinationName,
+            bool includeDictionaryItems, bool dictionaryValuesOnly, bool dictionaryKeysOnly,
+            bool reverseList, bool enumerateList, string sourcePath, int sourceLine, out Line line)
+        {
             line = null;
             int selectedModes = (includeDictionaryItems ? 1 : 0) +
                 (dictionaryValuesOnly ? 1 : 0) + (dictionaryKeysOnly ? 1 : 0);
             if (!IsSimpleIdentifier(sourceName) || !IsSimpleIdentifier(destinationName) ||
-                selectedModes > 1 || (reverseList && selectedModes != 0))
+                selectedModes > 1 ||
+                ((reverseList || enumerateList) && selectedModes != 0) ||
+                (reverseList && enumerateList))
                 return false;
 
             line = new ForEachPreparationLine(
                 sourceName, destinationName, includeDictionaryItems, dictionaryValuesOnly,
-                dictionaryKeysOnly, reverseList, sourcePath, sourceLine);
+                dictionaryKeysOnly, reverseList, enumerateList, sourcePath, sourceLine);
             return true;
         }
 
@@ -4818,16 +4829,25 @@ namespace StoryAPI.Runtime
             string collectionName, string indexName, string gateName, string sourcePath,
             int sourceLine, out Line line)
         {
+            return TryCreateForEachItemLine(variableName, valueVariableName, collectionName,
+                indexName, gateName, false, sourcePath, sourceLine, out line);
+        }
+
+        public static bool TryCreateForEachItemLine(string variableName, string valueVariableName,
+            string collectionName, string indexName, string gateName, bool enumerateItems,
+            string sourcePath, int sourceLine, out Line line)
+        {
             line = null;
             if (!IsSimpleIdentifier(variableName) ||
                 (valueVariableName != null && !IsSimpleIdentifier(valueVariableName)) ||
+                (enumerateItems && valueVariableName == null) ||
                 !IsSimpleIdentifier(collectionName) || !IsSimpleIdentifier(indexName) ||
                 !IsSimpleIdentifier(gateName))
                 return false;
 
             line = new ForEachItemLine(
                 variableName, valueVariableName, collectionName, indexName,
-                gateName, sourcePath, sourceLine);
+                gateName, enumerateItems, sourcePath, sourceLine);
             return true;
         }
 
@@ -4852,12 +4872,13 @@ namespace StoryAPI.Runtime
             private readonly bool _dictionaryValuesOnly;
             private readonly bool _dictionaryKeysOnly;
             private readonly bool _reverseList;
+            private readonly bool _enumerateList;
             private readonly string _sourcePath;
             private readonly int _sourceLine;
 
             public ForEachPreparationLine(string sourceName, string destinationName,
                 bool includeDictionaryItems, bool dictionaryValuesOnly, bool dictionaryKeysOnly,
-                bool reverseList, string sourcePath, int sourceLine)
+                bool reverseList, bool enumerateList, string sourcePath, int sourceLine)
             {
                 _sourceName = sourceName;
                 _destinationName = destinationName;
@@ -4865,6 +4886,7 @@ namespace StoryAPI.Runtime
                 _dictionaryValuesOnly = dictionaryValuesOnly;
                 _dictionaryKeysOnly = dictionaryKeysOnly;
                 _reverseList = reverseList;
+                _enumerateList = enumerateList;
                 _sourcePath = sourcePath;
                 _sourceLine = sourceLine;
             }
@@ -4880,7 +4902,16 @@ namespace StoryAPI.Runtime
                             "' is not an object-backed list or dictionary");
 
                     object iterationItems;
-                    if (_reverseList)
+                    if (_enumerateList)
+                    {
+                        if (!(source is IList enumerateSource))
+                            throw new InvalidOperationException(
+                                "enumerate() iteration requires a list source");
+                        // Keep the original list live; the item instruction pairs each current
+                        // element with the current zero-based loop counter.
+                        iterationItems = enumerateSource;
+                    }
+                    else if (_reverseList)
                     {
                         if (!(source is IList reverseSource))
                             throw new InvalidOperationException(
@@ -4974,18 +5005,20 @@ namespace StoryAPI.Runtime
             private readonly string _collectionName;
             private readonly string _indexName;
             private readonly string _gateName;
+            private readonly bool _enumerateItems;
             private readonly string _sourcePath;
             private readonly int _sourceLine;
 
             public ForEachItemLine(string variableName, string valueVariableName,
                 string collectionName, string indexName, string gateName,
-                string sourcePath, int sourceLine)
+                bool enumerateItems, string sourcePath, int sourceLine)
             {
                 _variableName = variableName;
                 _valueVariableName = valueVariableName;
                 _collectionName = collectionName;
                 _indexName = indexName;
                 _gateName = gateName;
+                _enumerateItems = enumerateItems;
                 _sourcePath = sourcePath;
                 _sourceLine = sourceLine;
             }
@@ -5027,15 +5060,27 @@ namespace StoryAPI.Runtime
                     object item = items[index];
                     if (_valueVariableName != null)
                     {
-                        if (!(item is object[] pair) || pair.Length != 2)
-                            throw new InvalidOperationException(
-                                "dictionary.items() yielded an invalid key/value pair");
-                        if (!GameBridge.TrySetVariableLiteral(
-                                _variableName, pair[0], false, context) ||
-                            !GameBridge.TrySetVariableLiteral(
-                                _valueVariableName, pair[1], false, context))
-                            throw new InvalidOperationException(
-                                "could not assign the current dictionary key/value pair");
+                        if (_enumerateItems)
+                        {
+                            if (!GameBridge.TrySetVariableLiteral(
+                                    _variableName, (float)index, false, context) ||
+                                !GameBridge.TrySetVariableLiteral(
+                                    _valueVariableName, item, false, context))
+                                throw new InvalidOperationException(
+                                    "could not assign the current enumerate() index and value");
+                        }
+                        else
+                        {
+                            if (!(item is object[] pair) || pair.Length != 2)
+                                throw new InvalidOperationException(
+                                    "dictionary.items() yielded an invalid key/value pair");
+                            if (!GameBridge.TrySetVariableLiteral(
+                                    _variableName, pair[0], false, context) ||
+                                !GameBridge.TrySetVariableLiteral(
+                                    _valueVariableName, pair[1], false, context))
+                                throw new InvalidOperationException(
+                                    "could not assign the current dictionary key/value pair");
+                        }
                     }
                     else if (!GameBridge.TrySetVariableLiteral(
                         _variableName, item, false, context))

@@ -148,6 +148,16 @@ namespace StoryAPI.Scripting
                 return;
             }
 
+            Line minListLine;
+            if (VariableIndexExpressionLine.TryCreateMinListAssignmentLine(
+                python.Code, _textLabel ?? "unknown", python.Line, out minListLine))
+            {
+                Log.Info("[StoryAPI] Compiled min() assignment at " +
+                    (_textLabel ?? "unknown") + ":" + python.Line + ".");
+                _out.Add(minListLine);
+                return;
+            }
+
             Line sumListLine;
             if (VariableIndexExpressionLine.TryCreateSumListAssignmentLine(
                 python.Code, _textLabel ?? "unknown", python.Line, out sumListLine))

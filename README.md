@@ -166,7 +166,11 @@ the same restricted dynamic scalar indexes supported by reads. Assignment values
 expressions; collection reads on the right-hand side are resolved before the assignment. Compound assignments to simple scalar variables and indexed list/dictionary entries support
 `+=`, `-=`, `*=`, `/=`, and `%=`; their right-hand side may use supported scalar expressions and
 collection index reads. Other compound operators such as `**=`, slices, and assigning a new value
-beyond the end of a list remain unsupported. The restricted assignment `$ total = sum(inventory)` adds values from a named list of numeric scalars
+beyond the end of a list remain unsupported. The restricted assignment `$ lowest = min(inventory)` selects the smallest scalar from a named list.
+It supports homogeneous string lists (ordinal ordering) and homogeneous numeric lists (numeric ordering).
+The source list is unchanged. Empty lists or mixed/unsupported values log a warning and leave the destination
+unchanged; extra arguments and indexed source expressions are not supported.
+The restricted assignment `$ total = sum(inventory)` adds values from a named list of numeric scalars
 and assigns the total. An empty list returns `0`. The source list is unchanged. Lists containing
 non-numeric values log a warning and leave the destination unchanged; extra arguments and indexed
 source expressions are not supported.

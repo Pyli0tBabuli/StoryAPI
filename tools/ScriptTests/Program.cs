@@ -3248,6 +3248,9 @@ namespace StoryAPI.Tests
             Check(GameBridge.TryGetLastTestLiteral("_stage41_items", out preparedValue) &&
                     ReferenceEquals(preparedValue, values),
                 "enumerate() should keep the source list live rather than copy it.");
+            // The test bridge records writes but deliberately does not mutate the test context.
+            context.SetVariable("_stage41_items",
+                new SimpleExpressionEngine.DataValue((object)values));
 
             RenPyParser.Line itemLine;
             Check(VariableIndexExpressionLine.TryCreateForEachItemLine(

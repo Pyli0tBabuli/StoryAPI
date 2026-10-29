@@ -3210,9 +3210,9 @@ namespace StoryAPI.Tests
                 "reversed() iteration must not mutate the source list.");
 
             Check(!VariableIndexExpressionLine.TryCreateForEachPreparationLine(
-                    "settings", "_stage40_invalid", true, false, false, true,
+                    "settings", "_stage40_invalid", true, true, false, true,
                     sourcePath, 6, out preparation),
-                "reversed() should not be combined with a dictionary-items iteration mode.");
+                "reversed() should reject conflicting dictionary-items and values modes.");
         }
 
         private static void TestForReversedDictionaryIteration()

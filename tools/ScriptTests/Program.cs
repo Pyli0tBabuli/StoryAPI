@@ -57,6 +57,8 @@ namespace StoryAPI.Tests
             Run("menu choices and nested statements", TestMenuChoices);
             Run("while and loop-control statements", TestWhileAndLoopControl);
             Run("for-list iteration and loop control", TestForListIteration);
+            Run("for-sorted-list iteration", TestForSortedListIteration);
+            Run("for-enumerate-sorted-list iteration", TestForEnumerateSortedListIteration);
             Run("for-reversed-list iteration", TestForReversedListIteration);
             Run("for-reversed-dictionary iteration", TestForReversedDictionaryIteration);
             Run("for-reversed-dictionary values iteration", TestForReversedDictionaryValuesIteration);
@@ -3167,6 +3169,153 @@ namespace StoryAPI.Tests
                 "    for item inventory:\n" +
                 "        pass\n",
                 "Expected 'in'");
+        }
+
+        private static void TestForSortedListIteration()
+        {
+            const string sourcePath = "sorted-list-iteration-test.rpy";
+            var statements = Parse(
+                "label sorted_list_iteration_test:\n" +
+                "    for value in sorted(numbers):\n" +
+                "        pass\n" +
+                "    for value in sorted(numbers, reverse=True):\n" +
+                "        pass\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected sorted-list iteration label.");
+            var ascendingLoop = Require<ForStatement>(label.Body[0],
+                "Expected sorted() loop.");
+            Check(ascendingLoop.IsSorted && !ascendingLoop.SortReverse &&
+                    ascendingLoop.Collection == "numbers" && ascendingLoop.ValueVariable == null,
+                "sorted(numbers) should represent ascending sorted list iteration.");
+            var descendingLoop = Require<ForStatement>(label.Body[1],
+                "Expected descending sorted() loop.");
+            Check(descendingLoop.IsSorted && descendingLoop.SortReverse &&
+                    descendingLoop.Collection == "numbers",
+                "sorted(numbers, reverse=True) should represent descending sorted list iteration.");
+
+            ExpectSyntaxError(
+                "label sorted_two_targets:\n" +
+                "    for index, value in sorted(numbers):\n" +
+                "        pass\n",
+                "sorted() loops accept only one loop variable");
+            ExpectSyntaxError(
+                "label sorted_invalid_reverse:\n" +
+                "    for value in sorted(numbers, reverse=maybe):\n" +
+                "        pass\n",
+                "reverse must be the literal True or False");
+            ExpectSyntaxError(
+                "label sorted_extra_argument:\n" +
+                "    for value in sorted(numbers, extra):\n" +
+                "        pass\n",
+                "reverse=True/False");
+
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var numbers = new List<object> { 3f, 1f, 2f };
+            context.SetVariable("numbers",
+                new SimpleExpressionEngine.DataValue((object)numbers));
+            RenPyParser.Line preparation;
+            Check(VariableIndexExpressionLine.TryCreateSortedForEachPreparationLine(
+                    "numbers", "_stage53_sorted_ascending", false, sourcePath, 10, out preparation),
+                "The runtime should prepare ascending sorted iteration.");
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("_stage53_sorted_ascending", out observed) &&
+                    observed is List<object> &&
+                    ((List<object>)observed).SequenceEqual(new object[] { 1f, 2f, 3f }),
+                "sorted() iteration should yield numeric values in ascending order.");
+
+            Check(VariableIndexExpressionLine.TryCreateSortedForEachPreparationLine(
+                    "numbers", "_stage53_sorted_descending", true, sourcePath, 11, out preparation),
+                "The runtime should prepare descending sorted iteration.");
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("_stage53_sorted_descending", out observed) &&
+                    observed is List<object> &&
+                    ((List<object>)observed).SequenceEqual(new object[] { 3f, 2f, 1f }),
+                "sorted(reverse=True) iteration should yield numeric values in descending order.");
+            Check(numbers.SequenceEqual(new object[] { 3f, 1f, 2f }),
+                "sorted() iteration must leave the source list unchanged.");
+
+            context.SetVariable("names",
+                new SimpleExpressionEngine.DataValue((object)new List<object> { "gamma", "alpha", "beta" }));
+            Check(VariableIndexExpressionLine.TryCreateSortedForEachPreparationLine(
+                    "names", "_stage53_sorted_names", false, sourcePath, 12, out preparation),
+                "The runtime should prepare homogeneous string sorting.");
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("_stage53_sorted_names", out observed) &&
+                    observed is List<object> &&
+                    ((List<object>)observed).SequenceEqual(new object[] { "alpha", "beta", "gamma" }),
+                "sorted() iteration should order homogeneous strings ordinally.");
+
+            context.SetVariable("mixed_numbers",
+                new SimpleExpressionEngine.DataValue((object)new List<object> { "alpha", 2f }));
+            Check(VariableIndexExpressionLine.TryCreateSortedForEachPreparationLine(
+                    "mixed_numbers", "_stage53_invalid_sorted", false, sourcePath, 13, out preparation),
+                "The runtime should recognize a sorted() loop even for invalid data.");
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("_stage53_invalid_sorted", out observed) &&
+                    observed is List<object> && ((List<object>)observed).Count == 0,
+                "Unsupported mixed-type lists should prepare an empty iteration sequence.");
+        }
+
+        private static void TestForEnumerateSortedListIteration()
+        {
+            const string sourcePath = "enumerate-sorted-list-test.rpy";
+            var statements = Parse(
+                "label enumerate_sorted_list_test:\n" +
+                "    for index, value in enumerate(sorted(numbers, reverse=True), start_index + 1):\n" +
+                "        pass\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected enumerate(sorted()) label.");
+            var loop = Require<ForStatement>(label.Body[0],
+                "Expected enumerate(sorted()) loop.");
+            Check(loop.IsEnumerate && loop.IsSorted && loop.SortReverse &&
+                    loop.Collection == "numbers" &&
+                    loop.Variable == "index" && loop.ValueVariable == "value" &&
+                    loop.EnumerateStartExpression == "start_index + 1",
+                "enumerate(sorted(numbers, reverse=True), start) should bind a sorted value and index.");
+
+            var context = new RenpyParser.DynamicIndexTestContext();
+            context.SetVariable("numbers",
+                new SimpleExpressionEngine.DataValue((object)new List<object> { 3f, 1f, 2f }));
+            context.SetVariable("start_index", new SimpleExpressionEngine.DataValue(4f));
+            RenPyParser.Line preparation;
+            Check(VariableIndexExpressionLine.TryCreateSortedForEachPreparationLine(
+                    "numbers", "_stage53_enumerated_sorted", true, sourcePath, 20, out preparation),
+                "The runtime should prepare sorted values for enumerate().");
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
+            object prepared;
+            Check(GameBridge.TryGetLastTestLiteral("_stage53_enumerated_sorted", out prepared) &&
+                    prepared is List<object> &&
+                    ((List<object>)prepared).SequenceEqual(new object[] { 3f, 2f, 1f }),
+                "enumerate(sorted(reverse=True)) should use the descending sorted snapshot.");
+
+            context.SetVariable("_stage53_enumerated_sorted",
+                new SimpleExpressionEngine.DataValue(prepared));
+            context.SetVariable("_stage53_index", new SimpleExpressionEngine.DataValue(0f));
+            context.SetVariable("_stage53_gate", new SimpleExpressionEngine.DataValue(true));
+            RenPyParser.Line itemLine;
+            Check(VariableIndexExpressionLine.TryCreateForEachItemLine(
+                    "index", "value", "_stage53_enumerated_sorted", "_stage53_index", "_stage53_gate",
+                    true, 0, "start_index", sourcePath, 21, out itemLine),
+                "The runtime should create the enumerate(sorted()) item assignment line.");
+            ((RenPyParser.Images.IApply)itemLine).Apply(context);
+            object observedIndex, observedValue;
+            Check(GameBridge.TryGetLastTestLiteral("index", out observedIndex) &&
+                    Math.Abs(Convert.ToSingle(observedIndex, CultureInfo.InvariantCulture) - 4f) < 0.0001f &&
+                    GameBridge.TryGetLastTestLiteral("value", out observedValue) &&
+                    Math.Abs(Convert.ToSingle(observedValue, CultureInfo.InvariantCulture) - 3f) < 0.0001f,
+                "The first enumerated sorted value should use the dynamic start and highest number.");
+
+            context.SetVariable("_stage53_index", new SimpleExpressionEngine.DataValue(1f));
+            context.SetVariable("_stage53_gate", new SimpleExpressionEngine.DataValue(true));
+            ((RenPyParser.Images.IApply)itemLine).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("index", out observedIndex) &&
+                    Math.Abs(Convert.ToSingle(observedIndex, CultureInfo.InvariantCulture) - 5f) < 0.0001f &&
+                    GameBridge.TryGetLastTestLiteral("value", out observedValue) &&
+                    Math.Abs(Convert.ToSingle(observedValue, CultureInfo.InvariantCulture) - 2f) < 0.0001f,
+                "The next enumerated sorted value should advance the index and preserve order.");
         }
 
         private static void TestForReversedListIteration()

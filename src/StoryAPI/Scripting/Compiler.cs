@@ -168,6 +168,16 @@ namespace StoryAPI.Scripting
                 return;
             }
 
+            Line anyListLine;
+            if (VariableIndexExpressionLine.TryCreateAnyListAssignmentLine(
+                python.Code, _textLabel ?? "unknown", python.Line, out anyListLine))
+            {
+                Log.Info("[StoryAPI] Compiled any() assignment at " +
+                    (_textLabel ?? "unknown") + ":" + python.Line + ".");
+                _out.Add(anyListLine);
+                return;
+            }
+
             Line sumListLine;
             if (VariableIndexExpressionLine.TryCreateSumListAssignmentLine(
                 python.Code, _textLabel ?? "unknown", python.Line, out sumListLine))

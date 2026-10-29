@@ -3368,16 +3368,68 @@ namespace StoryAPI.Tests
                     Math.Abs(Convert.ToSingle(observedItem, CultureInfo.InvariantCulture) - 40f) < 0.0001f,
                 "enumerate() should observe list appends while its live loop is running.");
 
-            var dictionary = new Dictionary<string, object> { { "alpha", 1f } };
+            var dictionary = new Dictionary<string, object>
+            {
+                { "alpha", 1f },
+                { "beta", 2f }
+            };
             context.SetVariable("dictionary", new SimpleExpressionEngine.DataValue((object)dictionary));
+
+            var dictionaryStatements = Parse(
+                "label enumerate_dictionary_test:\n" +
+                "    for index, key in enumerate(dictionary, 4):\n" +
+                "        pass\n" +
+                "    return\n");
+            var dictionaryLoop = Require<ForStatement>(
+                Require<LabelStatement>(dictionaryStatements[0],
+                    "Expected enumerate dictionary label.").Body[0],
+                "Expected enumerate dictionary loop.");
+            Check(dictionaryLoop.IsEnumerate && dictionaryLoop.Collection == "dictionary" &&
+                    dictionaryLoop.EnumerateStart == 4 &&
+                    dictionaryLoop.Variable == "index" && dictionaryLoop.ValueVariable == "key",
+                "enumerate(dictionary, 4) should iterate dictionary keys with indexed unpacking.");
+
             Check(VariableIndexExpressionLine.TryCreateForEachPreparationLine(
-                    "dictionary", "_stage41_invalid", false, false, false, false, true,
-                    sourcePath, 7, out preparation),
-                "The enumerate() prep instruction should be constructible to validate runtime source type.");
+                    "dictionary", "_stage44_items", false, false, false, false, true,
+                    sourcePath, 8, out preparation),
+                "The enumerate() prep instruction should support dictionary sources.");
             ((RenPyParser.Images.IApply)preparation).Apply(context);
-            Check(GameBridge.TryGetLastTestLiteral("_stage41_invalid", out preparedValue) &&
-                    preparedValue is List<object> rejectedItems && rejectedItems.Count == 0,
-                "enumerate() must skip dictionary sources rather than iterate their keys.");
+            Check(GameBridge.TryGetLastTestLiteral("_stage44_items", out preparedValue) &&
+                    preparedValue is List<object>,
+                "enumerate(dictionary) should snapshot its keys into a list.");
+            var dictionaryKeys = preparedValue as List<object>;
+            Check(dictionaryKeys != null && dictionaryKeys.Count == 2 &&
+                    dictionaryKeys.Contains("alpha") && dictionaryKeys.Contains("beta"),
+                "enumerate(dictionary) should retain all initial keys.");
+            dictionary["gamma"] = 3f;
+            Check(dictionaryKeys.Count == 2 && !dictionaryKeys.Contains("gamma"),
+                "Dictionary keys added after preparation should not enter the active enumerate snapshot.");
+            context.SetVariable("_stage44_items",
+                new SimpleExpressionEngine.DataValue((object)dictionaryKeys));
+
+            RenPyParser.Line dictionaryItemLine;
+            Check(VariableIndexExpressionLine.TryCreateForEachItemLine(
+                    "index", "key", "_stage44_items", "_stage44_index", "_stage44_gate",
+                    true, 4, null, sourcePath, 9, out dictionaryItemLine),
+                "The runtime should create an enumerate() item instruction for dictionary keys.");
+            context.SetVariable("_stage44_index", new SimpleExpressionEngine.DataValue(0f));
+            context.SetVariable("_stage44_gate", new SimpleExpressionEngine.DataValue(true));
+            ((RenPyParser.Images.IApply)dictionaryItemLine).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("index", out observedIndex) &&
+                    Math.Abs(Convert.ToSingle(observedIndex, CultureInfo.InvariantCulture) - 4f) < 0.0001f,
+                "enumerate(dictionary, 4) should assign the custom starting index.");
+            Check(GameBridge.TryGetLastTestLiteral("key", out observedItem) &&
+                    Equals(observedItem, dictionaryKeys[0]),
+                "enumerate(dictionary) should yield the first dictionary key.");
+
+            context.SetVariable("_stage44_index", new SimpleExpressionEngine.DataValue(1f));
+            ((RenPyParser.Images.IApply)dictionaryItemLine).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("index", out observedIndex) &&
+                    Math.Abs(Convert.ToSingle(observedIndex, CultureInfo.InvariantCulture) - 5f) < 0.0001f,
+                "enumerate(dictionary) indexes should advance in key order.");
+            Check(GameBridge.TryGetLastTestLiteral("key", out observedItem) &&
+                    Equals(observedItem, dictionaryKeys[1]),
+                "enumerate(dictionary) should yield the next snapshotted key.");
         }
 
         private static void TestForDictionaryIteration()

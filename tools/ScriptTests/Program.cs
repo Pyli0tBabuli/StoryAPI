@@ -1838,9 +1838,9 @@ namespace StoryAPI.Tests
                 "copy() should reject multiple statements.");
 
             var statements = Parse(
-                "label list_copy_test:\\n" +
-                "    $ copied_inventory = inventory.copy()\\n" +
-                "    return\\n");
+                "label list_copy_test:\n" +
+                "    $ copied_inventory = inventory.copy()\n" +
+                "    return\n");
             var label = Require<LabelStatement>(statements[0],
                 "Expected a label containing list copy().");
             Check(Require<PythonStatement>(label.Body[0],

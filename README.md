@@ -175,6 +175,8 @@ The restricted assignment `$ has_active = any(items)` returns `True` when the na
 
 The restricted assignment `$ all_active = all(items)` returns `True` when every supported scalar item is truthy. An empty list also returns `True`, matching Python's `all()` behavior. It supports `None`, booleans, numbers and strings and leaves the source list unchanged. The operation stops at the first falsey item; unsupported item types encountered before that point log a warning and leave the destination unchanged. Extra arguments and indexed source expressions are not supported.
 
+The `sum()`, `min()`, `max()`, `any()`, and `all()` helpers are currently restricted to assignments to a simple variable from a named list. Nested calls, indexed source expressions, and calls without an assignment target are not supported.
+
 The restricted assignment `$ highest = max(inventory)` selects the largest scalar from a named list.
 It supports homogeneous string lists (ordinal ordering) and homogeneous numeric lists (numeric ordering).
 The source list is unchanged. Empty lists or mixed/unsupported values log a warning and leave the destination

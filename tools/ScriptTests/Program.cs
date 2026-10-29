@@ -1898,6 +1898,61 @@ namespace StoryAPI.Tests
                     Convert.ToInt32(observed) == 7,
                 "index(None) should find the first null entry.");
 
+            Check(VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "start_index = inventory.index(\"battery\", 2)", sourcePath, 7, out line),
+                "index() should support a start position.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("start_index", out observed) &&
+                    Convert.ToInt32(observed) == 2,
+                "index() with start=2 should return the second matching occurrence.");
+
+            Check(VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "stop_index = inventory.index(\"battery\", 0, 2)", sourcePath, 8, out line),
+                "index() should support start and stop positions.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("stop_index", out observed) &&
+                    Convert.ToInt32(observed) == 1,
+                "index() should include start and exclude stop.");
+
+            Check(VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "negative_start_index = inventory.index(\"battery\", -6)", sourcePath, 9, out line),
+                "index() should accept a negative start position.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("negative_start_index", out observed) &&
+                    Convert.ToInt32(observed) == 2,
+                "Negative start positions should be normalized like Python.");
+
+            Check(VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "negative_stop_index = inventory.index(\"battery\", 0, -6)", sourcePath, 10, out line),
+                "index() should accept a negative stop position.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("negative_stop_index", out observed) &&
+                    Convert.ToInt32(observed) == 1,
+                "Negative stop positions should be normalized like Python.");
+
+            context.SetVariable("range_missing_index", new SimpleExpressionEngine.DataValue(77f));
+            GameBridge.TrySetVariableLiteral("range_missing_index", 77f, false, context);
+            Check(VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "range_missing_index = inventory.index(\"battery\", 2, 2)", sourcePath, 11, out line),
+                "index() should recognize an empty search range.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("range_missing_index", out observed) &&
+                    Convert.ToSingle(observed) == 77f,
+                "No match within the requested range should leave the destination unchanged.");
+
+            Check(!VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "bad_start_index = inventory.index(\"battery\", 1.5)", sourcePath, 12, out line),
+                "index() should reject non-integer start positions.");
+            Check(!VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "bad_stop_index = inventory.index(\"battery\", 0, False)", sourcePath, 13, out line),
+                "index() should reject non-integer stop positions.");
+            Check(!VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "bad_range_index = inventory.index(\"battery\", start_at)", sourcePath, 14, out line),
+                "This restricted index() form should reject variable bounds.");
+            Check(!VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "too_many_bounds = inventory.index(\"battery\", 0, 2, 4)", sourcePath, 15, out line),
+                "index() should reject more than three arguments.");
+
             context.SetVariable("missing_index", new SimpleExpressionEngine.DataValue(77f));
             GameBridge.TrySetVariableLiteral("missing_index", 77f, false, context);
             Check(VariableIndexExpressionLine.TryCreateListIndexLine(

@@ -617,6 +617,7 @@ namespace StoryAPI.Scripting
             {
                 bool isReversed = false;
                 bool isEnumerate = false;
+                bool enumerateDictionaryValues = false;
                 int enumerateStart = 0;
                 string enumerateStartExpression = null;
                 string collection;
@@ -632,6 +633,12 @@ namespace StoryAPI.Scripting
                         throw new ScriptSyntaxException(
                             "enumerate() requires a named list or dictionary variable.", Current.Line);
                     collection = Advance().Text;
+                    if (Current.Text == "." && Ahead(1).Text == "values" &&
+                        Ahead(2).Text == "(" && Ahead(3).Text == ")")
+                    {
+                        _index += 4; // .values()
+                        enumerateDictionaryValues = true;
+                    }
                     if (Current.Text == ",")
                     {
                         _index++;
@@ -682,7 +689,7 @@ namespace StoryAPI.Scripting
                     }
                     if (Current.Text != ")")
                         throw new ScriptSyntaxException(
-                            "enumerate() accepts a named list and an optional scalar start expression.", Current.Line);
+                            "enumerate() accepts a named list or dictionary.values() and an optional scalar start expression.", Current.Line);
                     _index++; // )
                     isEnumerate = true;
                 }
@@ -712,7 +719,7 @@ namespace StoryAPI.Scripting
                     collection = Advance().Text;
                 }
                 bool isDictionaryItems = false;
-                bool isDictionaryValues = false;
+                bool isDictionaryValues = enumerateDictionaryValues;
                 bool isDictionaryKeys = false;
                 if (!isReversed && !isEnumerate && Current.Text == "." &&
                     (Ahead(1).Text == "items" || Ahead(1).Text == "values" ||
@@ -749,7 +756,7 @@ namespace StoryAPI.Scripting
 
                 if (Current.Type != TokenType.Colon)
                     throw new ScriptSyntaxException(
-                        "Only a named list, reversed(list), enumerate(list), dictionary.keys(), dictionary.items(), or dictionary.values() is supported after 'in'.",
+                        "Only a named list, reversed(list), enumerate(list), enumerate(dictionary.values()), dictionary.keys(), dictionary.items(), or dictionary.values() is supported after 'in'.",
                         Current.Line);
 
                 ExpectColon();

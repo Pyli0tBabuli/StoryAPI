@@ -148,6 +148,14 @@ namespace StoryAPI.Scripting
                 return;
             }
 
+            Line listCopyLine;
+            if (VariableIndexExpressionLine.TryCreateListCopyLine(
+                python.Code, _textLabel ?? "unknown", python.Line, out listCopyLine))
+            {
+                _out.Add(listCopyLine);
+                return;
+            }
+
             Line listCountLine;
             if (VariableIndexExpressionLine.TryCreateListCountLine(
                 python.Code, _textLabel ?? "unknown", python.Line, out listCountLine))

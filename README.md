@@ -274,13 +274,16 @@ from last item to first and leaves the source list unchanged. `reversed()` curre
 list and only one loop variable. Indexed list iteration is available as
 `for index, item in enumerate(inventory):`. The index starts at zero, the list is read live as the loop
 advances, and the loop accepts a simple named list with exactly two loop variables. An optional signed
-integer literal can set the initial index, as in `enumerate(inventory, 1)`; variables, decimal values,
-and extra arguments are not supported for the start. Dictionary sources are unsupported. Range loops support `range(stop)`, `range(start, stop)`,
-and `range(start, stop, step)`, including negative steps and empty ranges. Range arguments are
-evaluated once at loop entry and must resolve to 32-bit integers; a zero step or invalid argument logs
-a warning and skips the loop body. Range iteration does not allocate a list. Other iterable expressions
-and tuple unpacking outside dictionary `items()` loops are not yet supported. A `while` loop must
-eventually change its condition or break; infinite loops can stall the game.
+integer literal or supported scalar expression can set the initial index, as in
+`enumerate(inventory, 1)`, `enumerate(inventory, start_index)`, or
+`enumerate(inventory, start_index + 2)`. A dynamic start expression is evaluated once at loop entry
+and must resolve to a signed 32-bit integer; invalid runtime values log a warning and skip the loop body.
+Decimal literals, extra arguments, and dictionary sources are unsupported. Range loops support `range(stop)`,
+`range(start, stop)`, and `range(start, stop, step)`, including negative steps and empty ranges. Range
+arguments are evaluated once at loop entry and must resolve to 32-bit integers; a zero step or invalid
+argument logs a warning and skips the loop body. Range iteration does not allocate a list. Other iterable
+expressions and tuple unpacking outside dictionary `items()` loops are not yet supported. A `while` loop
+must eventually change its condition or break; infinite loops can stall the game.
 
 ### The base game's own scenes
 

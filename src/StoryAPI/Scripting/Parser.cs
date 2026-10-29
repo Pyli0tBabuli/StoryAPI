@@ -790,7 +790,7 @@ namespace StoryAPI.Scripting
                     _index += 2; // reversed(
                     if (Current.Type != TokenType.Identifier)
                         throw new ScriptSyntaxException(
-                            "reversed() requires a named list variable.", Current.Line);
+                            "reversed() requires a named list or dictionary variable.", Current.Line);
                     collection = Advance().Text;
                     if (Current.Text != ")")
                         throw new ScriptSyntaxException(

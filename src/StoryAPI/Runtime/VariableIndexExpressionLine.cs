@@ -5038,16 +5038,13 @@ namespace StoryAPI.Runtime
                         }
                         else if (source is IDictionary enumerateDictionary)
                         {
-                            if (_reverseList)
-                                throw new InvalidOperationException(
-                                    "enumerate(reversed()) requires a list source");
-
-                            // Python's enumerate(dict) visits keys. Snapshot the keys so that
-                            // mutating the dictionary in the loop body does not invalidate this
-                            // loop's active sequence, consistent with other dictionary loops.
+                            // Python's enumerate(dict) visits keys. Snapshot keys so dictionary
+                            // edits during the loop cannot invalidate the active sequence.
                             var enumerateKeys = new List<object>();
                             foreach (object key in enumerateDictionary.Keys)
                                 enumerateKeys.Add(key);
+                            if (_reverseList)
+                                enumerateKeys.Reverse();
                             iterationItems = enumerateKeys;
                         }
                         else
@@ -5058,15 +5055,28 @@ namespace StoryAPI.Runtime
                     }
                     else if (_reverseList)
                     {
-                        if (!(source is IList reverseSource))
+                        if (source is IList reverseSource)
+                        {
+                            // Snapshot the list from its final item to its first item.
+                            var reversedItems = new List<object>(reverseSource.Count);
+                            for (int i = reverseSource.Count - 1; i >= 0; i--)
+                                reversedItems.Add(reverseSource[i]);
+                            iterationItems = reversedItems;
+                        }
+                        else if (source is IDictionary reverseDictionary)
+                        {
+                            // A dict iterates over keys; reversed(dict) reverses that key snapshot.
+                            var reversedKeys = new List<object>();
+                            foreach (object key in reverseDictionary.Keys)
+                                reversedKeys.Add(key);
+                            reversedKeys.Reverse();
+                            iterationItems = reversedKeys;
+                        }
+                        else
+                        {
                             throw new InvalidOperationException(
-                                "reversed() iteration requires a list source");
-
-                        // Snapshot the source from its final item to its first item.
-                        var reversedItems = new List<object>(reverseSource.Count);
-                        for (int i = reverseSource.Count - 1; i >= 0; i--)
-                            reversedItems.Add(reverseSource[i]);
-                        iterationItems = reversedItems;
+                                "reversed() iteration requires a list or dictionary source");
+                        }
                     }
                     else if (_includeDictionaryItems)
                     {

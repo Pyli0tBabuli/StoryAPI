@@ -3324,12 +3324,12 @@ namespace StoryAPI.Tests
         {
             const string sourcePath = "sorted-dictionary-key-iteration-test.rpy";
             var statements = Parse(
-                "label sorted_dictionary_key_iteration_test:\\n" +
-                "    for key in sorted(settings):\\n" +
-                "        pass\\n" +
-                "    for key in sorted(settings, reverse=True):\\n" +
-                "        pass\\n" +
-                "    return\\n");
+                "label sorted_dictionary_key_iteration_test:\n" +
+                "    for key in sorted(settings):\n" +
+                "        pass\n" +
+                "    for key in sorted(settings, reverse=True):\n" +
+                "        pass\n" +
+                "    return\n");
             var label = Require<LabelStatement>(statements[0],
                 "Expected sorted-dictionary-key label.");
             var ascendingLoop = Require<ForStatement>(label.Body[0],
@@ -3381,10 +3381,10 @@ namespace StoryAPI.Tests
         {
             const string sourcePath = "enumerate-sorted-dictionary-key-test.rpy";
             var statements = Parse(
-                "label enumerate_sorted_dictionary_key_test:\\n" +
-                "    for index, key in enumerate(sorted(settings), start_index):\\n" +
-                "        pass\\n" +
-                "    return\\n");
+                "label enumerate_sorted_dictionary_key_test:\n" +
+                "    for index, key in enumerate(sorted(settings), start_index):\n" +
+                "        pass\n" +
+                "    return\n");
             var label = Require<LabelStatement>(statements[0],
                 "Expected enumerate(sorted(dictionary)) label.");
             var loop = Require<ForStatement>(label.Body[0],

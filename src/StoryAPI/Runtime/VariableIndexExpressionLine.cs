@@ -877,8 +877,8 @@ namespace StoryAPI.Runtime
         }
 
         /// <summary>
-        /// Recognizes sorted(listVariable) assigned to a simple variable. It returns a new
-        /// ascending list and does not modify the source list.
+        /// Recognizes sorted(listVariable[, reverse=True/False]) assigned to a simple variable.
+        /// The result is a new list; the source collection is never mutated.
         /// </summary>
         public static bool TryCreateSortedListAssignmentLine(string code, string sourcePath,
             int sourceLine, out Line line)
@@ -916,15 +916,57 @@ namespace StoryAPI.Runtime
             string rootName = code.Substring(rootStart, cursor - rootStart);
 
             SkipWhitespace(code, ref cursor);
+            bool reverse = false;
+            if (cursor < code.Length && code[cursor] == ',')
+            {
+                cursor++;
+                SkipWhitespace(code, ref cursor);
+
+                const string argumentName = "reverse";
+                if (cursor + argumentName.Length > code.Length ||
+                    string.Compare(code, cursor, argumentName, 0, argumentName.Length,
+                        StringComparison.Ordinal) != 0)
+                    return false;
+                cursor += argumentName.Length;
+                if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+                SkipWhitespace(code, ref cursor);
+                if (cursor >= code.Length || code[cursor++] != '=') return false;
+                SkipWhitespace(code, ref cursor);
+
+                if (cursor + 4 <= code.Length &&
+                    string.Compare(code, cursor, "True", 0, 4, StringComparison.Ordinal) == 0 &&
+                    (cursor + 4 == code.Length || !IsIdentifierPart(code[cursor + 4])))
+                {
+                    reverse = true;
+                    cursor += 4;
+                }
+                else if (cursor + 5 <= code.Length &&
+                    string.Compare(code, cursor, "False", 0, 5, StringComparison.Ordinal) == 0 &&
+                    (cursor + 5 == code.Length || !IsIdentifierPart(code[cursor + 5])))
+                {
+                    reverse = false;
+                    cursor += 5;
+                }
+                else
+                {
+                    return false;
+                }
+
+                SkipWhitespace(code, ref cursor);
+            }
+
             if (cursor >= code.Length || code[cursor++] != ')') return false;
             SkipWhitespace(code, ref cursor);
             if (cursor != code.Length) return false;
 
-            line = new SortedListAssignmentLine(destinationName, rootName, sourcePath, sourceLine);
+            line = new SortedListAssignmentLine(destinationName, rootName, reverse,
+                sourcePath, sourceLine);
             return true;
         }
 
         /// <summary>
+        /// Recognizes assignment from a no-argument list.copy() call.        /// <summary>
         /// Recognizes assignment from a no-argument list.copy() call.
         /// </summary>
         public static bool TryCreateListCopyLine(string code, string sourcePath,
@@ -2619,14 +2661,16 @@ namespace StoryAPI.Runtime
         {
             private readonly string _destinationName;
             private readonly string _rootName;
+            private readonly bool _reverse;
             private readonly string _sourcePath;
             private readonly int _sourceLine;
 
-            public SortedListAssignmentLine(string destinationName, string rootName,
+            public SortedListAssignmentLine(string destinationName, string rootName, bool reverse,
                 string sourcePath, int sourceLine)
             {
                 _destinationName = destinationName;
                 _rootName = rootName;
+                _reverse = reverse;
                 _sourcePath = sourcePath;
                 _sourceLine = sourceLine;
             }
@@ -2669,6 +2713,9 @@ namespace StoryAPI.Runtime
                             return Convert.ToDouble(left, CultureInfo.InvariantCulture).CompareTo(
                                 Convert.ToDouble(right, CultureInfo.InvariantCulture));
                         });
+
+                        if (_reverse)
+                            sorted.Reverse();
                     }
 
                     if (!GameBridge.TrySetVariableLiteral(_destinationName, sorted, false, context))
@@ -2709,7 +2756,7 @@ namespace StoryAPI.Runtime
             }
         }
 
-        private sealed class ListCopyLine : Line, IApply
+        private sealed class ListCopyLine : Line, IApply        private sealed class ListCopyLine : Line, IApply
         {
             private readonly string _destinationName;
             private readonly string _rootName;

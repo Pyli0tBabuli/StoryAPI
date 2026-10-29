@@ -170,6 +170,7 @@ beyond the end of a list remain unsupported. The restricted assignment `$ lowest
 It supports homogeneous string lists (ordinal ordering) and homogeneous numeric lists (numeric ordering).
 The source list is unchanged. Empty lists or mixed/unsupported values log a warning and leave the destination
 unchanged; extra arguments and indexed source expressions are not supported.
+
 The restricted assignment `$ highest = max(inventory)` selects the largest scalar from a named list.
 It supports homogeneous string lists (ordinal ordering) and homogeneous numeric lists (numeric ordering).
 The source list is unchanged. Empty lists or mixed/unsupported values log a warning and leave the destination

@@ -964,15 +964,93 @@ namespace StoryAPI.Runtime
             SkipWhitespace(code, ref cursor);
             if (cursor >= code.Length || code[cursor++] != '(') return false;
             SkipWhitespace(code, ref cursor);
+
             object soughtValue;
-            if (!TryReadDictionaryGetDefault(code, ref cursor, out soughtValue)) return false;
+            if (!TryReadListIndexScalarArgument(code, ref cursor, out soughtValue)) return false;
             SkipWhitespace(code, ref cursor);
+
+            bool hasStart = false;
+            bool hasStop = false;
+            int start = 0;
+            int stop = 0;
+
+            if (cursor < code.Length && code[cursor] == ',')
+            {
+                cursor++;
+                SkipWhitespace(code, ref cursor);
+                if (!TryReadListIndexIntegerArgument(code, ref cursor, out start)) return false;
+                hasStart = true;
+                SkipWhitespace(code, ref cursor);
+
+                if (cursor < code.Length && code[cursor] == ',')
+                {
+                    cursor++;
+                    SkipWhitespace(code, ref cursor);
+                    if (!TryReadListIndexIntegerArgument(code, ref cursor, out stop)) return false;
+                    hasStop = true;
+                    SkipWhitespace(code, ref cursor);
+                }
+            }
+
             if (cursor >= code.Length || code[cursor++] != ')') return false;
             SkipWhitespace(code, ref cursor);
             if (cursor != code.Length) return false;
 
-            line = new ListIndexLine(destinationName, rootName, soughtValue, sourcePath, sourceLine);
+            line = new ListIndexLine(destinationName, rootName, soughtValue,
+                hasStart, start, hasStop, stop, sourcePath, sourceLine);
             return true;
+        }
+
+        private static bool TryReadListIndexScalarArgument(string code, ref int cursor,
+            out object value)
+        {
+            value = null;
+            if (cursor >= code.Length) return false;
+
+            if (code[cursor] == '"' || code[cursor] == '\'')
+            {
+                string stringValue;
+                if (!TryReadString(code, ref cursor, out stringValue)) return false;
+                value = stringValue;
+                return true;
+            }
+
+            int start = cursor;
+            while (cursor < code.Length && code[cursor] != ',' && code[cursor] != ')') cursor++;
+            string literal = code.Substring(start, cursor - start).Trim();
+            if (literal.Length == 0) return false;
+            if (literal == "True") { value = true; return true; }
+            if (literal == "False") { value = false; return true; }
+            if (literal == "None") { value = null; return true; }
+
+            int integer;
+            if (int.TryParse(literal, NumberStyles.Integer, CultureInfo.InvariantCulture, out integer))
+            {
+                value = (float)integer;
+                return true;
+            }
+
+            float number;
+            if (float.TryParse(literal, NumberStyles.Float, CultureInfo.InvariantCulture, out number) &&
+                !float.IsNaN(number) && !float.IsInfinity(number))
+            {
+                value = number;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryReadListIndexIntegerArgument(string code, ref int cursor,
+            out int value)
+        {
+            value = 0;
+            if (cursor >= code.Length) return false;
+
+            int start = cursor;
+            while (cursor < code.Length && code[cursor] != ',' && code[cursor] != ')') cursor++;
+            string literal = code.Substring(start, cursor - start).Trim();
+            return int.TryParse(literal, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
         }
 
         /// <summary>
@@ -2553,15 +2631,23 @@ namespace StoryAPI.Runtime
             private readonly string _destinationName;
             private readonly string _rootName;
             private readonly object _soughtValue;
+            private readonly bool _hasStart;
+            private readonly int _start;
+            private readonly bool _hasStop;
+            private readonly int _stop;
             private readonly string _sourcePath;
             private readonly int _sourceLine;
 
             public ListIndexLine(string destinationName, string rootName, object soughtValue,
-                string sourcePath, int sourceLine)
+                bool hasStart, int start, bool hasStop, int stop, string sourcePath, int sourceLine)
             {
                 _destinationName = destinationName;
                 _rootName = rootName;
                 _soughtValue = soughtValue;
+                _hasStart = hasStart;
+                _start = start;
+                _hasStop = hasStop;
+                _stop = stop;
                 _sourcePath = sourcePath;
                 _sourceLine = sourceLine;
             }
@@ -2576,8 +2662,10 @@ namespace StoryAPI.Runtime
                         !(target is IList list))
                         throw new InvalidOperationException("list.index() requires a list target");
 
+                    int start = _hasStart ? NormalizeIndexBound(_start, list.Count) : 0;
+                    int stop = _hasStop ? NormalizeIndexBound(_stop, list.Count) : list.Count;
                     int index = -1;
-                    for (int i = 0; i < list.Count; i++)
+                    for (int i = start; i < stop; i++)
                     {
                         if (ScalarValuesEqual(list[i], _soughtValue))
                         {
@@ -2587,7 +2675,8 @@ namespace StoryAPI.Runtime
                     }
 
                     if (index < 0)
-                        throw new InvalidOperationException("index(value) could not find a matching list item");
+                        throw new InvalidOperationException(
+                            "index(value) could not find a matching list item in the requested range");
 
                     if (!GameBridge.TrySetVariableLiteral(_destinationName, index, false, context))
                         throw new InvalidOperationException(
@@ -2602,6 +2691,15 @@ namespace StoryAPI.Runtime
                         _sourcePath + ":" + _sourceLine + ": " +
                         e.GetBaseException().Message);
                 }
+            }
+
+            private static int NormalizeIndexBound(int bound, int count)
+            {
+                long normalized = bound;
+                if (normalized < 0) normalized += count;
+                if (normalized < 0) normalized = 0;
+                if (normalized > count) normalized = count;
+                return (int)normalized;
             }
         }
 

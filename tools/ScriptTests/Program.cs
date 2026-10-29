@@ -38,6 +38,7 @@ namespace StoryAPI.Tests
             Run("sum() builtin", TestSumListBuiltin);
             Run("min() builtin", TestMinListBuiltin);
             Run("max() builtin", TestMaxListBuiltin);
+            Run("any() builtin", TestAnyListBuiltin);
             Run("list count method", TestListCountMethod);
             Run("list index method", TestListIndexMethod);
             Run("list copy method", TestListCopyMethod);
@@ -2209,6 +2210,97 @@ namespace StoryAPI.Tests
                     "The max() assignment should parse as a Python statement.").Code ==
                     "highest = max(numbers)",
                 "The parser should preserve max() assignments.");
+        }
+
+        private static void TestAnyListBuiltin()
+        {
+            const string sourcePath = "any-list-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+
+            var mixed = new List<object> { false, 0, "", "active", 0f };
+            context.SetVariable("mixed", new SimpleExpressionEngine.DataValue((object)mixed));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateAnyListAssignmentLine(
+                    "found = any(mixed)", sourcePath, 3, out line),
+                "any(mixed) assignment should be recognized.");
+            Check(line.GetType().Name == "AnyListAssignmentLine",
+                "any() should emit a dedicated truthiness instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("found", out observed) &&
+                    observed is bool found && found,
+                "any() should return true when any supported scalar is truthy.");
+            Check(mixed.SequenceEqual(new object[] { false, 0, "", "active", 0f }),
+                "any() should leave the source list unchanged.");
+
+            var falseValues = new List<object> { false, 0, 0f, "", null };
+            context.SetVariable("false_values",
+                new SimpleExpressionEngine.DataValue((object)falseValues));
+            Check(VariableIndexExpressionLine.TryCreateAnyListAssignmentLine(
+                    "has_truthy = any(false_values)", sourcePath, 4, out line),
+                "any() should recognize scalar lists containing only falsey values.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("has_truthy", out observed) &&
+                    observed is bool noTruthy && !noTruthy,
+                "any() should return false if every item is falsey.");
+
+            var empty = new List<object>();
+            context.SetVariable("empty", new SimpleExpressionEngine.DataValue((object)empty));
+            Check(VariableIndexExpressionLine.TryCreateAnyListAssignmentLine(
+                    "empty_any = any(empty)", sourcePath, 5, out line),
+                "any() should recognize an empty list.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("empty_any", out observed) &&
+                    observed is bool emptyResult && !emptyResult,
+                "any() of an empty list should return false.");
+
+            var singleton = new List<object> { "x" };
+            context.SetVariable("singleton", new SimpleExpressionEngine.DataValue((object)singleton));
+            Check(VariableIndexExpressionLine.TryCreateAnyListAssignmentLine(
+                    "single_any = any(singleton)", sourcePath, 6, out line),
+                "any() should recognize one-item lists.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("single_any", out observed) &&
+                    observed is bool singleResult && singleResult,
+                "any() should return true for a one-item truthy list.");
+
+            var unsupported = new List<object> { 0, new object() };
+            context.SetVariable("unsupported", new SimpleExpressionEngine.DataValue((object)unsupported));
+            context.SetVariable("preserved_any", new SimpleExpressionEngine.DataValue(true));
+            GameBridge.TrySetVariableLiteral("preserved_any", true, false, context);
+            Check(VariableIndexExpressionLine.TryCreateAnyListAssignmentLine(
+                    "preserved_any = any(unsupported)", sourcePath, 7, out line),
+                "any() should recognize lists with unsupported items before runtime validation.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("preserved_any", out observed) &&
+                    observed is bool preserved && preserved,
+                "any() should leave the destination unchanged when an unsupported item is reached.");
+
+            Check(!VariableIndexExpressionLine.TryCreateAnyListAssignmentLine(
+                    "found = any(mixed, False)", sourcePath, 20, out line),
+                "any() should reject additional arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateAnyListAssignmentLine(
+                    "found = any(mixed[0])", sourcePath, 21, out line),
+                "any() should reject indexed source expressions.");
+            Check(!VariableIndexExpressionLine.TryCreateAnyListAssignmentLine(
+                    "any(mixed)", sourcePath, 22, out line),
+                "The restricted any() form should require an assignment target.");
+            Check(!VariableIndexExpressionLine.TryCreateAnyListAssignmentLine(
+                    "found = any(mixed); found = False", sourcePath, 23, out line),
+                "any() should reject multiple statements.");
+
+            var statements = Parse(
+                "label any_list_test:\n" +
+                "    $ found = any(mixed)\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing any().");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The any() assignment should parse as a Python statement.").Code ==
+                    "found = any(mixed)",
+                "The parser should preserve any() assignments.");
         }
 
         private static void TestSumListBuiltin()

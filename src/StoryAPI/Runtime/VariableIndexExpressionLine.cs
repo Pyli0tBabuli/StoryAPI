@@ -877,9 +877,6 @@ namespace StoryAPI.Runtime
         }
 
         /// <summary>
-        /// Recognizes assignment from a no-argument list.copy() call.
-        /// </summary>
-        /// <summary>
         /// Recognizes sorted(listVariable) assigned to a simple variable. It returns a new
         /// ascending list and does not modify the source list.
         /// </summary>
@@ -927,8 +924,54 @@ namespace StoryAPI.Runtime
             return true;
         }
 
+        /// <summary>
+        /// Recognizes assignment from a no-argument list.copy() call.
+        /// </summary>
+        public static bool TryCreateListCopyLine(string code, string sourcePath,
+            int sourceLine, out Line line)
+        {
+            line = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
 
-        public static bool TryCreateListCopyLine(string code, string sourcePath,        /// <summary>
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int destinationStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string destinationName = code.Substring(destinationStart, cursor - destinationStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '=' ||
+                (cursor < code.Length && code[cursor] == '=')) return false;
+            SkipWhitespace(code, ref cursor);
+
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int rootStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string rootName = code.Substring(rootStart, cursor - rootStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '.') return false;
+            SkipWhitespace(code, ref cursor);
+            const string methodName = "copy";
+            if (cursor + methodName.Length > code.Length ||
+                string.Compare(code, cursor, methodName, 0, methodName.Length,
+                    StringComparison.Ordinal) != 0) return false;
+            cursor += methodName.Length;
+            if (cursor < code.Length && IsIdentifierPart(code[cursor])) return false;
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != '(') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor++] != ')') return false;
+            SkipWhitespace(code, ref cursor);
+            if (cursor != code.Length) return false;
+
+            line = new ListCopyLine(destinationName, rootName, sourcePath, sourceLine);
+            return true;
+        }
+
+        /// <summary>
         /// Recognizes assignment from list.index(scalarLiteral). The first matching index
         /// is returned; arguments are restricted to scalar literal values.
         /// </summary>
@@ -2602,8 +2645,7 @@ namespace StoryAPI.Runtime
                     for (int i = 0; i < sourceList.Count; i++)
                         sorted.Add(sourceList[i]);
 
-                    // Match list.sort()'s restricted supported scalar types. Sort a copy so
-                    // even errors cannot mutate the original collection.
+                    // Sort a copy and validate supported scalar types before assigning a result.
                     if (sorted.Count > 1)
                     {
                         bool strings = sorted[0] is string;
@@ -2667,8 +2709,66 @@ namespace StoryAPI.Runtime
             }
         }
 
+        private sealed class ListCopyLine : Line, IApply
+        {
+            private readonly string _destinationName;
+            private readonly string _rootName;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
 
-        private sealed class ListCopyLine : Line, IApply        private sealed class ListIndexLine : Line, IApply
+            public ListCopyLine(string destinationName, string rootName,
+                string sourcePath, int sourceLine)
+            {
+                _destinationName = destinationName;
+                _rootName = rootName;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object source) ||
+                        !(source is IList sourceList))
+                        throw new InvalidOperationException("list.copy() requires a list target");
+
+                    IList copy = null;
+                    try
+                    {
+                        copy = Activator.CreateInstance(source.GetType()) as IList;
+                    }
+                    catch
+                    {
+                        // Some IList implementations do not expose a public parameterless
+                        // constructor; use a mutable fallback in that case.
+                    }
+
+                    if (copy == null || copy.IsReadOnly || copy.IsFixedSize)
+                        copy = new ArrayList();
+
+                    foreach (object value in sourceList)
+                        copy.Add(value);
+
+                    if (!GameBridge.TrySetVariableLiteral(_destinationName, copy, false, context))
+                        throw new InvalidOperationException(
+                            "could not assign list.copy() result to '" + _destinationName + "'");
+
+                    Log.Info("Applied list.copy on '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not apply list.copy on '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+        }
+
+        private sealed class ListIndexLine : Line, IApply
         {
             private readonly string _destinationName;
             private readonly string _rootName;

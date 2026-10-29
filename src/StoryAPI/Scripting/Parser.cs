@@ -630,7 +630,7 @@ namespace StoryAPI.Scripting
                     _index += 2; // enumerate(
                     if (Current.Type != TokenType.Identifier)
                         throw new ScriptSyntaxException(
-                            "enumerate() requires a named list variable.", Current.Line);
+                            "enumerate() requires a named list or dictionary variable.", Current.Line);
                     collection = Advance().Text;
                     if (Current.Text == ",")
                     {

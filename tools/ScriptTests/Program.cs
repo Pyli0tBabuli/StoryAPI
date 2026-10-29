@@ -34,6 +34,7 @@ namespace StoryAPI.Tests
             Run("list and dictionary clear methods", TestCollectionClearMethods);
             Run("list reverse method", TestListReverseMethod);
             Run("list count method", TestListCountMethod);
+            Run("list copy method", TestListCopyMethod);
             Run("list extend method", TestListExtendMethod);
             Run("list insert and pop methods", TestListInsertAndPopMethods);
             Run("dictionary update and pop methods", TestDictionaryUpdateAndPopMethods);
@@ -1772,6 +1773,80 @@ namespace StoryAPI.Tests
                     "The copy call should parse as a Python statement.").Code ==
                     "copied = settings.copy()",
                 "The parser should preserve dictionary copy assignments.");
+        }
+
+        private static void TestListCopyMethod()
+        {
+            const string sourcePath = "list-copy-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var inventory = new List<object> { "key", "flashlight", 3f, true };
+            context.SetVariable("inventory",
+                new SimpleExpressionEngine.DataValue((object)inventory));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateListCopyLine(
+                    "copied_inventory = inventory.copy()", sourcePath, 3, out line),
+                "inventory.copy() assignment should be recognized.");
+            Check(line.GetType().Name == "ListCopyLine",
+                "copy() should emit a dedicated list-copy instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("copied_inventory", out observed) &&
+                    observed is List<object>,
+                "copy() should assign a list object.");
+            var copied = (List<object>)observed;
+            Check(!object.ReferenceEquals(inventory, copied),
+                "copy() must create a separate list object.");
+            Check(copied.Count == inventory.Count && Equals(copied[0], "key") &&
+                    Equals(copied[1], "flashlight") &&
+                    Math.Abs(Convert.ToSingle(copied[2]) - 3f) < 0.001f &&
+                    Equals(copied[3], true),
+                "copy() should preserve every item and its order.");
+
+            copied[0] = "map";
+            copied.Add("battery");
+            Check(Equals(inventory[0], "key") && inventory.Count == 4,
+                "Mutating the copied list must not mutate the original list.");
+
+            var empty = new List<object>();
+            context.SetVariable("empty_inventory",
+                new SimpleExpressionEngine.DataValue((object)empty));
+            Check(VariableIndexExpressionLine.TryCreateListCopyLine(
+                    "empty_copy = empty_inventory.copy()", sourcePath, 4, out line),
+                "copy() should recognize an empty list.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("empty_copy", out observed) &&
+                    observed is List<object> emptyCopy && emptyCopy.Count == 0 &&
+                    !object.ReferenceEquals(empty, emptyCopy),
+                "Copying an empty list should produce a separate empty list.");
+
+            Check(!VariableIndexExpressionLine.TryCreateListCopyLine(
+                    "copied_inventory = inventory.copy(extra)", sourcePath, 20, out line),
+                "copy() should reject arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateListCopyLine(
+                    "copied_inventory = inventory.copy().reverse()", sourcePath, 21, out line),
+                "copy() should reject chained calls.");
+            Check(!VariableIndexExpressionLine.TryCreateListCopyLine(
+                    "inventory.copy()", sourcePath, 22, out line),
+                "The restricted copy() form should require an assignment target.");
+            Check(!VariableIndexExpressionLine.TryCreateListCopyLine(
+                    "copied_inventory = inventory[0].copy()", sourcePath, 23, out line),
+                "copy() should reject indexed targets.");
+            Check(!VariableIndexExpressionLine.TryCreateListCopyLine(
+                    "copied_inventory = inventory.copy(); inventory.clear()", sourcePath, 24, out line),
+                "copy() should reject multiple statements.");
+
+            var statements = Parse(
+                "label list_copy_test:\\n" +
+                "    $ copied_inventory = inventory.copy()\\n" +
+                "    return\\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing list copy().");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The copy call should parse as a Python statement.").Code ==
+                    "copied_inventory = inventory.copy()",
+                "The parser should preserve list copy assignments.");
         }
 
         private static void TestListCountMethod()

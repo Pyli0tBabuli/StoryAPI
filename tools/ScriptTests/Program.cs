@@ -33,6 +33,7 @@ namespace StoryAPI.Tests
             Run("None comparison conditions", TestNoneComparisonConditions);
             Run("list and dictionary clear methods", TestCollectionClearMethods);
             Run("list reverse method", TestListReverseMethod);
+            Run("list sort method", TestListSortMethod);
             Run("list count method", TestListCountMethod);
             Run("list index method", TestListIndexMethod);
             Run("list copy method", TestListCopyMethod);
@@ -1933,6 +1934,80 @@ namespace StoryAPI.Tests
                     "The index() call should parse as a Python statement.").Code ==
                     "battery_index = inventory.index(\"battery\")",
                 "The parser should preserve list index assignments.");
+        }
+
+        private static void TestListSortMethod()
+        {
+            const string sourcePath = "list-sort-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var inventory = new List<object> { "pear", "apple", "banana", "Apple" };
+            context.SetVariable("inventory",
+                new SimpleExpressionEngine.DataValue((object)inventory));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateListSortLine(
+                    "inventory.sort()", sourcePath, 3, out line),
+                "inventory.sort() should be recognized.");
+            Check(line.GetType().Name == "ListSortLine",
+                "sort() should emit the dedicated list-sort instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(inventory.SequenceEqual(new object[] { "Apple", "apple", "banana", "pear" }),
+                "sort() should sort strings in ordinal ascending order.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(inventory.SequenceEqual(new object[] { "Apple", "apple", "banana", "pear" }),
+                "Sorting an already sorted list should preserve its order.");
+
+            var numbers = new List<object> { 9f, -2f, 3f, 0f };
+            context.SetVariable("numbers",
+                new SimpleExpressionEngine.DataValue((object)numbers));
+            Check(VariableIndexExpressionLine.TryCreateListSortLine(
+                    "numbers.sort()", sourcePath, 4, out line),
+                "numbers.sort() should be recognized.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(numbers.SequenceEqual(new object[] { -2f, 0f, 3f, 9f }),
+                "sort() should sort numeric values in ascending order.");
+
+            var mixed = new List<object> { "battery", 2f };
+            context.SetVariable("mixed",
+                new SimpleExpressionEngine.DataValue((object)mixed));
+            Check(VariableIndexExpressionLine.TryCreateListSortLine(
+                    "mixed.sort()", sourcePath, 5, out line),
+                "sort() should recognize a list even when its values are unsupported.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(mixed.SequenceEqual(new object[] { "battery", 2f }),
+                "Unsupported mixed-type lists should remain unchanged.");
+
+            var empty = new List<object>();
+            context.SetVariable("empty_inventory",
+                new SimpleExpressionEngine.DataValue((object)empty));
+            Check(VariableIndexExpressionLine.TryCreateListSortLine(
+                    "empty_inventory.sort()", sourcePath, 6, out line),
+                "sort() should recognize empty lists.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(empty.Count == 0, "Sorting an empty list should be a no-op.");
+
+            Check(!VariableIndexExpressionLine.TryCreateListSortLine(
+                    "inventory.sort(reverse=True)", sourcePath, 20, out line),
+                "This restricted sort() implementation should reject keyword arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateListSortLine(
+                    "inventory[0].sort()", sourcePath, 21, out line),
+                "sort() should reject indexed targets.");
+            Check(!VariableIndexExpressionLine.TryCreateListSortLine(
+                    "item = inventory.sort()", sourcePath, 22, out line),
+                "This sort() feature should require a direct no-argument call.");
+            Check(!VariableIndexExpressionLine.TryCreateListSortLine(
+                    "inventory.sort(); inventory.reverse()", sourcePath, 23, out line),
+                "sort() should reject multiple statements.");
+
+            var statements = Parse(
+                "label list_sort_test:\n" +
+                "    $ inventory.sort()\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing list sort().");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The sort call should parse as a Python statement.").Code == "inventory.sort()",
+                "The parser should preserve list sort calls.");
         }
 
         private static void TestListCountMethod()

@@ -33,6 +33,7 @@ namespace StoryAPI.Tests
             Run("None comparison conditions", TestNoneComparisonConditions);
             Run("list and dictionary clear methods", TestCollectionClearMethods);
             Run("list reverse method", TestListReverseMethod);
+            Run("list count method", TestListCountMethod);
             Run("list extend method", TestListExtendMethod);
             Run("list insert and pop methods", TestListInsertAndPopMethods);
             Run("dictionary update and pop methods", TestDictionaryUpdateAndPopMethods);
@@ -1771,6 +1772,89 @@ namespace StoryAPI.Tests
                     "The copy call should parse as a Python statement.").Code ==
                     "copied = settings.copy()",
                 "The parser should preserve dictionary copy assignments.");
+        }
+
+        private static void TestListCountMethod()
+        {
+            const string sourcePath = "list-count-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var inventory = new List<object>
+            {
+                "battery", "key", "battery", "battery", 2f, 2f, true, null
+            };
+            context.SetVariable("inventory",
+                new SimpleExpressionEngine.DataValue((object)inventory));
+
+            RenPyParser.Line line;
+            Check(VariableIndexExpressionLine.TryCreateListCountLine(
+                    "battery_count = inventory.count(\"battery\")", sourcePath, 3, out line),
+                "count() with a string literal should be recognized.");
+            Check(line.GetType().Name == "ListCountLine",
+                "count() should emit a dedicated list-count instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("battery_count", out observed) &&
+                    Convert.ToInt32(observed) == 3,
+                "count() should count every matching string occurrence.");
+
+            Check(VariableIndexExpressionLine.TryCreateListCountLine(
+                    "number_count = inventory.count(2)", sourcePath, 4, out line),
+                "count() should accept a numeric literal.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("number_count", out observed) &&
+                    Convert.ToInt32(observed) == 2,
+                "count() should compare numeric scalars by value.");
+
+            Check(VariableIndexExpressionLine.TryCreateListCountLine(
+                    "true_count = inventory.count(True)", sourcePath, 5, out line),
+                "count() should accept a boolean literal.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("true_count", out observed) &&
+                    Convert.ToInt32(observed) == 1,
+                "count() should distinguish booleans from numeric values.");
+
+            Check(VariableIndexExpressionLine.TryCreateListCountLine(
+                    "none_count = inventory.count(None)", sourcePath, 6, out line),
+                "count() should accept None.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("none_count", out observed) &&
+                    Convert.ToInt32(observed) == 1,
+                "count(None) should count null entries.");
+
+            Check(VariableIndexExpressionLine.TryCreateListCountLine(
+                    "absent_count = inventory.count(\"absent\")", sourcePath, 7, out line),
+                "count() should recognize a value not present in the list.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("absent_count", out observed) &&
+                    Convert.ToInt32(observed) == 0,
+                "count() should return zero when no elements match.");
+
+            Check(!VariableIndexExpressionLine.TryCreateListCountLine(
+                    "value_count = inventory.count(value_name)", sourcePath, 20, out line),
+                "This restricted count() implementation should reject variable arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateListCountLine(
+                    "value_count = inventory.count(\"battery\", \"key\")", sourcePath, 21, out line),
+                "count() should reject more than one argument.");
+            Check(!VariableIndexExpressionLine.TryCreateListCountLine(
+                    "value_count = inventory[0].count(\"battery\")", sourcePath, 22, out line),
+                "count() should reject indexed targets.");
+            Check(!VariableIndexExpressionLine.TryCreateListCountLine(
+                    "inventory.count(\"battery\")", sourcePath, 23, out line),
+                "This restricted count() feature should require an assignment target.");
+            Check(!VariableIndexExpressionLine.TryCreateListCountLine(
+                    "value_count = inventory.count(\"battery\"); inventory.reverse()", sourcePath, 24, out line),
+                "count() should reject multiple statements.");
+
+            var statements = Parse(
+                "label list_count_test:\\n" +
+                "    $ battery_count = inventory.count(\"battery\")\\n" +
+                "    return\\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing list count().");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The count() call should parse as a Python statement.").Code ==
+                    "battery_count = inventory.count(\"battery\")",
+                "The parser should preserve list count assignments.");
         }
 
         private static void TestListReverseMethod()

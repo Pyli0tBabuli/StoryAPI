@@ -3201,18 +3201,10 @@ namespace StoryAPI.Tests
             Check(values.SequenceEqual(new object[] { 1f, 2f, 3f }),
                 "reversed() iteration must not mutate the source list.");
 
-            var dictionary = new Dictionary<string, object> { { "one", 1f } };
-            context.SetVariable("settings", new SimpleExpressionEngine.DataValue((object)dictionary));
-            context.SetVariable("_stage40_preserved", new SimpleExpressionEngine.DataValue(17f));
-            GameBridge.TrySetVariableLiteral("_stage40_preserved", 17f, false, context);
-            Check(VariableIndexExpressionLine.TryCreateForEachPreparationLine(
-                    "settings", "_stage40_preserved", false, false, false, true,
+            Check(!VariableIndexExpressionLine.TryCreateForEachPreparationLine(
+                    "settings", "_stage40_invalid", true, false, false, true,
                     sourcePath, 6, out preparation),
-                "The reverse-loop instruction should be constructible for runtime type validation.");
-            ((RenPyParser.Images.IApply)preparation).Apply(context);
-            Check(GameBridge.TryGetLastTestLiteral("_stage40_preserved", out observed) &&
-                    observed is float unchanged && Math.Abs(unchanged - 17f) < 0.0001f,
-                "reversed() should reject dictionaries without overwriting the destination.");
+                "reversed() should not be combined with a dictionary-items iteration mode.");
         }
 
         private static void TestForDictionaryIteration()

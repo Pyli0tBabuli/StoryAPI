@@ -167,7 +167,11 @@ expressions; collection reads on the right-hand side are resolved before the ass
 `+=`, `-=`, `*=`, `/=`, and `%=`; their right-hand side may use supported scalar expressions and
 collection index reads. Other compound operators such as `**=`, slices, and assigning a new value
 beyond the end of a list remain unsupported. Lists support `$ inventory.reverse()`, which
-reverses the existing list in place and accepts no arguments. Lists support one-argument scalar
+reverses the existing list in place and accepts no arguments. Assignment from
+`$ battery_count = inventory.count("battery")` is also supported for a quoted string, number,
+`True`, `False`, or `None` literal argument; it counts all matching scalar values and returns zero
+when there are no matches. Variable arguments, indexed targets, and multiple statements are not
+supported by this restricted `count()` form. Lists support one-argument scalar
 method calls `$ inventory.append("battery")` and `$ inventory.remove("key")`; `remove`
 deletes the first matching item. Lists also support `$ inventory.extend(rewards)`, which
 appends the items from another named list in order without changing the source list. The

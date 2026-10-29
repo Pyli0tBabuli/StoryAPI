@@ -148,6 +148,14 @@ namespace StoryAPI.Scripting
                 return;
             }
 
+            Line listCountLine;
+            if (VariableIndexExpressionLine.TryCreateListCountLine(
+                python.Code, _textLabel ?? "unknown", python.Line, out listCountLine))
+            {
+                _out.Add(listCountLine);
+                return;
+            }
+
             Line reverseLine;
             if (VariableIndexExpressionLine.TryCreateListReverseLine(
                 python.Code, _textLabel ?? "unknown", python.Line, out reverseLine))

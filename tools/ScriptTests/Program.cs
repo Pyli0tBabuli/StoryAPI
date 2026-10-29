@@ -1846,9 +1846,9 @@ namespace StoryAPI.Tests
                 "count() should reject multiple statements.");
 
             var statements = Parse(
-                "label list_count_test:\\n" +
-                "    $ battery_count = inventory.count(\"battery\")\\n" +
-                "    return\\n");
+                "label list_count_test:\n" +
+                "    $ battery_count = inventory.count(\"battery\")\n" +
+                "    return\n");
             var label = Require<LabelStatement>(statements[0],
                 "Expected a label containing list count().");
             Check(Require<PythonStatement>(label.Body[0],

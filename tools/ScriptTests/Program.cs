@@ -1967,6 +1967,33 @@ namespace StoryAPI.Tests
             Check(numbers.SequenceEqual(new object[] { -2f, 0f, 3f, 9f }),
                 "sort() should sort numeric values in ascending order.");
 
+            var descendingStrings = new List<object> { "pear", "apple", "banana" };
+            context.SetVariable("descending_strings",
+                new SimpleExpressionEngine.DataValue((object)descendingStrings));
+            Check(VariableIndexExpressionLine.TryCreateListSortLine(
+                    "descending_strings.sort(reverse=True)", sourcePath, 5, out line),
+                "sort(reverse=True) should be recognized.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(descendingStrings.SequenceEqual(new object[] { "pear", "banana", "apple" }),
+                "sort(reverse=True) should sort strings in descending ordinal order.");
+
+            var descendingNumbers = new List<object> { 9f, -2f, 3f, 0f };
+            context.SetVariable("descending_numbers",
+                new SimpleExpressionEngine.DataValue((object)descendingNumbers));
+            Check(VariableIndexExpressionLine.TryCreateListSortLine(
+                    "descending_numbers.sort(reverse=True)", sourcePath, 6, out line),
+                "sort(reverse=True) should accept numeric lists.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(descendingNumbers.SequenceEqual(new object[] { 9f, 3f, 0f, -2f }),
+                "sort(reverse=True) should sort numeric values in descending order.");
+
+            Check(VariableIndexExpressionLine.TryCreateListSortLine(
+                    "descending_numbers.sort(reverse=False)", sourcePath, 7, out line),
+                "sort(reverse=False) should be recognized.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(descendingNumbers.SequenceEqual(new object[] { -2f, 0f, 3f, 9f }),
+                "sort(reverse=False) should preserve ascending ordering.");
+
             var mixed = new List<object> { "battery", 2f };
             context.SetVariable("mixed",
                 new SimpleExpressionEngine.DataValue((object)mixed));
@@ -1987,8 +2014,20 @@ namespace StoryAPI.Tests
             Check(empty.Count == 0, "Sorting an empty list should be a no-op.");
 
             Check(!VariableIndexExpressionLine.TryCreateListSortLine(
-                    "inventory.sort(reverse=True)", sourcePath, 20, out line),
-                "This restricted sort() implementation should reject keyword arguments.");
+                    "inventory.sort(reverse=1)", sourcePath, 20, out line),
+                "sort() should reject non-boolean reverse values.");
+            Check(!VariableIndexExpressionLine.TryCreateListSortLine(
+                    "inventory.sort(reverse=descending)", sourcePath, 21, out line),
+                "sort() should reject variable reverse values.");
+            Check(!VariableIndexExpressionLine.TryCreateListSortLine(
+                    "inventory.sort(unknown=True)", sourcePath, 22, out line),
+                "sort() should reject unknown keyword arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateListSortLine(
+                    "inventory.sort(True)", sourcePath, 23, out line),
+                "sort() should reject positional arguments.");
+            Check(!VariableIndexExpressionLine.TryCreateListSortLine(
+                    "inventory.sort(reverse=True, reverse=False)", sourcePath, 24, out line),
+                "sort() should reject multiple keyword arguments.");
             Check(!VariableIndexExpressionLine.TryCreateListSortLine(
                     "inventory[0].sort()", sourcePath, 21, out line),
                 "sort() should reject indexed targets.");

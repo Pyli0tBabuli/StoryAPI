@@ -168,7 +168,10 @@ expressions; collection reads on the right-hand side are resolved before the ass
 collection index reads. Other compound operators such as `**=`, slices, and assigning a new value
 beyond the end of a list remain unsupported. Lists support `$ inventory.reverse()`, which
 reverses the existing list in place and accepts no arguments. Assignment from
-`$ battery_count = inventory.count("battery")` is also supported for a quoted string, number,
+`$ copied_inventory = inventory.copy()` is supported as a shallow list copy: the new list can
+be changed without adding or removing items in the source list, while nested objects remain shared.
+The call accepts no arguments and requires a simple list variable and assignment target.
+Assignment from `$ battery_count = inventory.count("battery")` is also supported for a quoted string, number,
 `True`, `False`, or `None` literal argument; it counts all matching scalar values and returns zero
 when there are no matches. Variable arguments, indexed targets, and multiple statements are not
 supported by this restricted `count()` form. Lists support one-argument scalar

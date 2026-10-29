@@ -2756,7 +2756,7 @@ namespace StoryAPI.Runtime
             }
         }
 
-        private sealed class ListCopyLine : Line, IApply        private sealed class ListCopyLine : Line, IApply
+        private sealed class ListCopyLine : Line, IApply
         {
             private readonly string _destinationName;
             private readonly string _rootName;

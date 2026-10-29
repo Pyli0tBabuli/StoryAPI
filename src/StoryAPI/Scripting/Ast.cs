@@ -319,6 +319,8 @@ namespace StoryAPI.Scripting
         public string Collection { get; set; }
         public string ZipSecondCollection { get; set; }
         public bool IsZip { get; set; }
+        public bool IsSorted { get; set; }
+        public bool SortReverse { get; set; }
         public bool IsReversed { get; set; }
         public bool IsEnumerate { get; set; }
         public int EnumerateStart { get; set; }

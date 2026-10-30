@@ -126,29 +126,61 @@ namespace StoryAPI.Runtime
 
             try
             {
+                bool assigned = false;
                 var property = type.GetProperty("Layer", flags);
                 if (property != null)
                 {
                     if (property.CanWrite)
                     {
                         property.SetValue(target, layer, null);
-                        return true;
+                        assigned = true;
                     }
-
-                    var backing = type.GetField("<Layer>k__BackingField", flags);
-                    if (backing != null)
+                    else
                     {
-                        backing.SetValue(target, layer);
-                        return true;
+                        var backing = type.GetField("<Layer>k__BackingField", flags);
+                        if (backing != null)
+                        {
+                            backing.SetValue(target, layer);
+                            assigned = true;
+                        }
                     }
                 }
 
-                var field = type.GetField("Layer", flags);
-                if (field != null && field.FieldType == typeof(string))
+                if (!assigned)
                 {
-                    field.SetValue(target, layer);
-                    return true;
+                    var field = type.GetField("Layer", flags);
+                    if (field != null && field.FieldType == typeof(string))
+                    {
+                        field.SetValue(target, layer);
+                        assigned = true;
+                    }
                 }
+
+                if (!assigned) return false;
+
+                // Scene tracks HasLayer separately from the Layer text. Setting only the
+                // backing string leaves Scene.OnScene treating it as an unlayered scene.
+                var hasLayer = type.GetProperty("HasLayer", flags);
+                if (hasLayer != null && hasLayer.CanWrite && hasLayer.PropertyType == typeof(bool))
+                {
+                    hasLayer.SetValue(target, true, null);
+                }
+                else
+                {
+                    var hasLayerBacking = type.GetField("<HasLayer>k__BackingField", flags);
+                    if (hasLayerBacking != null && hasLayerBacking.FieldType == typeof(bool))
+                    {
+                        hasLayerBacking.SetValue(target, true);
+                    }
+                    else
+                    {
+                        var hasLayerField = type.GetField("HasLayer", flags);
+                        if (hasLayerField != null && hasLayerField.FieldType == typeof(bool))
+                            hasLayerField.SetValue(target, true);
+                    }
+                }
+
+                return true;
             }
             catch (Exception e)
             {
@@ -156,8 +188,6 @@ namespace StoryAPI.Runtime
                     type.FullName + ": " + e.GetBaseException().Message);
                 return false;
             }
-
-            return false;
         }
 
         private sealed class SpriteHandle

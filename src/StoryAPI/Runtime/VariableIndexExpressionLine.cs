@@ -1718,7 +1718,7 @@ namespace StoryAPI.Runtime
         }
 
         /// <summary>
-        /// Recognizes assignment from dictionary.get("key") or dictionary.get("key", literalDefault).
+        /// Recognizes assignment from dictionary.get() with a literal or simple variable default.
         /// Keys and defaults are deliberately limited to quoted string keys and scalar literals.
         /// </summary>
         public static bool TryCreateDictionaryGetLine(string code, string sourcePath,
@@ -1831,7 +1831,7 @@ namespace StoryAPI.Runtime
         }
 
         /// <summary>
-        /// Recognizes assignment from dictionary.setdefault("key"[, literalDefault]).
+        /// Recognizes assignment from dictionary.setdefault() with a literal or variable default.
         /// This supported subset returns the existing value, or inserts and returns the
         /// literal default (None when omitted) if the key does not yet exist.
         /// </summary>
@@ -1995,8 +1995,8 @@ namespace StoryAPI.Runtime
         }
 
         /// <summary>
-        /// Recognizes dictionary.pop("key"), optionally assigning the removed value to a
-        /// simple variable. Keys must be quoted string literals in this supported subset.
+        /// Recognizes dictionary.pop() with a literal or simple variable key/default, optionally
+        /// assigning the removed value to a simple variable.
         /// </summary>
         public static bool TryCreateDictionaryPopLines(string code, string sourcePath,
             int sourceLine, out List<Line> lines)

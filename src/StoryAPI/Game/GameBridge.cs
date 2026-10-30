@@ -4223,6 +4223,27 @@ namespace StoryAPI.Game
 
             Type sourceType = source == null ? typeof(string) : source.GetType();
 
+            // Preserve Python bool as a boolean DataValue. The game's implicit bool
+            // conversion may select its numeric representation (1/0), which breaks
+            // strict scalar comparisons against boolean list entries.
+            if (source is bool booleanSource)
+            {
+                ConstructorInfo booleanConstructor = targetType.GetConstructor(
+                    Instance, null, new[] { typeof(bool) }, null);
+                if (booleanConstructor != null)
+                {
+                    try
+                    {
+                        value = (DataValue)booleanConstructor.Invoke(new object[] { booleanSource });
+                        return true;
+                    }
+                    catch
+                    {
+                        // Fall through to the normal conversion candidates for this build.
+                    }
+                }
+            }
+
             // Prefer an implicit conversion supplied by the game, then try a public
             // one-argument constructor for builds that expose it instead.
             foreach (Type declaringType in new[] { targetType, sourceType }.Distinct())

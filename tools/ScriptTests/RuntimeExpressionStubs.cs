@@ -79,9 +79,10 @@ namespace SimpleExpressionEngine
 {
     public enum TestDataValueType
     {
-        Unknown,
+        None,
         Float,
         String,
+        Boolean,
         Object
     }
 
@@ -106,6 +107,14 @@ namespace SimpleExpressionEngine
             objectRef = null;
             floatVal = 0;
             stringVal = value;
+        }
+
+        public DataValue(bool value)
+        {
+            type = TestDataValueType.Boolean;
+            objectRef = value;
+            floatVal = value ? 1f : 0f;
+            stringVal = string.Empty;
         }
 
         public DataValue(object value)
@@ -139,8 +148,8 @@ namespace StoryAPI.Game
                     dataValue = default(SimpleExpressionEngine.DataValue);
                 else if (value is string stringValue)
                     dataValue = new SimpleExpressionEngine.DataValue(stringValue);
-                else if (value is bool)
-                    dataValue = new SimpleExpressionEngine.DataValue(value);
+                else if (value is bool booleanValue)
+                    dataValue = new SimpleExpressionEngine.DataValue(booleanValue);
                 else if (value is byte || value is sbyte || value is short || value is ushort ||
                          value is int || value is uint || value is long || value is ulong ||
                          value is float || value is double || value is decimal)

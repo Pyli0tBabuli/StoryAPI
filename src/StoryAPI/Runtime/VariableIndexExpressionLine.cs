@@ -6676,6 +6676,17 @@ namespace StoryAPI.Runtime
                     "objectRef", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
                 object objectValue = objectField == null ? null : objectField.GetValue(dataValue);
 
+                // Some DDLC+ builds expose the script-level None discriminator as
+                // DataType.None rather than a default DataValue that compares equal
+                // through object.Equals. Only this explicit discriminator is converted
+                // to null; arbitrary object-backed nulls remain unsupported.
+                if (string.Equals(typeName, "None", StringComparison.OrdinalIgnoreCase) &&
+                    objectValue == null)
+                {
+                    value = null;
+                    return true;
+                }
+
                 // Prefer the discriminator over the backing fields: DDLC+ keeps inactive
                 // fields at their default values (for example stringVal may be empty for a
                 // numeric DataValue). Reading stringVal before type used to turn index 1

@@ -1757,10 +1757,8 @@ namespace StoryAPI.Runtime
             SkipWhitespace(code, ref cursor);
             if (cursor >= code.Length || code[cursor++] != '(') return false;
             SkipWhitespace(code, ref cursor);
-            if (cursor >= code.Length || (code[cursor] != '"' && code[cursor] != '\'')) return false;
-
-            string key;
-            if (!TryReadString(code, ref cursor, out key)) return false;
+            object key;
+            if (!TryReadDictionaryKey(code, ref cursor, out key)) return false;
             SkipWhitespace(code, ref cursor);
 
             bool hasDefault = false;
@@ -1873,10 +1871,8 @@ namespace StoryAPI.Runtime
             SkipWhitespace(code, ref cursor);
             if (cursor >= code.Length || code[cursor++] != '(') return false;
             SkipWhitespace(code, ref cursor);
-            if (cursor >= code.Length || (code[cursor] != '"' && code[cursor] != '\'')) return false;
-
-            string key;
-            if (!TryReadString(code, ref cursor, out key)) return false;
+            object key;
+            if (!TryReadDictionaryKey(code, ref cursor, out key)) return false;
             SkipWhitespace(code, ref cursor);
 
             bool hasDefault = false;
@@ -1897,6 +1893,34 @@ namespace StoryAPI.Runtime
 
             line = new DictionarySetDefaultLine(destinationName, rootName, key, hasDefault,
                 defaultValue, sourcePath, sourceLine);
+            return true;
+        }
+
+        private static bool TryReadDictionaryKey(string code, ref int cursor, out object key)
+        {
+            key = null;
+            if (cursor >= code.Length) return false;
+
+            if (code[cursor] == '"' || code[cursor] == '\'')
+            {
+                if (!TryReadString(code, ref cursor, out string literal))
+                    return false;
+                key = literal;
+                return true;
+            }
+
+            int start = cursor;
+            if (!IsIdentifierStart(code[cursor])) return false;
+            cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+
+            string variableName = code.Substring(start, cursor - start);
+            if (variableName == "True" || variableName == "False" ||
+                variableName == "None" || variableName == "and" ||
+                variableName == "or" || variableName == "not")
+                return false;
+
+            key = new DynamicIndex(variableName);
             return true;
         }
 
@@ -1989,11 +2013,8 @@ namespace StoryAPI.Runtime
             SkipWhitespace(code, ref cursor);
             if (cursor >= code.Length || code[cursor++] != '(') return false;
             SkipWhitespace(code, ref cursor);
-            if (cursor >= code.Length || (code[cursor] != '"' && code[cursor] != '\''))
-                return false;
-
-            string key;
-            if (!TryReadString(code, ref cursor, out key)) return false;
+            object key;
+            if (!TryReadDictionaryKey(code, ref cursor, out key)) return false;
             SkipWhitespace(code, ref cursor);
 
             bool hasDefault = false;
@@ -4255,17 +4276,31 @@ namespace StoryAPI.Runtime
             }
         }
 
+        private static string ResolveDictionaryKey(object key, IContext context)
+        {
+            if (key is string literal)
+                return literal;
+
+            if (key is DynamicIndex dynamicKey &&
+                TryGetDynamicIndexValue(dynamicKey.Name, context, out object value) &&
+                value is string stringKey)
+                return stringKey;
+
+            throw new InvalidOperationException(
+                "dictionary method key must evaluate to a string");
+        }
+
         private sealed class DictionarySetDefaultLine : Line, IApply
         {
             private readonly string _destinationName;
             private readonly string _rootName;
-            private readonly string _key;
+            private readonly object _key;
             private readonly bool _hasDefault;
             private readonly object _defaultValue;
             private readonly string _sourcePath;
             private readonly int _sourceLine;
 
-            public DictionarySetDefaultLine(string destinationName, string rootName, string key,
+            public DictionarySetDefaultLine(string destinationName, string rootName, object key,
                 bool hasDefault, object defaultValue, string sourcePath, int sourceLine)
             {
                 _destinationName = destinationName;
@@ -4283,23 +4318,24 @@ namespace StoryAPI.Runtime
                 {
                     if (context == null)
                         throw new InvalidOperationException("no live script context was available");
+                    string key = ResolveDictionaryKey(_key, context);
                     if (!TryGetObjectBackedVariable(_rootName, context, out object source) ||
                         !(source is IDictionary dictionary))
                         throw new InvalidOperationException("dict.setdefault() requires a dictionary target");
 
-                    bool exists = dictionary.Contains(_key);
+                    bool exists = dictionary.Contains(key);
                     if (!exists && (dictionary.IsReadOnly || dictionary.IsFixedSize))
                         throw new InvalidOperationException("dict.setdefault() target is not mutable");
 
                     object value = exists
-                        ? dictionary[_key]
+                        ? dictionary[key]
                         : (_hasDefault ? _defaultValue : null);
                     if (!GameBridge.TrySetVariableLiteral(_destinationName, value, false, context))
                         throw new InvalidOperationException(
                             "could not assign dict.setdefault() result to '" + _destinationName + "'");
 
                     if (!exists)
-                        dictionary[_key] = value;
+                        dictionary[key] = value;
 
                     Log.Info("Applied dict.setdefault on '" + _rootName + "' for key '" + _key +
                         "' at " + _sourcePath + ":" + _sourceLine + ".");
@@ -4316,13 +4352,13 @@ namespace StoryAPI.Runtime
         {
             private readonly string _destinationName;
             private readonly string _rootName;
-            private readonly string _key;
+            private readonly object _key;
             private readonly bool _hasDefault;
             private readonly object _defaultValue;
             private readonly string _sourcePath;
             private readonly int _sourceLine;
 
-            public DictionaryGetLine(string destinationName, string rootName, string key,
+            public DictionaryGetLine(string destinationName, string rootName, object key,
                 bool hasDefault, object defaultValue, string sourcePath, int sourceLine)
             {
                 _destinationName = destinationName;
@@ -4340,12 +4376,13 @@ namespace StoryAPI.Runtime
                 {
                     if (context == null)
                         throw new InvalidOperationException("no live script context was available");
+                    string key = ResolveDictionaryKey(_key, context);
                     if (!TryGetObjectBackedVariable(_rootName, context, out object source) ||
                         !(source is IDictionary dictionary))
                         throw new InvalidOperationException("dict.get() requires a dictionary target");
 
-                    object value = dictionary.Contains(_key)
-                        ? dictionary[_key]
+                    object value = dictionary.Contains(key)
+                        ? dictionary[key]
                         : (_hasDefault ? _defaultValue : null);
                     if (!GameBridge.TrySetVariableLiteral(_destinationName, value, false, context))
                         throw new InvalidOperationException(
@@ -4366,13 +4403,13 @@ namespace StoryAPI.Runtime
         {
             private readonly string _rootName;
             private readonly string _destinationName;
-            private readonly string _key;
+            private readonly object _key;
             private readonly bool _hasDefault;
             private readonly object _defaultValue;
             private readonly string _sourcePath;
             private readonly int _sourceLine;
 
-            public DictionaryPopLine(string rootName, string destinationName, string key,
+            public DictionaryPopLine(string rootName, string destinationName, object key,
                 bool hasDefault, object defaultValue, string sourcePath, int sourceLine)
             {
                 _rootName = rootName;
@@ -4390,33 +4427,34 @@ namespace StoryAPI.Runtime
                 {
                     if (context == null)
                         throw new InvalidOperationException("no live script context was available");
+                    string key = ResolveDictionaryKey(_key, context);
                     if (!TryGetObjectBackedVariable(_rootName, context, out object target) ||
                         !(target is IDictionary dictionary))
                         throw new InvalidOperationException("dict.pop() requires a dictionary target");
                     if (dictionary.IsReadOnly || dictionary.IsFixedSize)
                         throw new InvalidOperationException("dict.pop() target is not mutable");
-                    if (!dictionary.Contains(_key))
+                    if (!dictionary.Contains(key))
                     {
                         if (!_hasDefault)
-                            throw new InvalidOperationException("dictionary key '" + _key + "' was not found");
+                            throw new InvalidOperationException("dictionary key '" + key + "' was not found");
 
                         if (_destinationName != null &&
                             !GameBridge.TrySetVariableLiteral(_destinationName, _defaultValue, false, context))
                             throw new InvalidOperationException(
                                 "could not assign the dict.pop() default to '" + _destinationName + "'");
 
-                        Log.Info("Applied dict.pop default for missing key '" + _key + "' on '" +
+                        Log.Info("Applied dict.pop default for missing key '" + key + "' on '" +
                             _rootName + "' at " + _sourcePath + ":" + _sourceLine + ".");
                         return;
                     }
 
-                    object removed = dictionary[_key];
+                    object removed = dictionary[key];
                     if (_destinationName != null &&
                         !GameBridge.TrySetVariableLiteral(_destinationName, removed, false, context))
                         throw new InvalidOperationException(
                             "could not assign the popped value to '" + _destinationName + "'");
 
-                    dictionary.Remove(_key);
+                    dictionary.Remove(key);
                     Log.Info("Applied dict.pop on '" + _rootName + "' for key '" + _key +
                         "' at " + _sourcePath + ":" + _sourceLine + ".");
                 }

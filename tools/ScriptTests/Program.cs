@@ -4376,7 +4376,7 @@ namespace StoryAPI.Tests
                 "label string_iteration_test:\n" +
                 "    for letter in phrase:\n" +
                 "        pass\n" +
-                "    for character in reversed(phrase):\n" +
+                "    for letter in reversed(phrase):\n" +
                 "        pass\n" +
                 "    for index, letter in enumerate(phrase, start_index):\n" +
                 "        pass\n" +

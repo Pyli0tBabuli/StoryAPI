@@ -1074,14 +1074,14 @@ namespace StoryAPI.Tests
                     prefix, sourcePath, 1, out lines),
                 "Arithmetic start, stop, and step expressions should be accepted for slice deletion.");
             Check(lines.Count == 4 &&
-                    lines[0] is RenPyParser.RenpyOneLinePython &&
-                    lines[1] is RenPyParser.RenpyOneLinePython &&
-                    lines[2] is RenPyParser.RenpyOneLinePython &&
+                    lines[0] is RenpyParser.RenpyOneLinePython &&
+                    lines[1] is RenpyParser.RenpyOneLinePython &&
+                    lines[2] is RenpyParser.RenpyOneLinePython &&
                     lines[3].GetType().Name == "CollectionDeleteLine",
                 "Each arithmetic bound should be evaluated before the collection-delete instruction.");
 
             var scalarLines = lines.Take(3)
-                .Cast<RenPyParser.RenpyOneLinePython>()
+                .Cast<RenpyParser.RenpyOneLinePython>()
                 .Select(x => x.Code).ToArray();
             Check(scalarLines[0] == "$ " + prefix + "_delete_key_0 = slice_start + 1" &&
                     scalarLines[1] == "$ " + prefix + "_delete_key_1 = slice_stop - 1" &&
@@ -1120,7 +1120,7 @@ namespace StoryAPI.Tests
                     "del numbers[:slice_stop - 1]", prefix, sourcePath, 2, out lines),
                 "An omitted start bound should remain supported with an arithmetic stop bound.");
             Check(lines.Count == 2 &&
-                    ((RenPyParser.RenpyOneLinePython)lines[0]).Code ==
+                    ((RenpyParser.RenpyOneLinePython)lines[0]).Code ==
                         "$ " + prefix + "_delete_key_0 = slice_stop - 1",
                 "Only the present arithmetic bound should emit a scalar-evaluation instruction.");
             context.SetVariable(prefix + "_delete_key_0", new SimpleExpressionEngine.DataValue(3f));

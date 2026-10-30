@@ -476,7 +476,14 @@ namespace StoryAPI.Scripting
             string layer = string.IsNullOrEmpty(statement.OnLayer) ? "master" : statement.OnLayer;
             EmitImageStatementWith(statement.Transition, statement.Line, () =>
             {
-                if (_assets.IsCustomImage(statement.Image))
+                if (string.IsNullOrEmpty(statement.Image))
+                {
+                    // A bare "scene onlayer X" only clears that layer. DDLC+'s native
+                    // text-based Scene line is not reliable for an empty image name, so
+                    // use the same RenPy image-manager API as StoryAPI's custom scenes.
+                    _out.Add(new LayeredSceneClearLine(layer));
+                }
+                else if (_assets.IsCustomImage(statement.Image))
                 {
                     _out.Add(new CustomBackgroundLine(_assets, statement.Image, layer));
                 }
@@ -484,8 +491,7 @@ namespace StoryAPI.Scripting
                 {
                     // The game scene instruction owns the layer clearing behavior. Keep the
                     // onlayer clause in the native command so the game clears only that layer.
-                    string command = "scene" +
-                        (string.IsNullOrEmpty(statement.Image) ? "" : " " + statement.Image) +
+                    string command = "scene " + statement.Image +
                         (string.IsNullOrEmpty(statement.OnLayer) ? "" : " onlayer " + layer);
                     _out.Add(new RenpyScene(command));
                 }

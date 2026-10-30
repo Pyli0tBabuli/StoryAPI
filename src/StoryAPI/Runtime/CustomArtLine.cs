@@ -240,6 +240,23 @@ namespace StoryAPI.Runtime
         }
     }
 
+    /// <summary>Clears one Ren'Py display layer without showing a new background.</summary>
+    internal sealed class LayeredSceneClearLine : Line, IApply
+    {
+        private readonly string _layer;
+
+        public LayeredSceneClearLine(string layer)
+        {
+            _layer = string.IsNullOrEmpty(layer) ? "master" : layer;
+        }
+
+        public void Apply(IContext context)
+        {
+            Log.Info("story: executing LayeredSceneClearLine");
+            ArtInjector.ClearLayer(_layer);
+        }
+    }
+
     /// <summary>Hides a StoryAPI-managed image from one non-default display layer.</summary>
     internal sealed class LayeredHideLine : Line, IApply
     {

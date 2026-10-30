@@ -225,6 +225,35 @@ namespace StoryAPI.Runtime
             }
         }
 
+        /// <summary>
+        /// Clear a Ren'Py display layer without adding a background image.
+        /// Using the image manager directly avoids routing the empty "scene onlayer"
+        /// form through DDLC+'s text-based Scene instruction parser.
+        /// </summary>
+        internal static bool ClearLayer(string layer)
+        {
+            layer = string.IsNullOrEmpty(layer) ? "master" : layer;
+            var scene = new Scene(string.Empty);
+            if (!TrySetLayer(scene, layer))
+            {
+                Log.Warn("scene: the DDLC+ Scene data cannot select layer '" + layer + "'");
+                return false;
+            }
+
+            try
+            {
+                Renpy.Images.OnScene(scene);
+                Log.Info("scene: cleared layer '" + layer + "'");
+                return true;
+            }
+            catch (Exception e)
+            {
+                Log.Error("Could not clear display layer '" + layer + "': " +
+                    e.GetBaseException().Message);
+                return false;
+            }
+        }
+
         /// <summary>Swap in the mod's sprite, replacing whatever was drawn before.</summary>
         internal static ActiveImage Draw(StoryImage source, string container, Show show, Scene scene, float? x = null)
         {

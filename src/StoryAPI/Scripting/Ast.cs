@@ -57,15 +57,18 @@ namespace StoryAPI.Scripting
         /// </summary>
         public string Alias { get; set; }
 
-        public string Transform { get; set; }
         public string At { get; set; }
         public int? ZOrder { get; set; }
+        /// <summary>Optional Ren'Py transition applied after this show operation.</summary>
+        public string Transition { get; set; }
     }
 
     /// <summary>Takes a sprite off screen.</summary>
     public sealed class HideStatement : Statement
     {
         public string Image { get; set; }
+        /// <summary>Optional Ren'Py transition applied after this hide operation.</summary>
+        public string Transition { get; set; }
     }
 
     /// <summary>Screen transition applied to everything queued so far.</summary>

@@ -473,28 +473,22 @@ namespace StoryAPI.Scripting
 
         private void EmitScene(SceneStatement statement)
         {
-            if (_assets.IsCustomImage(statement.Image))
+            EmitImageStatementWith(statement.Transition, statement.Line, () =>
             {
-                _out.Add(new CustomBackgroundLine(_assets, statement.Image));
-            }
-            else
-            {
-                // The name is written out as it stands. The game names its backgrounds
-                // in two words ("bg club_day") and its plain colours in one ("black"),
-                // and which of the two a name is only known from the game's own block
-                // table, which does not exist yet at compile time. The layer is added
-                // when the mod is registered.
-                _out.Add(new RenpyScene("scene " + statement.Image));
-            }
-
-            if (!string.IsNullOrEmpty(statement.Transition))
-            {
-                EmitWith(new WithStatement
+                if (_assets.IsCustomImage(statement.Image))
                 {
-                    Transition = statement.Transition,
-                    Line = statement.Line,
-                });
-            }
+                    _out.Add(new CustomBackgroundLine(_assets, statement.Image));
+                }
+                else
+                {
+                    // The name is written out as it stands. The game names its backgrounds
+                    // in two words ("bg club_day") and its plain colours in one ("black"),
+                    // and which of the two a name is only known from the game's own block
+                    // table, which does not exist yet at compile time. The layer is added
+                    // when the mod is registered.
+                    _out.Add(new RenpyScene("scene " + statement.Image));
+                }
+            });
         }
 
         /// <summary>
@@ -512,6 +506,12 @@ namespace StoryAPI.Scripting
 
 
         private void EmitShow(ShowStatement statement)
+        {
+            EmitImageStatementWith(statement.Transition, statement.Line,
+                () => EmitShowCore(statement));
+        }
+
+        private void EmitShowCore(ShowStatement statement)
         {
             string image = statement.Image;
             string variant = statement.Variant;
@@ -574,7 +574,7 @@ namespace StoryAPI.Scripting
             _out.Add(line);
         }
 
-        private void EmitHide(HideStatement statement)
+        private void EmitHideCore(HideStatement statement)
         {
             var hide = new Hide(string.Empty, false, false);
             hide.Name = statement.Image;
@@ -585,29 +585,71 @@ namespace StoryAPI.Scripting
             _out.Add(line);
         }
 
+        private void EmitHide(HideStatement statement)
+        {
+            EmitImageStatementWith(statement.Transition, statement.Line,
+                () => EmitHideCore(statement));
+        }
+
+        /// <summary>
+        /// Ren'Py's inline image-statement with-clause is equivalent to
+        /// "with None", the image operation, then "with transition". This is deliberately
+        /// separate from EmitWith so standalone with statements still group prior changes.
+        /// </summary>
+        private void EmitImageStatementWith(string transitionText, int sourceLine, Action emitImage)
+        {
+            if (string.IsNullOrWhiteSpace(transitionText))
+            {
+                emitImage();
+                return;
+            }
+
+            RenpyWith transitionLine;
+            if (!TryCreateWithLine(transitionText, sourceLine, out transitionLine))
+            {
+                // Leave the image operation intact without a leading with None when an
+                // invalid transition cannot be compiled.
+                emitImage();
+                return;
+            }
+
+            _out.Add(new RenpyWith(Transitions.None, null));
+            emitImage();
+            _out.Add(transitionLine);
+        }
+
         private void EmitWith(WithStatement statement)
         {
-            string transition = Transitions.Expand(statement.Transition);
-            if (transition == null) return;
+            RenpyWith line;
+            if (TryCreateWithLine(statement.Transition, statement.Line, out line))
+                _out.Add(line);
+        }
+
+        private bool TryCreateWithLine(string transitionText, int sourceLine, out RenpyWith line)
+        {
+            line = null;
+            string transition = Transitions.Expand(transitionText);
+            if (transition == null) return false;
 
             // "None" is the game's own way of asking for no transition. The engine
-            // compares the command with that word, so it is written on its own
+            // compares the command with that word, so it is written out on its own
             // rather than as "with None".
             if (Transitions.IsNone(transition))
             {
-                _out.Add(new RenpyWith(Transitions.None, null));
-                return;
+                line = new RenpyWith(Transitions.None, null);
+                return true;
             }
 
             var expression = CompileExpression(transition);
             if (expression == null)
             {
-                Warn("Could not read the transition '" + statement.Transition +
-                     "'; the line was left out.");
-                return;
+                Warn("Could not read the transition '" + transitionText +
+                     "' on line " + sourceLine + "; the line was left out.");
+                return false;
             }
 
-            _out.Add(new RenpyWith("with " + transition, expression));
+            line = new RenpyWith("with " + transition, expression);
+            return true;
         }
 
         private void EmitPlay(PlayStatement statement)

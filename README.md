@@ -109,6 +109,13 @@ label my_farewell:
     return
 ```
 
+Image statements accept Ren'Py's inline transition clause. For example,
+`scene bg club_day with dissolve`, `show june at left with Dissolve(0.5)`, and
+`hide june with fade`. An inline clause is compiled as `with None`, the image
+operation, and then the requested transition, matching Ren'Py's scene/show/hide semantics.
+A separate `with dissolve` remains a standalone statement and can group several preceding
+image changes into one transition. Explicit `with None` is also supported.
+
 ### Variable declarations and loop control
 
 StoryAPI supports a limited subset of Ren'Py variable declarations and loop statements:

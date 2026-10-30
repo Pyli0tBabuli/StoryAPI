@@ -113,7 +113,9 @@ namespace SimpleExpressionEngine
         public DataValue(bool value)
         {
             type = TestDataValueType.Boolean;
-            objectRef = value;
+            // Mirror the game build that boxes bool payloads as 1f/0f in objectRef.
+            // The runtime must honor the Boolean discriminator before numeric payloads.
+            objectRef = value ? 1f : 0f;
             floatVal = value ? 1f : 0f;
             stringVal = string.Empty;
         }

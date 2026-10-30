@@ -6701,6 +6701,51 @@ namespace StoryAPI.Runtime
                     return true;
                 }
 
+                // The Boolean discriminator is authoritative. Some game builds store
+                // the active boolean payload in objectRef as 1f/0f rather than System.Boolean.
+                // Check the discriminator before accepting objectRef as an ordinary number,
+                // otherwise True becomes the numeric value 1 and no longer matches list bools.
+                if (isBoolean)
+                {
+                    if (objectValue is bool)
+                    {
+                        value = objectValue;
+                        return true;
+                    }
+
+                    if (objectValue is byte || objectValue is sbyte || objectValue is short ||
+                        objectValue is ushort || objectValue is int || objectValue is uint ||
+                        objectValue is long || objectValue is ulong || objectValue is float ||
+                        objectValue is double || objectValue is decimal)
+                    {
+                        value = Convert.ToDouble(objectValue, CultureInfo.InvariantCulture) != 0d;
+                        return true;
+                    }
+
+                    FieldInfo boolField = dataValueType.GetField(
+                        "boolVal", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                    object boolValue = boolField == null ? null : boolField.GetValue(dataValue);
+                    if (boolValue is bool)
+                    {
+                        value = (bool)boolValue;
+                        return true;
+                    }
+
+                    FieldInfo boolNumberField = dataValueType.GetField(
+                        "floatVal", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                    object boolNumber = boolNumberField == null ? null : boolNumberField.GetValue(dataValue);
+                    if (boolNumber is byte || boolNumber is sbyte || boolNumber is short ||
+                        boolNumber is ushort || boolNumber is int || boolNumber is uint ||
+                        boolNumber is long || boolNumber is ulong || boolNumber is float ||
+                        boolNumber is double || boolNumber is decimal)
+                    {
+                        value = Convert.ToDouble(boolNumber, CultureInfo.InvariantCulture) != 0d;
+                        return true;
+                    }
+
+                    return false;
+                }
+
                 if (objectValue is bool)
                 {
                     value = objectValue;
@@ -6714,29 +6759,6 @@ namespace StoryAPI.Runtime
                 {
                     value = objectValue;
                     return true;
-                }
-
-                if (isBoolean)
-                {
-                    FieldInfo boolField = dataValueType.GetField(
-                        "boolVal", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-                    object boolValue = boolField == null ? null : boolField.GetValue(dataValue);
-                    if (boolValue is bool)
-                    {
-                        value = (bool)boolValue;
-                        return true;
-                    }
-
-                    FieldInfo boolNumberField = dataValueType.GetField(
-                        "floatVal", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-                    object boolNumber = boolNumberField == null ? null : boolNumberField.GetValue(dataValue);
-                    if (boolNumber is float)
-                    {
-                        value = (float)boolNumber != 0f;
-                        return true;
-                    }
-
-                    return false;
                 }
 
                 if (isNumeric)

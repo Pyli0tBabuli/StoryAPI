@@ -990,7 +990,7 @@ namespace StoryAPI.Tests
                 "Deleting a list slice with variable bounds should be recognized.");
             ((RenPyParser.Images.IApply)line).Apply(context);
             Check(inventory.Count == 2 && Equals(inventory[0], "key") &&
-                    Equals(inventory[1], "map"),
+                    Equals(inventory[1], "food"),
                 "Deleting a unit-step slice should remove its selected contiguous items.");
 
             inventory = new List<object> { 1f, 2f, 3f, 4f, 5f, 6f };

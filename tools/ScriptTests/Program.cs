@@ -4373,18 +4373,18 @@ namespace StoryAPI.Tests
         {
             const string sourcePath = "string-iteration-test.rpy";
             var statements = Parse(
-                "label string_iteration_test:\\n" +
-                "    for character in phrase:\\n" +
-                "        pass\\n" +
-                "    for character in reversed(phrase):\\n" +
-                "        pass\\n" +
-                "    for index, character in enumerate(phrase, start_index):\\n" +
-                "        pass\\n" +
-                "    for index, character in enumerate(reversed(phrase), start_index):\\n" +
-                "        pass\\n" +
-                "    return\\n");
+                "label string_iteration_test:\n" +
+                "    for character in phrase:\n" +
+                "        pass\n" +
+                "    for character in reversed(phrase):\n" +
+                "        pass\n" +
+                "    for index, character in enumerate(phrase, start_index):\n" +
+                "        pass\n" +
+                "    for index, character in enumerate(reversed(phrase), start_index):\n" +
+                "        pass\n" +
+                "    return\n");
             var label = Require<LabelStatement>(statements[0], "Expected string-iteration label.");
-            Check(label.Body.Count == 4, "All string iteration forms should parse.");
+            Check(label.Body.Count == 5, "All string iteration forms and the return statement should parse.");
 
             var directLoop = Require<ForStatement>(label.Body[0], "Expected direct string loop.");
             Check(directLoop.Collection == "phrase" && directLoop.Variable == "character" &&

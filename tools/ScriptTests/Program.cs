@@ -21,6 +21,7 @@ namespace StoryAPI.Tests
             Run("dialogue and narration", TestDialogueAndNarration);
             Run("digit-letter sprite attribute", TestDigitLetterSpriteAttribute);
             Run("inline image statement transitions", TestInlineImageStatementTransitions);
+            Run("image statement layers", TestImageStatementLayers);
             Run("sprite alias and position", TestSpriteAliasAndPosition);
             Run("define/default scalar declarations", TestVariableDeclarations);
             Run("runtime scalar initializer expressions", TestRuntimeExpressionDeclarations);
@@ -242,6 +243,71 @@ namespace StoryAPI.Tests
                 "label missing_hide_transition:\n" +
                 "    hide monika with\n",
                 "Expected a transition");
+        }
+
+        private static void TestImageStatementLayers()
+        {
+            var statements = Parse(
+                "label image_layers:\n" +
+                "    scene bg club_day onlayer master with dissolve\n" +
+                "    scene onlayer overlay\n" +
+                "    show monika 2a as layered_monika at left zorder 4 onlayer screens with Dissolve(0.5)\n" +
+                "    hide layered_monika onlayer screens with dissolve\n" +
+                "    show monika 1a\n" +
+                "    hide monika\n" +
+                "    return\n");
+
+            var label = Require<LabelStatement>(statements[0], "Expected an image-layer label.");
+            Check(label.Body.Count == 7, "Image layer statements should preserve their line structure.");
+
+            var scene = Require<SceneStatement>(label.Body[0], "Expected a scene with a layer.");
+            Check(scene.Image == "bg club_day" && scene.OnLayer == "master" &&
+                  scene.Transition == "dissolve",
+                "Scene onlayer and with properties should be retained.");
+
+            var clearScene = Require<SceneStatement>(label.Body[1],
+                "Expected a scene statement that only clears a layer.");
+            Check(clearScene.Image == string.Empty && clearScene.OnLayer == "overlay",
+                "A scene with only onlayer should clear that layer.");
+
+            var show = Require<ShowStatement>(label.Body[2], "Expected a show with a layer.");
+            Check(show.Image == "monika" && show.Variant == "2a" &&
+                  show.Alias == "layered_monika" && show.At == "left" &&
+                  show.ZOrder == 4 && show.OnLayer == "screens" &&
+                  show.Transition == "Dissolve(0.5)",
+                "Show onlayer should coexist with alias, position, zorder, and transition.");
+
+            var hide = Require<HideStatement>(label.Body[3], "Expected a hide with a layer.");
+            Check(hide.Image == "layered_monika" && hide.OnLayer == "screens" &&
+                  hide.Transition == "dissolve",
+                "Hide should retain its target layer and transition.");
+
+            var defaultShow = Require<ShowStatement>(label.Body[4],
+                "Expected a show statement with default layer behavior.");
+            Check(defaultShow.OnLayer == null,
+                "A show without onlayer must retain the default layer.");
+
+            var defaultHide = Require<HideStatement>(label.Body[5],
+                "Expected a hide statement with default layer behavior.");
+            Check(defaultHide.OnLayer == null,
+                "A hide without onlayer must retain the default layer.");
+
+            ExpectSyntaxError(
+                "label missing_scene_layer:\n" +
+                "    scene bg club_day onlayer\n",
+                "Expected a layer name");
+            ExpectSyntaxError(
+                "label missing_show_layer:\n" +
+                "    show monika onlayer\n",
+                "Expected");
+            ExpectSyntaxError(
+                "label missing_hide_layer:\n" +
+                "    hide monika onlayer\n",
+                "Expected");
+            ExpectSyntaxError(
+                "label extra_scene_layer_text:\n" +
+                "    scene bg club_day onlayer master extra\n",
+                "one layer name");
         }
 
         private static void TestSpriteAliasAndPosition()

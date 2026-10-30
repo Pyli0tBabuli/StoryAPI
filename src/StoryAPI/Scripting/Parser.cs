@@ -272,27 +272,57 @@ namespace StoryAPI.Scripting
             // read word by word.
             string rest = ReadRestOfLine();
 
-            string image;
+            string imagePart;
             string transition = null;
 
-            int at = IndexOfWord(rest, "with");
-            if (at >= 0)
+            int withAt = IndexOfWord(rest, "with");
+            if (withAt >= 0)
             {
-                image = rest.Substring(0, at).Trim();
-                transition = rest.Substring(at + "with".Length).Trim();
+                imagePart = rest.Substring(0, withAt).Trim();
+                transition = rest.Substring(withAt + "with".Length).Trim();
                 if (string.IsNullOrEmpty(transition))
                     throw new ScriptSyntaxException("Expected a transition after 'with'.", line);
             }
             else
             {
-                image = rest.Trim();
+                imagePart = rest.Trim();
             }
 
-            if (string.IsNullOrEmpty(image))
-                throw new ScriptSyntaxException("Expected a scene name.", line);
+            string onLayer = ExtractOnLayer(ref imagePart, line);
+            if (string.IsNullOrEmpty(imagePart) && string.IsNullOrEmpty(onLayer))
+                throw new ScriptSyntaxException("Expected a scene name or an 'onlayer' clause.", line);
 
             FinishLine();
-            return new SceneStatement { Image = image, Transition = transition, Line = line };
+            return new SceneStatement
+            {
+                Image = imagePart,
+                OnLayer = onLayer,
+                Transition = transition,
+                Line = line,
+            };
+        }
+
+        /// <summary>
+        /// Removes a trailing Ren'Py onlayer property from an image statement's raw
+        /// text and returns the simple layer name. Layer names are a single identifier;
+        /// arbitrary expressions are not meaningful in Ren'Py's image property here.
+        /// </summary>
+        private static string ExtractOnLayer(ref string source, int line)
+        {
+            if (string.IsNullOrWhiteSpace(source)) return null;
+
+            int at = IndexOfWord(source, "onlayer");
+            if (at < 0) return null;
+
+            string value = source.Substring(at + "onlayer".Length).Trim();
+            if (string.IsNullOrEmpty(value))
+                throw new ScriptSyntaxException("Expected a layer name after 'onlayer'.", line);
+
+            if (value.Any(char.IsWhiteSpace) || IndexOfWord(value, "onlayer") >= 0)
+                throw new ScriptSyntaxException("Expected one layer name after 'onlayer'.", line);
+
+            source = source.Substring(0, at).Trim();
+            return value;
         }
 
         /// <summary>
@@ -348,6 +378,7 @@ namespace StoryAPI.Scripting
             // Accept the supported options in sequence so zorder can appear before it.
             bool readAlias = false;
             bool readPosition = false;
+            bool readLayer = false;
             bool readZOrder = false;
             while (true)
             {
@@ -366,6 +397,15 @@ namespace StoryAPI.Scripting
                         throw new ScriptSyntaxException("A show statement can only have one 'at' transform.", Current.Line);
                     statement.At = ReadName("position or transform");
                     readPosition = true;
+                    continue;
+                }
+
+                if (MatchIdentifier("onlayer"))
+                {
+                    if (readLayer)
+                        throw new ScriptSyntaxException("A show statement can only have one 'onlayer' property.", Current.Line);
+                    statement.OnLayer = ReadName("layer name");
+                    readLayer = true;
                     continue;
                 }
 
@@ -411,7 +451,13 @@ namespace StoryAPI.Scripting
             int line = Current.Line;
             _index++;   // hide
             string image = ReadName("image name");
+            string onLayer = null;
             string transition = null;
+
+            if (MatchIdentifier("onlayer"))
+            {
+                onLayer = ReadName("layer name");
+            }
 
             if (MatchIdentifier("with"))
             {
@@ -421,7 +467,13 @@ namespace StoryAPI.Scripting
             }
 
             FinishLine();
-            return new HideStatement { Image = image, Transition = transition, Line = line };
+            return new HideStatement
+            {
+                Image = image,
+                OnLayer = onLayer,
+                Transition = transition,
+                Line = line,
+            };
         }
 
         private Statement ParseWith()

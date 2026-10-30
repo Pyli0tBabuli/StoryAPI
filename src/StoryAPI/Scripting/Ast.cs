@@ -38,6 +38,7 @@ namespace StoryAPI.Scripting
     public sealed class SceneStatement : Statement
     {
         public string Image { get; set; }
+        public string OnLayer { get; set; }
         public string Transition { get; set; }
     }
 
@@ -58,6 +59,7 @@ namespace StoryAPI.Scripting
         public string Alias { get; set; }
 
         public string At { get; set; }
+        public string OnLayer { get; set; }
         public int? ZOrder { get; set; }
         /// <summary>Optional Ren'Py transition applied after this show operation.</summary>
         public string Transition { get; set; }
@@ -67,6 +69,7 @@ namespace StoryAPI.Scripting
     public sealed class HideStatement : Statement
     {
         public string Image { get; set; }
+        public string OnLayer { get; set; }
         /// <summary>Optional Ren'Py transition applied after this hide operation.</summary>
         public string Transition { get; set; }
     }

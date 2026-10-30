@@ -116,6 +116,12 @@ operation, and then the requested transition, matching Ren'Py's scene/show/hide 
 A separate `with dissolve` remains a standalone statement and can group several preceding
 image changes into one transition. Explicit `with None` is also supported.
 
+Image statements can select a display layer with Ren'Py's `onlayer` property:
+`show june onlayer screens`, `scene bg classroom onlayer master`, and
+`hide june onlayer screens`. A bare `scene onlayer screens` clears that layer without
+showing a new image. When omitted, the layer remains `master`, matching Ren'Py's default.
+The game must already know the named layer; StoryAPI does not create new layers.
+
 ### Variable declarations and loop control
 
 StoryAPI supports a limited subset of Ren'Py variable declarations and loop statements:

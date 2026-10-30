@@ -28,6 +28,9 @@ namespace StoryAPI.Runtime
         /// <summary>Name the pose was requested under, used as its slot.</summary>
         public string Name { get; }
 
+        /// <summary>The Ren'Py display layer that owns this pose.</summary>
+        public string Layer { get; }
+
         /// <summary>The instantiated pose, parented under the container.</summary>
         public GameObject Root { get; }
 
@@ -56,10 +59,11 @@ namespace StoryAPI.Runtime
             Overrides.Add(new SavedLayer { Layer = layer, Asset = asset });
         }
 
-        public BasePose(string name, GameObject root)
+        public BasePose(string name, GameObject root, string layer = "master")
         {
             Name = name;
             Root = root;
+            Layer = string.IsNullOrEmpty(layer) ? "master" : layer;
             Index(root);
         }
 
@@ -123,15 +127,36 @@ namespace StoryAPI.Runtime
             return !string.IsNullOrEmpty(name) && GameBridge.TryLoadPrefab(name, out _);
         }
 
-        public static bool Has(string name)
+        public static bool Has(string name, string layer = "master")
         {
-            return !string.IsNullOrEmpty(name) && s_poses.ContainsKey(name);
+            return Find(name, layer) != null;
         }
 
-        public static BasePose Find(string name)
+        public static BasePose Find(string name, string layer = "master")
         {
+            if (string.IsNullOrEmpty(name)) return null;
+
             BasePose pose;
-            return name != null && s_poses.TryGetValue(name, out pose) ? pose : null;
+            string key = ArtInjector.SlotKey(name, layer);
+            if (s_poses.TryGetValue(key, out pose)) return pose;
+
+            // Legacy pose operations have no layer parameter. Resolve a non-master pose
+            // only when the name is unique, never arbitrarily across layers.
+            if (string.IsNullOrEmpty(layer) ||
+                string.Equals(layer, "master", StringComparison.OrdinalIgnoreCase))
+            {
+                foreach (var candidate in s_poses.Values)
+                {
+                    if (candidate == null ||
+                        !string.Equals(candidate.Name, name, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (pose != null) return null;
+                    pose = candidate;
+                }
+                return pose;
+            }
+
+            return null;
         }
 
         /// <summary>
@@ -140,8 +165,10 @@ namespace StoryAPI.Runtime
         /// The container is the game's own display slot, so ordering and fading behave the
         /// same way they do for a mod sprite.
         /// </summary>
-        public static BasePose Show(string name, string at, int zOrder, float? x)
+        public static BasePose Show(string name, string at, int zOrder, float? x,
+            string layer = "master")
         {
+            layer = string.IsNullOrEmpty(layer) ? "master" : layer;
             if (!GameBridge.TryLoadPrefab(name, out var prefab) || prefab == null)
             {
                 Log.Warn("pose: the game has no pose called '" + name + "'");
@@ -161,7 +188,7 @@ namespace StoryAPI.Runtime
                 var show = new Show("show " + name);
                 show.ImageName = imageName;
                 show.Variant = variant;
-                show.Layer = "master";
+                show.Layer = layer;
                 show.ZOrder = zOrder;
                 show.HasZOrder = true;
 
@@ -176,7 +203,7 @@ namespace StoryAPI.Runtime
                 var image = ArtInjector.Host(prefab, name, show, x);
                 if (image == null || image.Object == null) return null;
 
-                var instance = ArtInjector.Hosted(name);
+                var instance = ArtInjector.Hosted(name, null, layer);
                 if (instance == null) return null;
 
                 // Unlike the game's own Show runner, Host() instantiates the pose prefab
@@ -265,14 +292,15 @@ namespace StoryAPI.Runtime
                 // renderer sits on the root, so renaming it would rename the layer too and
                 // leave the author with a name they could never have guessed.
 
-                var pose = new BasePose(name, instance);
-                s_poses[name] = pose;
+                var pose = new BasePose(name, instance, layer);
+                s_poses[ArtInjector.SlotKey(name, layer)] = pose;
 
                 ArtInjector.SetRecipe(name, new SavedArt
                 {
                     Kind = SavedArt.Pose,
                     Source = name,
                     Slot = name,
+                    Layer = layer,
                     At = at,
                     ZOrder = zOrder,
                 });
@@ -296,9 +324,10 @@ namespace StoryAPI.Runtime
         }
 
         /// <summary>Swap a layer of a held pose for other art from the game.</summary>
-        public static bool SetLayer(string name, string layer, string asset)
+        public static bool SetLayer(string name, string layer, string asset,
+            string imageLayer = "master")
         {
-            var pose = Find(name);
+            var pose = Find(name, imageLayer);
             if (pose == null)
             {
                 Log.Warn("layer: '" + name + "' is not being shown as a pose");
@@ -340,18 +369,20 @@ namespace StoryAPI.Runtime
         private readonly string _name;
         private readonly string _at;
         private readonly int _zOrder;
+        private readonly string _layer;
 
-        public PoseLine(string name, string at, int zOrder)
+        public PoseLine(string name, string at, int zOrder, string layer = "master")
         {
             _name = name;
             _at = at;
             _zOrder = zOrder;
+            _layer = string.IsNullOrEmpty(layer) ? "master" : layer;
         }
 
         public void Apply(IContext context)
         {
             Log.Info("story: executing PoseLine");
-            BaseSprites.Show(_name, _at, _zOrder, HorizontalPosition(_at));
+            BaseSprites.Show(_name, _at, _zOrder, HorizontalPosition(_at), _layer);
         }
 
         internal static float? HorizontalPosition(string at)

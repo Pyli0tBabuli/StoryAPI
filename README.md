@@ -248,24 +248,30 @@ provided integer index, and can assign the removed scalar to a variable. Invalid
 a warning without changing the list. Dictionaries support scalar assignment from `$ theme = settings.get("theme")` and
 `$ theme = settings.get("missing", "default")`. The key may be a quoted string or a simple variable name containing a string; dynamic keys are
 resolved at runtime and non-string values are rejected. An absent key returns None unless a simple
-scalar literal default is provided. Defaults may be strings, numbers, `True`, `False`, or `None`;
-variable defaults and method calls inside expressions are not supported.
+scalar literal or a simple variable default is provided. Variable defaults are resolved at runtime
+and may refer to supported scalar values or object-backed lists/dictionaries/strings. Defaults may
+also be strings, numbers, `True`, `False`, or `None` literals; arithmetic expressions and method
+calls inside defaults are not supported.
 `get()` does not mutate the dictionary. Dictionaries also support scalar assignment from
 `$ copied_settings = settings.copy()`. The call accepts no arguments and makes a shallow copy:
 the returned dictionary can be modified independently, while nested objects (if any) remain shared.
 The source dictionary is not changed by making the copy. Dictionaries also support assignment from
 `$ theme = settings.setdefault("theme", "default")` or `$ theme = settings.setdefault("theme")`.
 The key may be a quoted string or a simple variable name containing a string; non-string dynamic
-keys are rejected at runtime. The optional default must be a scalar literal (string, number,
-`True`, `False`, or `None`). When the key exists, `setdefault()` returns its current value
+keys are rejected at runtime. The optional default may be a scalar literal or simple variable
+reference, resolved at runtime; object-backed list/dictionary/string values are supported too.
+Arithmetic expressions and method calls in defaults remain unsupported. When the key exists,
+`setdefault()` returns its current value
 without replacing it; when absent, it inserts and returns the default, or `None` if no default
 is supplied. This restricted implementation requires an assignment target. Dictionaries also
 support `$ settings.update(overrides)`, which adds missing keys and replaces values for keys
 already present; the argument must be a simple variable referring to another dictionary. Dictionaries also support `$ settings.pop("theme")`,
 `$ old_theme = settings.pop("theme")`, and `$ old_theme = settings.pop("theme", "fallback")`.
 This removes the named key and can assign its value to a variable. The key may be a quoted string or a simple variable name containing a string; non-string dynamic
-keys are rejected at runtime. The optional default must be a scalar literal (string, number,
-`True`, `False`, or `None`). When the key is missing, `pop()` returns the default without modifying the dictionary;
+keys are rejected at runtime. The optional default may be a scalar literal or simple variable
+reference, resolved at runtime; object-backed list/dictionary/string values are supported too.
+Arithmetic expressions and method calls in defaults remain unsupported. When the key is missing,
+`pop()` returns the default without modifying the dictionary;
 without a default, a missing key logs a warning. Both lists and dictionaries support the no-argument method
 `$ inventory.clear()` or `$ settings.clear()`, which empties the existing collection in-place.
 Other list/dictionary methods and arbitrary Python calls remain unsupported.

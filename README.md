@@ -122,6 +122,14 @@ Image statements can select a display layer with Ren'Py's `onlayer` property:
 showing a new image. When omitted, the layer remains `master`, matching Ren'Py's default.
 The game must already know the named layer; StoryAPI does not create new layers.
 
+Image statements can select an existing Ren'Py display layer with `onlayer`:
+`show june onlayer screens`, `scene bg classroom onlayer master`, and
+`hide june onlayer screens`. A bare `scene onlayer overlay` clears that layer without
+showing another image. When omitted, the layer remains `master`, matching Ren'Py's default.
+StoryAPI uses the layers supplied by DDLC+; this feature does not create new layers.
+Mod-owned sprites, game poses, and their layer identity are also retained in StoryAPI's
+save-state record so they can be restored to the same layer after loading.
+
 ### Variable declarations and loop control
 
 StoryAPI supports a limited subset of Ren'Py variable declarations and loop statements:

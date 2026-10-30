@@ -114,6 +114,9 @@ namespace StoryAPI.Runtime
         internal static bool TrySetLayer(object target, string layer)
         {
             if (target == null || string.IsNullOrEmpty(layer)) return false;
+            // Master is the engine default even on game builds whose Scene wrapper does
+            // not expose a writable Layer member.
+            if (string.Equals(layer, "master", StringComparison.OrdinalIgnoreCase)) return true;
             Type type = target.GetType();
             const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
 

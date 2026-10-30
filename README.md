@@ -173,8 +173,11 @@ non-unit and negative steps replace selected elements one-for-one and require a 
 with exactly the same number of items. Replacement strings are split into Unicode code points.
 String slices remain read-only. Sequence-slice reads also accept supported scalar arithmetic
 expressions in their bounds, such as `inventory[start + 1:stop - 1:step * 2]`; the game
-evaluates each arithmetic bound before StoryAPI reads the slice. Slice-assignment targets still require integer literals or simple variable names as bounds. Deletion targets also accept supported scalar arithmetic expressions in slice bounds, such as `$ del inventory[start + 1:stop - 1:step * 2]`; the game evaluates each arithmetic bound before StoryAPI removes the selected items. Dictionary slices and
-slice assignment through an intermediate slice are not supported yet.
+evaluates each arithmetic bound before StoryAPI reads the slice. Slice-assignment targets still require integer literals or simple variable names as bounds.
+Deletion targets also accept supported scalar arithmetic expressions in slice bounds, such as
+`$ del inventory[start + 1:stop - 1:step * 2]`; the game evaluates each arithmetic bound
+before StoryAPI removes the selected items. Dictionary slices and slice assignment through an
+intermediate slice are not supported yet.
 
 Index reads can also be combined with scalar arithmetic, comparisons, and logical operators, for example
 `define bonus = inventory[0] * 2`, `define total = inventory[0] + inventory[1]`, or

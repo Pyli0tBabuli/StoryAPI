@@ -319,6 +319,11 @@ namespace StoryAPI.Tests
                 "define multiplied_item = starting_points[0] * 2\n" +
                 "define summed_items = starting_points[0] + starting_points[1]\n" +
                 "default combined_condition = starting_points[0] >= 1 and has_key\n" +
+                "define forward_slice = starting_points[1:3]\n" +
+                "default prefix_slice = starting_points[:2]\n" +
+                "define reverse_slice = starting_points[::-1]\n" +
+                "define stepped_slice = starting_points[::2]\n" +
+                "define chained_slice = starting_points[1:3][0]\n" +
                 "label container_index_test:\n" +
                 "    return\n");
 
@@ -404,6 +409,36 @@ namespace StoryAPI.Tests
             Check(combinedCondition.IsDefault && combinedCondition.HasRuntimeExpression &&
                 combinedCondition.Expression == "starting_points[0] >= 1 and has_key",
                 "Index reads should be valid operands in scalar comparisons and logical expressions.");
+
+            var forwardSlice = Require<VariableDeclarationStatement>(statements[15],
+                "Expected a list slice initializer.");
+            Check(forwardSlice.HasRuntimeExpression &&
+                forwardSlice.Expression == "starting_points[1:3]",
+                "A bounded sequence slice should be accepted as a runtime initializer.");
+
+            var prefixSlice = Require<VariableDeclarationStatement>(statements[16],
+                "Expected a sequence slice with an omitted start.");
+            Check(prefixSlice.IsDefault && prefixSlice.HasRuntimeExpression &&
+                prefixSlice.Expression == "starting_points[:2]",
+                "An omitted slice start should be accepted in a default declaration.");
+
+            var reverseSlice = Require<VariableDeclarationStatement>(statements[17],
+                "Expected a sequence slice with a negative step.");
+            Check(reverseSlice.HasRuntimeExpression &&
+                reverseSlice.Expression == "starting_points[::-1]",
+                "A reverse slice should be accepted as a runtime initializer.");
+
+            var steppedSlice = Require<VariableDeclarationStatement>(statements[18],
+                "Expected a sequence slice with an omitted start and stop.");
+            Check(steppedSlice.HasRuntimeExpression &&
+                steppedSlice.Expression == "starting_points[::2]",
+                "A stepped slice should be accepted as a runtime initializer.");
+
+            var chainedSlice = Require<VariableDeclarationStatement>(statements[19],
+                "Expected a slice followed by an index.");
+            Check(chainedSlice.HasRuntimeExpression &&
+                chainedSlice.Expression == "starting_points[1:3][0]",
+                "A slice result should be indexable in the same initializer.");
         }
 
         private static void TestRuntimeIndexExpressionRewriting()

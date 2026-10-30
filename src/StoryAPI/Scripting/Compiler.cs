@@ -148,11 +148,11 @@ namespace StoryAPI.Scripting
                 return;
             }
 
-            Line deleteLine;
-            if (VariableIndexExpressionLine.TryCreateCollectionDeleteLine(
-                python.Code, _textLabel ?? "unknown", python.Line, out deleteLine))
+            List<Line> deleteLines;
+            if (VariableIndexExpressionLine.TryCreateCollectionDeleteLines(
+                python.Code, prefix, _textLabel ?? "unknown", python.Line, out deleteLines))
             {
-                _out.Add(deleteLine);
+                _out.AddRange(deleteLines);
                 return;
             }
 

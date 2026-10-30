@@ -5796,8 +5796,39 @@ namespace StoryAPI.Runtime
                     "objectRef", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
                 if (field == null) return false;
 
-                value = field.GetValue(dataValue);
-                return value is IList || value is IDictionary || value is string;
+                object objectValue = field.GetValue(dataValue);
+                if (objectValue is IList || objectValue is IDictionary)
+                {
+                    value = objectValue;
+                    return true;
+                }
+
+                // Game-created DataValue(string) stores the value in stringVal, not objectRef.
+                // Only read that field when the discriminator confirms this is a string;
+                // inactive DataValue fields may otherwise contain misleading defaults.
+                FieldInfo typeField = typeof(DataValue).GetField(
+                    "type", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                object typeValue = typeField == null ? null : typeField.GetValue(dataValue);
+                string typeName = typeValue == null ? string.Empty :
+                    Convert.ToString(typeValue, CultureInfo.InvariantCulture);
+                if (typeName.IndexOf("string", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    FieldInfo stringField = typeof(DataValue).GetField(
+                        "stringVal", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                    object stringValue = stringField == null ? null : stringField.GetValue(dataValue);
+                    if (!(stringValue is string)) return false;
+                    value = (string)stringValue;
+                    return true;
+                }
+
+                // Retain compatibility with object-backed strings from older/test contexts.
+                if (objectValue is string)
+                {
+                    value = objectValue;
+                    return true;
+                }
+
+                return false;
             }
             catch
             {

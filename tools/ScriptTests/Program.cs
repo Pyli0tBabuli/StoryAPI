@@ -2002,16 +2002,16 @@ namespace StoryAPI.Tests
                     prefix, sourcePath, 1, 20, out lines),
                 "Arithmetic start, stop, and step expressions should be accepted for slice assignment.");
             Check(lines.Count == 7 &&
-                    lines[0] is RenPyParser.RenpyOneLinePython &&
-                    lines[1] is RenPyParser.RenpyGoToLineUnless &&
-                    lines[2] is RenPyParser.RenpyOneLinePython &&
+                    lines[0] is RenpyParser.RenpyOneLinePython &&
+                    lines[1] is RenpyParser.RenpyGoToLineUnless &&
+                    lines[2] is RenpyParser.RenpyOneLinePython &&
                     lines[3] is RenpyParser.RenpyOneLinePython &&
-                    lines[4] is RenPyParser.RenpyOneLinePython &&
-                    lines[5] is RenPyParser.RenpyOneLinePython &&
+                    lines[4] is RenpyParser.RenpyOneLinePython &&
+                    lines[5] is RenpyParser.RenpyOneLinePython &&
                     lines[6].GetType().Name == "CollectionMutationLine",
                 "Target arithmetic bounds should be emitted after the RHS and before the mutation.");
 
-            var emitted = lines.OfType<RenPyParser.RenpyOneLinePython>()
+            var emitted = lines.OfType<RenpyParser.RenpyOneLinePython>()
                 .Select(x => x.Code).ToArray();
             Check(emitted[1] == "$ " + prefix + "_value = replacement" &&
                     emitted[2] == "$ " + prefix + "_target_key_0 = slice_start + 1" &&
@@ -2064,7 +2064,7 @@ namespace StoryAPI.Tests
                     prefix, sourcePath, 2, 40, out lines),
                 "Omitted slice bounds should remain supported alongside arithmetic bounds.");
             Check(lines.Count == 5 &&
-                    ((RenPyParser.RenpyOneLinePython)lines[3]).Code ==
+                    ((RenpyParser.RenpyOneLinePython)lines[3]).Code ==
                         "$ " + prefix + "_target_key_0 = slice_stop - 1",
                 "Only the present arithmetic bound should create a target temporary.");
             context.SetVariable(prefix + "_target_key_0", new SimpleExpressionEngine.DataValue(3f));

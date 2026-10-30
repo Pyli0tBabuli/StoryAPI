@@ -4411,7 +4411,7 @@ namespace StoryAPI.Tests
             var context = new RenpyParser.DynamicIndexTestContext();
             // Include a supplementary Unicode character to ensure surrogate pairs stay intact.
             context.SetVariable("phrase",
-                new SimpleExpressionEngine.DataValue((object)"a😀b"));
+                new SimpleExpressionEngine.DataValue("a😀b"));
 
             RenPyParser.Line preparation;
             object observed;
@@ -4455,7 +4455,7 @@ namespace StoryAPI.Tests
                     ((List<object>)observed).SequenceEqual(new object[] { "b", "😀", "a" }),
                 "enumerate(reversed(string)) should reverse the characters before assigning indexes.");
 
-            context.SetVariable("phrase", new SimpleExpressionEngine.DataValue((object)""));
+            context.SetVariable("phrase", new SimpleExpressionEngine.DataValue(""));
             Check(VariableIndexExpressionLine.TryCreateForEachPreparationLine(
                     "phrase", "_stage57_empty_string", false, false, false, false, false,
                     sourcePath, 14, out preparation),

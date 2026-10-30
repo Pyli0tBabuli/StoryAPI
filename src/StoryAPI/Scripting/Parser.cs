@@ -874,6 +874,10 @@ namespace StoryAPI.Scripting
                     if (isSortedDictionaryItems && valueVariable == null)
                         throw new ScriptSyntaxException(
                             "sorted(dictionary.items()) requires 'for key, value'.", line);
+                    if (valueVariable != null && !isSortedDictionaryItems)
+                        throw new ScriptSyntaxException(
+                            "sorted() loops accept only one loop variable unless sorted(dictionary.items()) is used.",
+                            line);
                     if (Current.Text == ",")
                     {
                         _index++;

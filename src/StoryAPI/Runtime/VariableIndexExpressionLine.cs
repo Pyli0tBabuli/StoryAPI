@@ -401,7 +401,7 @@ namespace StoryAPI.Runtime
 
                 // Slice bounds are numeric. Do not route strings, calls, attributes,
                 // nested subscriptions, or comparison expressions through this path.
-                if (bound.IndexOf('"') >= 0 || bound.IndexOf('\\'') >= 0 ||
+                if (bound.IndexOf('"') >= 0 || bound.IndexOf('\'') >= 0 ||
                     !ContainsArithmeticOperator(bound) ||
                     !IsSupportedDynamicIndexExpression(bound))
                     return false;

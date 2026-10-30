@@ -318,7 +318,13 @@ namespace StoryAPI.Scripting
             if (string.IsNullOrEmpty(value))
                 throw new ScriptSyntaxException("Expected a layer name after 'onlayer'.", line);
 
-            if (value.Any(char.IsWhiteSpace) || IndexOfWord(value, "onlayer") >= 0)
+            for (int i = 0; i < value.Length; i++)
+            {
+                if (char.IsWhiteSpace(value[i]))
+                    throw new ScriptSyntaxException("Expected one layer name after 'onlayer'.", line);
+            }
+
+            if (IndexOfWord(value, "onlayer") >= 0)
                 throw new ScriptSyntaxException("Expected one layer name after 'onlayer'.", line);
 
             source = source.Substring(0, at).Trim();

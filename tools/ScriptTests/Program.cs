@@ -1227,11 +1227,13 @@ namespace StoryAPI.Tests
                 "len(string) should count Unicode code points rather than UTF-16 code units.");
 
             Check(VariableIndexExpressionLine.TryPrepareCondition(
-                    ""😀b" in message", prefix + "_contains",
+                    "\"😀b\" in message", prefix + "_contains",
                     sourcePath, 41, out lines, out prepared),
                 "A substring membership check should be prepared.");
-            Check(prepared.Contains(prefix + "_membership_result_0"),
+            Check(prepared.Contains(prefix + "_contains_membership_result_0"),
                 "String membership should replace the native in operator with a temporary.");
+            context.SetVariable(prefix + "_contains_membership_value_0",
+                new SimpleExpressionEngine.DataValue("😀b"));
             ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
             Check(GameBridge.TryGetLastTestLiteral(
                     prefix + "_contains_membership_result_0", out result) &&
@@ -1239,9 +1241,11 @@ namespace StoryAPI.Tests
                 "A substring present in the source string should match.");
 
             Check(VariableIndexExpressionLine.TryPrepareCondition(
-                    ""xyz" not in message", prefix + "_absent",
+                    "\"xyz\" not in message", prefix + "_absent",
                     sourcePath, 42, out lines, out prepared),
                 "A not-in substring check should be prepared.");
+            context.SetVariable(prefix + "_absent_membership_value_0",
+                new SimpleExpressionEngine.DataValue("xyz"));
             ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
             Check(GameBridge.TryGetLastTestLiteral(
                     prefix + "_absent_membership_result_0", out result) &&
@@ -1249,10 +1253,12 @@ namespace StoryAPI.Tests
                 "An absent substring should produce a false membership result.");
 
             Check(VariableIndexExpressionLine.TryPrepareCondition(
-                    """ in message", prefix + "_empty",
+                    "\"\" in message", prefix + "_empty",
                     sourcePath, 43, out lines, out prepared),
                 "An empty substring membership check should be prepared.");
-            ((RenpyParser.Images.IApply)lines.Last()).Apply(context);
+            context.SetVariable(prefix + "_empty_membership_value_0",
+                new SimpleExpressionEngine.DataValue(""));
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
             Check(GameBridge.TryGetLastTestLiteral(
                     prefix + "_empty_membership_result_0", out result) &&
                     result is bool && (bool)result,

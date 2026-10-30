@@ -35,6 +35,7 @@ namespace StoryAPI.Tests
             Run("string membership and length conditions", TestStringConditionBuiltins);
             Run("string index reads", TestStringIndexReads);
             Run("sequence slice reads", TestSequenceSliceReads);
+            Run("sequence slice assignments", TestSequenceSliceAssignments);
             Run("None comparison conditions", TestNoneComparisonConditions);
             Run("list and dictionary clear methods", TestCollectionClearMethods);
             Run("list reverse method", TestListReverseMethod);
@@ -1575,6 +1576,153 @@ namespace StoryAPI.Tests
             Check(GameBridge.TryGetLastTestLiteral(prefix + "_zero_step_gate", out result) &&
                 result is bool && !(bool)result,
                 "A zero slice step should fail safely and close the runtime guard.");
+        }
+
+        private static void TestSequenceSliceAssignments()
+        {
+            const string sourcePath = "sequence-slice-assignment-test.rpy";
+            const string prefix = "_storyapi_sequence_slice_assignment";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            List<RenPyParser.Line> lines;
+
+            var numbers = new List<object> { 1f, 2f, 3f, 4f, 5f };
+            var replacement = new List<object> { 20f, 30f, 40f };
+            context.SetVariable("numbers", new SimpleExpressionEngine.DataValue((object)numbers));
+            context.SetVariable("replacement",
+                new SimpleExpressionEngine.DataValue((object)replacement));
+            context.SetVariable("slice_start", new SimpleExpressionEngine.DataValue(1f));
+            context.SetVariable("slice_stop", new SimpleExpressionEngine.DataValue(3f));
+
+            Check(VariableIndexExpressionLine.TryCreateAssignmentLines(
+                    "numbers[slice_start:slice_stop] = replacement", prefix,
+                    sourcePath, 1, 0, out lines),
+                "A list slice assignment with variable bounds should be recognized.");
+            Check(lines.Count > 0 && lines[lines.Count - 1].GetType().Name ==
+                    "CollectionMutationLine",
+                "Slice assignment should emit the existing guarded collection mutation instruction.");
+            context.SetVariable(prefix + "_value",
+                new SimpleExpressionEngine.DataValue((object)replacement));
+            ((RenPyParser.Images.IApply)lines[lines.Count - 1]).Apply(context);
+            Check(numbers.Count == 6 &&
+                    Convert.ToSingle(numbers[0]) == 1f &&
+                    Convert.ToSingle(numbers[1]) == 20f &&
+                    Convert.ToSingle(numbers[2]) == 30f &&
+                    Convert.ToSingle(numbers[3]) == 40f &&
+                    Convert.ToSingle(numbers[4]) == 4f &&
+                    Convert.ToSingle(numbers[5]) == 5f,
+                "A unit-step slice should replace the selected range and may change list length.");
+
+            var insertionTarget = new List<object> { 1f, 2f, 3f };
+            var insertionValues = new List<object> { 8f, 9f };
+            context.SetVariable("insertion_target",
+                new SimpleExpressionEngine.DataValue((object)insertionTarget));
+            context.SetVariable("insertion_values",
+                new SimpleExpressionEngine.DataValue((object)insertionValues));
+            context.SetVariable("insert_at", new SimpleExpressionEngine.DataValue(1f));
+            Check(VariableIndexExpressionLine.TryCreateAssignmentLines(
+                    "insertion_target[insert_at:insert_at] = insertion_values", prefix,
+                    sourcePath, 2, 0, out lines),
+                "An empty unit-step slice should support insertion.");
+            context.SetVariable(prefix + "_value",
+                new SimpleExpressionEngine.DataValue((object)insertionValues));
+            ((RenPyParser.Images.IApply)lines[lines.Count - 1]).Apply(context);
+            Check(insertionTarget.Count == 5 &&
+                    Convert.ToSingle(insertionTarget[0]) == 1f &&
+                    Convert.ToSingle(insertionTarget[1]) == 8f &&
+                    Convert.ToSingle(insertionTarget[2]) == 9f &&
+                    Convert.ToSingle(insertionTarget[3]) == 2f,
+                "Assigning to an empty slice should insert the replacement at its start.");
+
+            var stridedTarget = new List<object> { 1f, 2f, 3f, 4f, 5f, 6f };
+            var stridedValues = new List<object> { 10f, 30f, 50f };
+            context.SetVariable("strided_target",
+                new SimpleExpressionEngine.DataValue((object)stridedTarget));
+            context.SetVariable("strided_values",
+                new SimpleExpressionEngine.DataValue((object)stridedValues));
+            context.SetVariable("range_start", new SimpleExpressionEngine.DataValue(0f));
+            context.SetVariable("range_stop", new SimpleExpressionEngine.DataValue(6f));
+            context.SetVariable("range_step", new SimpleExpressionEngine.DataValue(2f));
+            Check(VariableIndexExpressionLine.TryCreateAssignmentLines(
+                    "strided_target[range_start:range_stop:range_step] = strided_values",
+                    prefix, sourcePath, 3, 0, out lines),
+                "An extended slice assignment with variable bounds should be recognized.");
+            context.SetVariable(prefix + "_value",
+                new SimpleExpressionEngine.DataValue((object)stridedValues));
+            ((RenPyParser.Images.IApply)lines[lines.Count - 1]).Apply(context);
+            Check(stridedTarget.Count == 6 &&
+                    Convert.ToSingle(stridedTarget[0]) == 10f &&
+                    Convert.ToSingle(stridedTarget[2]) == 30f &&
+                    Convert.ToSingle(stridedTarget[4]) == 50f,
+                "An extended slice should replace only its selected positions.");
+
+            var reverseTarget = new List<object> { 1f, 2f, 3f, 4f, 5f };
+            var reverseValues = new List<object> { 50f, 40f, 30f };
+            context.SetVariable("reverse_target",
+                new SimpleExpressionEngine.DataValue((object)reverseTarget));
+            context.SetVariable("reverse_values",
+                new SimpleExpressionEngine.DataValue((object)reverseValues));
+            context.SetVariable("reverse_start", new SimpleExpressionEngine.DataValue(4f));
+            context.SetVariable("reverse_stop", new SimpleExpressionEngine.DataValue(1f));
+            context.SetVariable("reverse_step", new SimpleExpressionEngine.DataValue(-1f));
+            Check(VariableIndexExpressionLine.TryCreateAssignmentLines(
+                    "reverse_target[reverse_start:reverse_stop:reverse_step] = reverse_values",
+                    prefix, sourcePath, 4, 0, out lines),
+                "A negative-step slice assignment should be recognized.");
+            context.SetVariable(prefix + "_value",
+                new SimpleExpressionEngine.DataValue((object)reverseValues));
+            ((RenPyParser.Images.IApply)lines[lines.Count - 1]).Apply(context);
+            Check(reverseTarget.Count == 5 &&
+                    Convert.ToSingle(reverseTarget[2]) == 30f &&
+                    Convert.ToSingle(reverseTarget[3]) == 40f &&
+                    Convert.ToSingle(reverseTarget[4]) == 50f,
+                "Negative-step assignment should consume replacement values in slice iteration order.");
+
+            var textTarget = new List<object> { "a", "b", "c" };
+            context.SetVariable("text_target",
+                new SimpleExpressionEngine.DataValue((object)textTarget));
+            context.SetVariable("text_replacement", new SimpleExpressionEngine.DataValue("😀X"));
+            Check(VariableIndexExpressionLine.TryCreateAssignmentLines(
+                    "text_target[1:2] = text_replacement", prefix,
+                    sourcePath, 5, 0, out lines),
+                "A string should be accepted as a list-slice replacement iterable.");
+            context.SetVariable(prefix + "_value", new SimpleExpressionEngine.DataValue("😀X"));
+            ((RenPyParser.Images.IApply)lines[lines.Count - 1]).Apply(context);
+            Check(textTarget.Count == 4 &&
+                    Equals(textTarget[1], "😀") && Equals(textTarget[2], "X"),
+                "String replacements should expand into Unicode code points.");
+
+            var mismatchTarget = new List<object> { 1f, 2f, 3f, 4f };
+            var mismatchValues = new List<object> { 99f };
+            context.SetVariable("mismatch_target",
+                new SimpleExpressionEngine.DataValue((object)mismatchTarget));
+            context.SetVariable("mismatch_values",
+                new SimpleExpressionEngine.DataValue((object)mismatchValues));
+            Check(VariableIndexExpressionLine.TryCreateAssignmentLines(
+                    "mismatch_target[0:4:2] = mismatch_values", prefix,
+                    sourcePath, 6, 0, out lines),
+                "An extended slice assignment should reach runtime length validation.");
+            context.SetVariable(prefix + "_value",
+                new SimpleExpressionEngine.DataValue((object)mismatchValues));
+            ((RenPyParser.Images.IApply)lines[lines.Count - 1]).Apply(context);
+            Check(mismatchTarget.Count == 4 &&
+                    Convert.ToSingle(mismatchTarget[0]) == 1f &&
+                    Convert.ToSingle(mismatchTarget[2]) == 3f,
+                "A mismatched extended-slice replacement must leave the target unchanged.");
+
+            Check(!VariableIndexExpressionLine.TryCreateIndexedCompoundAssignmentLines(
+                    "numbers[1:3] += replacement", prefix, sourcePath, 7, 0, out lines),
+                "Compound assignment to a slice should remain unsupported.");
+
+            var statements = Parse(
+                "label sequence_slice_assignment_test:\n" +
+                "    $ numbers[1:3] = replacement\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing a sequence slice assignment.");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The slice assignment should parse as a Python statement.").Code ==
+                    "numbers[1:3] = replacement",
+                "The parser should preserve slice assignment statements.");
         }
 
         private static void TestNoneComparisonConditions()

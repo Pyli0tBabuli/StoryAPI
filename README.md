@@ -171,8 +171,11 @@ List slices can also be assigned from a list or string, for example
 `$ inventory[start:end] = replacement`. Unit-step slice assignment can grow or shrink a list;
 non-unit and negative steps replace selected elements one-for-one and require a replacement
 with exactly the same number of items. Replacement strings are split into Unicode code points.
-String slices remain read-only. Arithmetic expressions inside slice bounds, dictionary slices,
-and slice assignment through an intermediate slice are not supported yet.
+String slices remain read-only. Sequence-slice reads also accept supported scalar arithmetic
+expressions in their bounds, such as `inventory[start + 1:stop - 1:step * 2]`; the game
+evaluates each arithmetic bound before StoryAPI reads the slice. Slice-assignment and deletion
+targets still require integer literals or simple variable names as bounds. Dictionary slices and
+slice assignment through an intermediate slice are not supported yet.
 
 Index reads can also be combined with scalar arithmetic, comparisons, and logical operators, for example
 `define bonus = inventory[0] * 2`, `define total = inventory[0] + inventory[1]`, or

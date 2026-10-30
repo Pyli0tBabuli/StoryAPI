@@ -1719,7 +1719,8 @@ namespace StoryAPI.Runtime
 
         /// <summary>
         /// Recognizes assignment from dictionary.get() with a literal or simple variable default.
-        /// Keys and defaults are deliberately limited to quoted string keys and scalar literals.
+        /// Keys may be quoted strings or simple variable names; defaults may be literals or
+        /// simple variable references. Compound expressions remain unsupported.
         /// </summary>
         public static bool TryCreateDictionaryGetLine(string code, string sourcePath,
             int sourceLine, out Line line)
@@ -1833,7 +1834,7 @@ namespace StoryAPI.Runtime
         /// <summary>
         /// Recognizes assignment from dictionary.setdefault() with a literal or variable default.
         /// This supported subset returns the existing value, or inserts and returns the
-        /// literal default (None when omitted) if the key does not yet exist.
+        /// supplied default (None when omitted) if the key does not yet exist.
         /// </summary>
         public static bool TryCreateDictionarySetDefaultLine(string code, string sourcePath,
             int sourceLine, out Line line)
@@ -1942,10 +1943,17 @@ namespace StoryAPI.Runtime
                     return TryReadDictionaryGetDefault(code, ref cursor, out value);
                 }
 
-                if (token == "and" || token == "or" || token == "not" ||
-                    token == "is" || token == "in" || token == "if" ||
-                    token == "else" || token == "elif" || token == "for" ||
-                    token == "while" || token == "return" || token == "pass")
+                if (token == "and" || token == "as" || token == "assert" ||
+                    token == "async" || token == "await" || token == "break" ||
+                    token == "class" || token == "continue" || token == "def" ||
+                    token == "del" || token == "elif" || token == "else" ||
+                    token == "except" || token == "finally" || token == "for" ||
+                    token == "from" || token == "global" || token == "if" ||
+                    token == "import" || token == "in" || token == "is" ||
+                    token == "lambda" || token == "nonlocal" || token == "not" ||
+                    token == "or" || token == "pass" || token == "raise" ||
+                    token == "return" || token == "try" || token == "while" ||
+                    token == "with" || token == "yield")
                     return false;
 
                 value = new DynamicIndex(token);

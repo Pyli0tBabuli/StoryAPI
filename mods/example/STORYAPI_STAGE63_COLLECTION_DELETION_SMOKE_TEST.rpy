@@ -24,7 +24,7 @@ label storyapi_stage63_collection_deletion_smoke:
         return
 
     $ del stage63_probe_inventory[stage63_probe_start:stage63_probe_stop]
-    if len(stage63_probe_inventory) != 2 or stage63_probe_inventory[0] != "key" or stage63_probe_inventory[1] != "map":
+    if len(stage63_probe_inventory) != 2 or stage63_probe_inventory[0] != "key" or stage63_probe_inventory[1] != "food":
         _ "STORYAPI_DELETE_SLICE_FAIL"
         return
 

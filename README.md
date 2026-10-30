@@ -265,7 +265,10 @@ Within a label, `while`, `for item in inventory:`, `for key in settings:`,
 `for key in settings.keys():`, `for key, value in settings.items():`, and
 `for value in settings.values():`, `for i in range(...):`, `break`, `continue`, and `pass` are
 supported. List loops assign each element to the loop variable and support nested conditions and loop
-control. Dictionary key loops assign each key to the loop variable; value loops assign each value to one
+control. Strings are iterable too: `for letter in message:` visits each Unicode code point in
+order; `reversed(message)` visits them in reverse order, and `enumerate(message, start)` binds
+an index and a character. String iteration uses a snapshot of the immutable source text.
+Dictionary key loops assign each key to the loop variable; value loops assign each value to one
 variable, and items loops assign each key and matching value to two variables. Dictionary keys, values,
 and key/value pairs are snapshotted at loop entry, so dictionary edits in the loop body do not change the
 active iteration sequence. Explicit `.keys()`, `.values()`, and `.items()` loops require a dictionary.

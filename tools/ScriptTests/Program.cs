@@ -56,6 +56,7 @@ namespace StoryAPI.Tests
             Run("dictionary pop default argument", TestDictionaryPopDefaultArgument);
             Run("dictionary get method", TestDictionaryGetMethod);
             Run("dictionary setdefault method", TestDictionarySetDefaultMethod);
+            Run("dynamic dictionary method keys", TestDynamicDictionaryMethodKeys);
             Run("dictionary copy method", TestDictionaryCopyMethod);
             Run("compound scalar assignments", TestCompoundScalarAssignments);
             Run("compound indexed collection assignments", TestIndexedCompoundAssignments);
@@ -2110,9 +2111,9 @@ namespace StoryAPI.Tests
             Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
                     "settings.pop(\"missing\", \"a\", \"b\")", sourcePath, 21, out lines),
                 "pop() should reject more than two arguments.");
-            Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+            Check(VariableIndexExpressionLine.TryCreateDictionaryPopLines(
                     "settings.pop(key_name, \"fallback\")", sourcePath, 22, out lines),
-                "pop() should continue to require a quoted string key.");
+                "pop() should accept a simple variable as its key.");
             Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
                     "settings[\"nested\"].pop(\"missing\", \"fallback\")",
                     sourcePath, 23, out lines),
@@ -2192,9 +2193,9 @@ namespace StoryAPI.Tests
                     Equals(observed, true),
                 "dict.get() should preserve a boolean default.");
 
-            Check(!VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+            Check(VariableIndexExpressionLine.TryCreateDictionaryGetLine(
                     "theme = settings.get(key_name)", sourcePath, 15, out line),
-                "dict.get() should require a quoted string key in this subset.");
+                "dict.get() should accept a simple variable as its key.");
             Check(!VariableIndexExpressionLine.TryCreateDictionaryGetLine(
                     "theme = settings.get(\"theme\", fallback)", sourcePath, 16, out line),
                 "dict.get() should reject non-literal defaults in this subset.");
@@ -2227,6 +2228,122 @@ namespace StoryAPI.Tests
                     "The second get() should parse as a Python statement.").Code ==
                     "fallback = settings.get(\"missing\", \"off\")",
                 "The parser should preserve dict.get() calls with a default.");
+        }
+
+        private static void TestDynamicDictionaryMethodKeys()
+        {
+            const string sourcePath = "dynamic-dictionary-method-keys-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var settings = new Dictionary<string, object>
+            {
+                { "theme", "dark" },
+                { "count", 5f },
+                { "enabled", true }
+            };
+            context.SetVariable("settings",
+                new SimpleExpressionEngine.DataValue((object)settings));
+            context.SetVariable("selected_key",
+                new SimpleExpressionEngine.DataValue("theme"));
+
+            RenPyParser.Line line;
+            object observed;
+
+            Check(VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "selected_value = settings.get(selected_key)",
+                    sourcePath, 10, out line),
+                "dict.get() should accept a dynamic variable key.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("selected_value", out observed) &&
+                    Equals(observed, "dark"),
+                "dict.get() should resolve a string key variable at runtime.");
+
+            // The same compiled instruction must use the key's current value every time.
+            context.SetVariable("selected_key", new SimpleExpressionEngine.DataValue("count"));
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("selected_value", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 5f) < 0.001f,
+                "A dynamic dict.get() key should be re-evaluated on every execution.");
+
+            context.SetVariable("missing_key", new SimpleExpressionEngine.DataValue("missing"));
+            Check(VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "fallback_value = settings.get(missing_key, \"fallback\")",
+                    sourcePath, 11, out line),
+                "dict.get() should support a dynamic key together with a literal default.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("fallback_value", out observed) &&
+                    Equals(observed, "fallback"),
+                "dict.get() should use its literal default for a missing dynamic key.");
+            Check(settings.Count == 3,
+                "dict.get() with a dynamic key must not mutate the dictionary.");
+
+            context.SetVariable("numeric_key", new SimpleExpressionEngine.DataValue(1f));
+            Check(VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "invalid_key_result = settings.get(numeric_key)",
+                    sourcePath, 12, out line),
+                "A variable key should pass syntax parsing and be type-checked at runtime.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(!GameBridge.TryGetLastTestLiteral("invalid_key_result", out observed) &&
+                    settings.Count == 3,
+                "A non-string dynamic key must be rejected without assigning a result or mutating the dictionary.");
+
+            context.SetVariable("new_key", new SimpleExpressionEngine.DataValue("accent"));
+            Check(VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                    "inserted_value = settings.setdefault(new_key, \"blue\")",
+                    sourcePath, 13, out line),
+                "dict.setdefault() should accept a dynamic key.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("inserted_value", out observed) &&
+                    Equals(observed, "blue") && Equals(settings["accent"], "blue"),
+                "dict.setdefault() should insert a default under a dynamic key.");
+
+            Check(VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                    "existing_value = settings.setdefault(new_key, \"red\")",
+                    sourcePath, 14, out line),
+                "dict.setdefault() should support reusing a dynamic key.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("existing_value", out observed) &&
+                    Equals(observed, "blue") && Equals(settings["accent"], "blue"),
+                "dict.setdefault() should preserve an existing value for a dynamic key.");
+
+            context.SetVariable("pop_key", new SimpleExpressionEngine.DataValue("count"));
+            Check(VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "removed_value = settings.pop(pop_key)",
+                    sourcePath, 15, out List<RenPyParser.Line> lines),
+                "dict.pop() should accept a dynamic key.");
+            ((RenPyParser.Images.IApply)lines[0]).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("removed_value", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 5f) < 0.001f &&
+                    !settings.ContainsKey("count"),
+                "dict.pop() should return and remove the value found by a dynamic key.");
+
+            context.SetVariable("pop_missing_key", new SimpleExpressionEngine.DataValue("not_here"));
+            Check(VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "missing_removed = settings.pop(pop_missing_key, None)",
+                    sourcePath, 16, out lines),
+                "dict.pop() should accept a dynamic key with a literal default.");
+            ((RenPyParser.Images.IApply)lines[0]).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("missing_removed", out observed) &&
+                    observed == null && !settings.ContainsKey("not_here"),
+                "dict.pop() should return the default without inserting a missing dynamic key.");
+
+            var statements = Parse(
+                "label dynamic_dictionary_method_keys_test:\n" +
+                "    $ selected_value = settings.get(selected_key)\n" +
+                "    $ inserted_value = settings.setdefault(new_key, \"blue\")\n" +
+                "    $ removed_value = settings.pop(pop_key, None)\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing dictionary methods with dynamic keys.");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "dict.get() with a dynamic key should parse.").Code ==
+                    "selected_value = settings.get(selected_key)" &&
+                Require<PythonStatement>(label.Body[1],
+                    "dict.setdefault() with a dynamic key should parse.").Code ==
+                    "inserted_value = settings.setdefault(new_key, \"blue\")" &&
+                Require<PythonStatement>(label.Body[2],
+                    "dict.pop() with a dynamic key should parse.").Code ==
+                    "removed_value = settings.pop(pop_key, None)",
+                "The parser should preserve dynamic dictionary method keys.");
         }
 
         private static void TestDictionarySetDefaultMethod()
@@ -2305,9 +2422,9 @@ namespace StoryAPI.Tests
                     settings.ContainsKey("nullable") && settings["nullable"] == null,
                 "Without a default, setdefault() should insert and return None.");
 
-            Check(!VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+            Check(VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
                     "value = settings.setdefault(key_name)", sourcePath, 20, out line),
-                "setdefault() should require a quoted string key in this subset.");
+                "setdefault() should accept a simple variable as its key.");
             Check(!VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
                     "value = settings.setdefault(\"key\", fallback)", sourcePath, 21, out line),
                 "setdefault() should reject non-literal defaults in this subset.");

@@ -148,6 +148,14 @@ namespace StoryAPI.Scripting
                 return;
             }
 
+            Line deleteLine;
+            if (VariableIndexExpressionLine.TryCreateCollectionDeleteLine(
+                python.Code, _textLabel ?? "unknown", python.Line, out deleteLine))
+            {
+                _out.Add(deleteLine);
+                return;
+            }
+
             Line minListLine;
             if (VariableIndexExpressionLine.TryCreateMinListAssignmentLine(
                 python.Code, _textLabel ?? "unknown", python.Line, out minListLine))

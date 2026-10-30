@@ -112,10 +112,10 @@ namespace SimpleExpressionEngine
 
         public DataValue(bool value)
         {
-            type = TestDataValueType.Boolean;
-            // Mirror the game build that boxes bool payloads as 1f/0f in objectRef.
-            // The runtime must honor the Boolean discriminator before numeric payloads.
-            objectRef = value ? 1f : 0f;
+            // Model the problematic DDLC+ constructor: bool is coerced to a numeric
+            // DataValue, which is why production code must use the object constructor.
+            type = TestDataValueType.Float;
+            objectRef = null;
             floatVal = value ? 1f : 0f;
             stringVal = string.Empty;
         }
@@ -162,7 +162,7 @@ namespace StoryAPI.Game
                 else if (value is string stringValue)
                     dataValue = new SimpleExpressionEngine.DataValue(stringValue);
                 else if (value is bool booleanValue)
-                    dataValue = new SimpleExpressionEngine.DataValue(booleanValue);
+                    dataValue = new SimpleExpressionEngine.DataValue((object)booleanValue);
                 else if (value is byte || value is sbyte || value is short || value is ushort ||
                          value is int || value is uint || value is long || value is ulong ||
                          value is float || value is double || value is decimal)

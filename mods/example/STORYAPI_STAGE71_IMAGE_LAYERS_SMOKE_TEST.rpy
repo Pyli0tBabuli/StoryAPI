@@ -12,6 +12,13 @@ label storyapi_stage71_image_layers_smoke:
     _ "STORYAPI_STAGE71_CUSTOM_SHOW_SCREENS_REACHED"
     hide stage71_custom_sprite onlayer screens
     _ "STORYAPI_STAGE71_CUSTOM_HIDE_SCREENS_REACHED"
+    scene stage71_background onlayer overlay
+    _ "STORYAPI_STAGE71_CUSTOM_SCENE_OVERLAY_REACHED"
     scene onlayer overlay
+    show stage71_sprite as stage71_shared at left onlayer master
+    show stage71_sprite as stage71_shared at right onlayer screens
+    hide stage71_shared onlayer screens
+    _ "STORYAPI_STAGE71_LAYER_SCOPED_HIDE_REACHED"
+    hide stage71_shared onlayer master
     _ "STORYAPI_RENPY_IMAGE_LAYERS_PASS"
     return

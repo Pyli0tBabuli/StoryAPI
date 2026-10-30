@@ -1380,6 +1380,14 @@ namespace StoryAPI.Scripting
                 if (token.Type == TokenType.String || token.Type == TokenType.Number)
                     continue;
 
+                // A colon is valid only inside a subscription, where it separates
+                // the literal start, stop and optional step of a sequence slice.
+                if (token.Type == TokenType.Colon)
+                {
+                    if (indexDepth == 0) return false;
+                    continue;
+                }
+
                 if (token.Type == TokenType.Keyword)
                 {
                     if (token.Text == "True" || token.Text == "False" || token.Text == "None" ||

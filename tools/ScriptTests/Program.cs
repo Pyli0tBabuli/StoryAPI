@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
@@ -33,6 +34,7 @@ namespace StoryAPI.Tests
             Run("list and dictionary length conditions", TestCollectionLengthConditions);
             Run("string membership and length conditions", TestStringConditionBuiltins);
             Run("string index reads", TestStringIndexReads);
+            Run("sequence slice reads", TestSequenceSliceReads);
             Run("None comparison conditions", TestNoneComparisonConditions);
             Run("list and dictionary clear methods", TestCollectionClearMethods);
             Run("list reverse method", TestListReverseMethod);
@@ -317,6 +319,11 @@ namespace StoryAPI.Tests
                 "define multiplied_item = starting_points[0] * 2\n" +
                 "define summed_items = starting_points[0] + starting_points[1]\n" +
                 "default combined_condition = starting_points[0] >= 1 and has_key\n" +
+                "define forward_slice = starting_points[1:3]\n" +
+                "default prefix_slice = starting_points[:2]\n" +
+                "define reverse_slice = starting_points[::-1]\n" +
+                "define stepped_slice = starting_points[::2]\n" +
+                "define chained_slice = starting_points[1:3][0]\n" +
                 "label container_index_test:\n" +
                 "    return\n");
 
@@ -402,6 +409,36 @@ namespace StoryAPI.Tests
             Check(combinedCondition.IsDefault && combinedCondition.HasRuntimeExpression &&
                 combinedCondition.Expression == "starting_points[0] >= 1 and has_key",
                 "Index reads should be valid operands in scalar comparisons and logical expressions.");
+
+            var forwardSlice = Require<VariableDeclarationStatement>(statements[15],
+                "Expected a list slice initializer.");
+            Check(forwardSlice.HasRuntimeExpression &&
+                forwardSlice.Expression == "starting_points[1:3]",
+                "A bounded sequence slice should be accepted as a runtime initializer.");
+
+            var prefixSlice = Require<VariableDeclarationStatement>(statements[16],
+                "Expected a sequence slice with an omitted start.");
+            Check(prefixSlice.IsDefault && prefixSlice.HasRuntimeExpression &&
+                prefixSlice.Expression == "starting_points[:2]",
+                "An omitted slice start should be accepted in a default declaration.");
+
+            var reverseSlice = Require<VariableDeclarationStatement>(statements[17],
+                "Expected a sequence slice with a negative step.");
+            Check(reverseSlice.HasRuntimeExpression &&
+                reverseSlice.Expression == "starting_points[::-1]",
+                "A reverse slice should be accepted as a runtime initializer.");
+
+            var steppedSlice = Require<VariableDeclarationStatement>(statements[18],
+                "Expected a sequence slice with an omitted start and stop.");
+            Check(steppedSlice.HasRuntimeExpression &&
+                steppedSlice.Expression == "starting_points[::2]",
+                "A stepped slice should be accepted as a runtime initializer.");
+
+            var chainedSlice = Require<VariableDeclarationStatement>(statements[19],
+                "Expected a slice followed by an index.");
+            Check(chainedSlice.HasRuntimeExpression &&
+                chainedSlice.Expression == "starting_points[1:3][0]",
+                "A slice result should be indexable in the same initializer.");
         }
 
         private static void TestRuntimeIndexExpressionRewriting()
@@ -1343,6 +1380,146 @@ namespace StoryAPI.Tests
             Check(GameBridge.TryGetLastTestLiteral(prefix + "_dynamic", out result) &&
                     result is string && (string)result == "C",
                 "A temporary dynamic string index should be re-evaluated when revisited.");
+        }
+
+        private static void TestSequenceSliceReads()
+        {
+            const string sourcePath = "sequence-slice-test.rpy";
+            const string prefix = "_storyapi_sequence_slice_test";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            context.SetVariable("message", new SimpleExpressionEngine.DataValue("A😀BC"));
+            context.SetVariable("numbers", new SimpleExpressionEngine.DataValue(
+                (object)new List<object> { 1f, 2f, 3f, 4f, 5f }));
+
+            VariableIndexExpressionLine line;
+            object result;
+
+            Check(VariableIndexExpressionLine.CanHandle("message[1:3]") &&
+                VariableIndexExpressionLine.CanHandle("numbers[::-1]") &&
+                VariableIndexExpressionLine.CanHandle("message[:2]"),
+                "Literal sequence slice expressions with omitted bounds should be accepted.");
+
+            Check(VariableIndexExpressionLine.TryRewriteExpression(
+                    "message[1:3] + numbers[::2][0]", prefix,
+                    out string rewritten, out List<KeyValuePair<string, string>> reads),
+                "Sequence slices should be rewritable as operands in scalar expressions.");
+            Check(reads.Count == 2 &&
+                reads[0].Value == "message[1:3]" &&
+                reads[1].Value == "numbers[::2][0]",
+                "Slice expressions should remain intact in indexed read chains.");
+
+            Check(!VariableIndexExpressionLine.CanHandle("message[start:3]") &&
+                !VariableIndexExpressionLine.CanHandle("message[1:3:2:4]"),
+                "Dynamic slice bounds and slices with too many separators should remain unsupported.");
+
+            Check(VariableIndexExpressionLine.TryCreateTemporary(
+                    prefix + "_forward", "message[1:3]", sourcePath, 60,
+                    new VariableInitializationState(), prefix + "_gate", "forward",
+                    out line),
+                "A bounded string slice should create a temporary runtime reader.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(prefix + "_forward", out result) &&
+                result is string && (string)result == "😀B",
+                "A forward string slice should return the selected Unicode code points.");
+
+            Check(VariableIndexExpressionLine.TryCreateTemporary(
+                    prefix + "_prefix", "message[:2]", sourcePath, 61,
+                    new VariableInitializationState(), prefix + "_gate", "prefix",
+                    out line),
+                "A string slice with an omitted start should be supported.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(prefix + "_prefix", out result) &&
+                result is string && (string)result == "A😀",
+                "An omitted start should default to the beginning of the string.");
+
+            Check(VariableIndexExpressionLine.TryCreateTemporary(
+                    prefix + "_reverse", "message[::-1]", sourcePath, 62,
+                    new VariableInitializationState(), prefix + "_gate", "reverse",
+                    out line),
+                "A string slice with a negative step should be supported.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(prefix + "_reverse", out result) &&
+                result is string && (string)result == "CB😀A",
+                "A negative step should reverse Unicode code points without splitting emoji.");
+
+            Check(VariableIndexExpressionLine.TryCreateTemporary(
+                    prefix + "_stride", "message[::2]", sourcePath, 63,
+                    new VariableInitializationState(), prefix + "_gate", "stride",
+                    out line),
+                "A string slice with a positive step should be supported.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(prefix + "_stride", out result) &&
+                result is string && (string)result == "AB",
+                "A positive step should skip code points at the expected interval.");
+
+            Check(VariableIndexExpressionLine.TryCreateTemporary(
+                    prefix + "_negative_bounds", "message[-3:-1]", sourcePath, 64,
+                    new VariableInitializationState(), prefix + "_gate", "negative_bounds",
+                    out line),
+                "Negative slice bounds should be supported.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(prefix + "_negative_bounds", out result) &&
+                result is string && (string)result == "😀B",
+                "Negative slice bounds should count backward from the end.");
+
+            Check(VariableIndexExpressionLine.TryCreateTemporary(
+                    prefix + "_clamped", "message[1:99]", sourcePath, 65,
+                    new VariableInitializationState(), prefix + "_gate", "clamped",
+                    out line),
+                "Out-of-range slice bounds should be accepted.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(prefix + "_clamped", out result) &&
+                result is string && (string)result == "😀BC",
+                "Slice bounds beyond the sequence should clamp rather than throw.");
+
+            Check(VariableIndexExpressionLine.TryCreateTemporary(
+                    prefix + "_list_middle", "numbers[1:4]", sourcePath, 66,
+                    new VariableInitializationState(), prefix + "_gate", "list_middle",
+                    out line),
+                "List slice reads should create a temporary runtime reader.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(prefix + "_list_middle", out result) &&
+                result is IList && ((IList)result).Count == 3 &&
+                Convert.ToSingle(((IList)result)[0]) == 2f &&
+                Convert.ToSingle(((IList)result)[2]) == 4f,
+                "A list slice should return a new list containing the selected elements.");
+
+            Check(VariableIndexExpressionLine.TryCreateTemporary(
+                    prefix + "_list_reverse", "numbers[::-1]", sourcePath, 67,
+                    new VariableInitializationState(), prefix + "_gate", "list_reverse",
+                    out line),
+                "A list slice with a negative step should be supported.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(prefix + "_list_reverse", out result) &&
+                result is IList && ((IList)result).Count == 5 &&
+                Convert.ToSingle(((IList)result)[0]) == 5f &&
+                Convert.ToSingle(((IList)result)[4]) == 1f,
+                "A negative list slice should return a reversed copy of the selected items.");
+
+            Check(VariableIndexExpressionLine.TryCreateTemporary(
+                    prefix + "_chained", "numbers[1:4][1]", sourcePath, 68,
+                    new VariableInitializationState(), prefix + "_gate", "chained",
+                    out line),
+                "An index should be allowed after a list slice.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(prefix + "_chained", out result) &&
+                Math.Abs(Convert.ToSingle(result) - 3f) < 0.001f,
+                "A chained index should read an item from the newly sliced list.");
+
+            Check(!VariableIndexExpressionLine.TryCreateAssignmentLines(
+                    "numbers[1:3] = 9", prefix + "_assignment",
+                    sourcePath, 69, 200, out List<RenPyParser.Line> assignmentLines),
+                "Assigning directly to a slice should remain unsupported.");
+
+            Check(VariableIndexExpressionLine.TryCreateTemporary(
+                    prefix + "_zero_step", "numbers[::0]", sourcePath, 70,
+                    new VariableInitializationState(), prefix + "_zero_step_gate",
+                    "zero_step", out line),
+                "A zero step should reach runtime validation rather than breaking parsing.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(prefix + "_zero_step_gate", out result) &&
+                result is bool && !(bool)result,
+                "A zero slice step should fail safely and close the runtime guard.");
         }
 
         private static void TestNoneComparisonConditions()

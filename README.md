@@ -157,11 +157,20 @@ keys are also supported when they use a restricted scalar expression, for exampl
 `define next_item = inventory[selected_index + 1]`, or
 `define selected_setting = settings[key_name]`. StoryAPI evaluates dynamic index expressions
 with DDLC+'s scalar evaluator first, then performs the lookup; list and string indexes must
-evaluate to integers and dynamic dictionary keys must evaluate to strings. Index reads can also
-be combined with scalar arithmetic, comparisons, and logical operators, for example
+evaluate to integers and dynamic dictionary keys must evaluate to strings.
+
+Read-only sequence slices are supported for lists and strings with integer literal bounds:
+`message[1:4]`, `inventory[:3]`, `inventory[2:]`, and `message[::-1]`. The optional third
+bound is the step; positive and negative steps are supported, and a zero step fails safely.
+Omitted bounds and negative bounds follow Python slicing rules, including clamping bounds that
+fall outside the sequence. A list slice returns a new list, while a string slice returns a string
+and counts Unicode code points, so emoji remain intact. Dynamic slice bounds, dictionary slices,
+and assigning to a slice are not supported yet.
+
+Index reads can also be combined with scalar arithmetic, comparisons, and logical operators, for example
 `define bonus = inventory[0] * 2`, `define total = inventory[0] + inventory[1]`, or
 `default can_enter = settings["count"] >= 2 and has_key`. The same restricted indexed reads are supported in runtime `if`, `elif`, and `while` conditions. Nested indexes inside a dynamic key,
-attribute access, function calls, slices, arbitrary Python initializers,
+attribute access, function calls, arbitrary Python initializers,
 Python class instances, tuples, and the full Ren'Py initialization phase remain unsupported.
 Collection element assignment is supported for existing list indexes and dictionary keys, for
 example `$ inventory[0] = 10`, `$ settings["count"] = 5`, or

@@ -386,8 +386,9 @@ namespace StoryAPI.Runtime
                     Warnings.Add(Relative(variable.SourcePath) + ":" + variable.Line +
                         ": indexed initializer for '" + variable.Name + "' is not supported: " +
                         variable.Expression + ". Use integer indexes, quoted string keys, or a simple " +
-                        "scalar expression for a dynamic index. Nested indexes inside a key, function " +
-                        "calls, slices, and arbitrary Python are not supported.");
+                        "scalar expression for a dynamic index, or literal-bound sequence slices. " +
+                        "Dynamic slice bounds, nested indexes inside a key, function calls, and arbitrary " +
+                        "Python are not supported.");
                 }
             }
         }

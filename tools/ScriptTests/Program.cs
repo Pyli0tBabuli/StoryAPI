@@ -3068,7 +3068,8 @@ namespace StoryAPI.Tests
                     Convert.ToInt32(observed) == 4,
                 "index() should match numeric variable values.");
 
-            context.SetVariable("bool_search_value", new SimpleExpressionEngine.DataValue(true));
+            Check(GameBridge.TrySetVariableLiteral("bool_search_value", true, false, context),
+                "The runtime bridge should initialize a boolean search variable.");
             Check(VariableIndexExpressionLine.TryCreateListIndexLine(
                     "dynamic_bool_index = inventory.index(bool_search_value)", sourcePath, 7, out line),
                 "index() should accept a boolean variable search value.");
@@ -3077,7 +3078,8 @@ namespace StoryAPI.Tests
                     Convert.ToInt32(observed) == 6,
                 "index() should match boolean variable values without treating them as numbers.");
 
-            context.SetVariable("none_search_value", default(SimpleExpressionEngine.DataValue));
+            Check(GameBridge.TrySetVariableLiteral("none_search_value", null, false, context),
+                "The runtime bridge should initialize a None search variable.");
             Check(VariableIndexExpressionLine.TryCreateListIndexLine(
                     "dynamic_none_index = inventory.index(none_search_value)", sourcePath, 7, out line),
                 "index() should accept a variable whose value is None.");
@@ -4001,7 +4003,8 @@ namespace StoryAPI.Tests
                     Convert.ToInt32(observed) == 2,
                 "count() should match numeric variable values.");
 
-            context.SetVariable("bool_value_name", new SimpleExpressionEngine.DataValue(true));
+            Check(GameBridge.TrySetVariableLiteral("bool_value_name", true, false, context),
+                "The runtime bridge should initialize a boolean count variable.");
             Check(VariableIndexExpressionLine.TryCreateListCountLine(
                     "dynamic_bool_count = inventory.count(bool_value_name)", sourcePath, 8, out line),
                 "count() should accept a boolean variable search value.");
@@ -4010,7 +4013,8 @@ namespace StoryAPI.Tests
                     Convert.ToInt32(observed) == 1,
                 "count() should match boolean variable values without treating them as numbers.");
 
-            context.SetVariable("none_value_name", default(SimpleExpressionEngine.DataValue));
+            Check(GameBridge.TrySetVariableLiteral("none_value_name", null, false, context),
+                "The runtime bridge should initialize a None count variable.");
             Check(VariableIndexExpressionLine.TryCreateListCountLine(
                     "dynamic_none_count = inventory.count(none_value_name)", sourcePath, 8, out line),
                 "count() should accept a variable whose value is None.");

@@ -4045,14 +4045,16 @@ namespace StoryAPI.Runtime
 
                     if (index < 0)
                         throw new InvalidOperationException(
-                            "index(value) could not find a matching list item in the requested range");
+                            "index(value) could not find a matching list item in the requested range; " +
+                            "search value was " + DescribeListSearchScalar(soughtValue));
 
                     if (!GameBridge.TrySetVariableLiteral(_destinationName, index, false, context))
                         throw new InvalidOperationException(
                             "could not assign list.index() result to '" + _destinationName + "'");
 
                     Log.Info("Applied list.index on '" + _rootName + "' at " +
-                        _sourcePath + ":" + _sourceLine + ".");
+                        _sourcePath + ":" + _sourceLine + "; result=" + index +
+                        "; searchValue=" + DescribeListSearchScalar(soughtValue) + ".");
                 }
                 catch (Exception e)
                 {
@@ -4113,7 +4115,8 @@ namespace StoryAPI.Runtime
                             "could not assign list.count() result to '" + _destinationName + "'");
 
                     Log.Info("Applied list.count on '" + _rootName + "' at " +
-                        _sourcePath + ":" + _sourceLine + ".");
+                        _sourcePath + ":" + _sourceLine + "; result=" + count +
+                        "; searchValue=" + DescribeListSearchScalar(soughtValue) + ".");
                 }
                 catch (Exception e)
                 {
@@ -4493,13 +4496,13 @@ namespace StoryAPI.Runtime
             if (dynamicValue == null)
                 return searchValue;
 
-            // Check the engine's default DataValue representation first. DDLC+ uses
-            // default(DataValue) for Python None, and scalar extraction can otherwise
-            // mistake its inactive numeric backing field for zero.
-            DataValue rawValue;
-            if (context != null &&
-                context.ResolveVariable(dynamicValue.Name, out rawValue) &&
-                object.Equals(rawValue, default(DataValue)))
+            // DDLC+ represents the script-level None literal with default(DataValue).
+            // Include the live wrapper details in failures so game-only expression
+            // conversions can be distinguished from the unit-test context.
+            DataValue rawValue = default(DataValue);
+            bool hasRawValue = context != null &&
+                context.ResolveVariable(dynamicValue.Name, out rawValue);
+            if (hasRawValue && object.Equals(rawValue, default(DataValue)))
                 return null;
 
             object resolvedValue;
@@ -4508,7 +4511,15 @@ namespace StoryAPI.Runtime
 
             throw new InvalidOperationException(
                 "list search value variable '" + dynamicValue.Name +
-                "' must resolve to a supported scalar");
+                "' must resolve to a supported scalar; runtime DataValue: " +
+                (hasRawValue ? GameBridge.DescribeDataValue(rawValue) : "<variable not resolved>"));
+        }
+
+        private static string DescribeListSearchScalar(object value)
+        {
+            if (value == null) return "None";
+            return Convert.ToString(value, CultureInfo.InvariantCulture) +
+                " [" + value.GetType().FullName + "]";
         }
 
         private static string ResolveDictionaryKey(object key, IContext context)

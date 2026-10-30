@@ -73,6 +73,7 @@ namespace StoryAPI.Tests
             Run("for-enumerate-zip-list iteration", TestForEnumerateZipListIteration);
             Run("for-enumerate-reversed-list iteration", TestForEnumerateReversedListIteration);
             Run("for-enumerate-list iteration", TestForEnumerateListIteration);
+            Run("for-string iteration", TestForStringIteration);
             Run("for-dictionary key iteration", TestForDictionaryIteration);
             Run("for-dictionary key/value iteration", TestForDictionaryItemsIteration);
             Run("for-dictionary values iteration", TestForDictionaryValuesIteration);
@@ -4366,6 +4367,103 @@ namespace StoryAPI.Tests
             Check(GameBridge.TryGetLastTestLiteral("item", out observedItem) &&
                     Equals(observedItem, "beta"),
                 "The second enumerate(reversed()) item should preserve reverse order.");
+        }
+
+        private static void TestForStringIteration()
+        {
+            const string sourcePath = "string-iteration-test.rpy";
+            var statements = Parse(
+                "label string_iteration_test:\\n" +
+                "    for character in phrase:\\n" +
+                "        pass\\n" +
+                "    for character in reversed(phrase):\\n" +
+                "        pass\\n" +
+                "    for index, character in enumerate(phrase, start_index):\\n" +
+                "        pass\\n" +
+                "    for index, character in enumerate(reversed(phrase), start_index):\\n" +
+                "        pass\\n" +
+                "    return\\n");
+            var label = Require<LabelStatement>(statements[0], "Expected string-iteration label.");
+            Check(label.Body.Count == 4, "All string iteration forms should parse.");
+
+            var directLoop = Require<ForStatement>(label.Body[0], "Expected direct string loop.");
+            Check(directLoop.Collection == "phrase" && directLoop.Variable == "character" &&
+                    !directLoop.IsReversed && !directLoop.IsEnumerate,
+                "A named string should be accepted as a direct iterable.");
+
+            var reversedLoop = Require<ForStatement>(label.Body[1], "Expected reversed string loop.");
+            Check(reversedLoop.Collection == "phrase" && reversedLoop.IsReversed &&
+                    !reversedLoop.IsEnumerate,
+                "reversed(string) should preserve the source and mark reverse iteration.");
+
+            var enumerateLoop = Require<ForStatement>(label.Body[2], "Expected enumerate string loop.");
+            Check(enumerateLoop.Collection == "phrase" && enumerateLoop.IsEnumerate &&
+                    !enumerateLoop.IsReversed &&
+                    enumerateLoop.EnumerateStartExpression == "start_index",
+                "enumerate(string, start) should bind an index and each character.");
+
+            var enumerateReversedLoop = Require<ForStatement>(
+                label.Body[3], "Expected enumerate reversed string loop.");
+            Check(enumerateReversedLoop.Collection == "phrase" &&
+                    enumerateReversedLoop.IsEnumerate && enumerateReversedLoop.IsReversed,
+                "enumerate(reversed(string), start) should retain reverse iteration.");
+
+            var context = new RenpyParser.DynamicIndexTestContext();
+            // Include a supplementary Unicode character to ensure surrogate pairs stay intact.
+            context.SetVariable("phrase",
+                new SimpleExpressionEngine.DataValue((object)"a😀b"));
+
+            RenPyParser.Line preparation;
+            object observed;
+            Check(VariableIndexExpressionLine.TryCreateForEachPreparationLine(
+                    "phrase", "_stage57_string", false, false, false, false, false,
+                    sourcePath, 10, out preparation),
+                "The runtime should prepare direct string iteration.");
+            ((RenpyParser.Images.IApply)preparation).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("_stage57_string", out observed) &&
+                    observed is List<object> &&
+                    ((List<object>)observed).SequenceEqual(new object[] { "a", "😀", "b" }),
+                "Direct string iteration should yield each Unicode code point in order.");
+
+            Check(VariableIndexExpressionLine.TryCreateForEachPreparationLine(
+                    "phrase", "_stage57_reversed", false, false, false, true, false,
+                    sourcePath, 11, out preparation),
+                "The runtime should prepare reversed string iteration.");
+            ((RenpyParser.Images.IApply)preparation).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("_stage57_reversed", out observed) &&
+                    observed is List<object> &&
+                    ((List<object>)observed).SequenceEqual(new object[] { "b", "😀", "a" }),
+                "reversed(string) should yield the Unicode code points in reverse order.");
+
+            Check(VariableIndexExpressionLine.TryCreateForEachPreparationLine(
+                    "phrase", "_stage57_enumerated", false, false, false, false, true,
+                    sourcePath, 12, out preparation),
+                "The runtime should prepare enumerate(string).");
+            ((RenpyParser.Images.IApply)preparation).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("_stage57_enumerated", out observed) &&
+                    observed is List<object> &&
+                    ((List<object>)observed).SequenceEqual(new object[] { "a", "😀", "b" }),
+                "enumerate(string) should preserve the original character sequence.");
+
+            Check(VariableIndexExpressionLine.TryCreateForEachPreparationLine(
+                    "phrase", "_stage57_enumerated_reversed", false, false, false, true, true,
+                    sourcePath, 13, out preparation),
+                "The runtime should prepare enumerate(reversed(string)).");
+            ((RenpyParser.Images.IApply)preparation).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("_stage57_enumerated_reversed", out observed) &&
+                    observed is List<object> &&
+                    ((List<object>)observed).SequenceEqual(new object[] { "b", "😀", "a" }),
+                "enumerate(reversed(string)) should reverse the characters before assigning indexes.");
+
+            context.SetVariable("phrase", new SimpleExpressionEngine.DataValue((object)""));
+            Check(VariableIndexExpressionLine.TryCreateForEachPreparationLine(
+                    "phrase", "_stage57_empty_string", false, false, false, false, false,
+                    sourcePath, 14, out preparation),
+                "The runtime should prepare an empty string iteration.");
+            ((RenpyParser.Images.IApply)preparation).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("_stage57_empty_string", out observed) &&
+                    observed is List<object> && ((List<object>)observed).Count == 0,
+                "An empty string should produce an empty iteration sequence.");
         }
 
         private static void TestForEnumerateListIteration()

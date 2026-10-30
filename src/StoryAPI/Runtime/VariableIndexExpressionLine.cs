@@ -300,7 +300,14 @@ namespace StoryAPI.Runtime
 
                 string keyExpression = expression.Substring(
                     bracketStart + 1, scan - bracketStart - 1).Trim();
-                if (IsLiteralIndexExpression(keyExpression))
+                string rewrittenSliceBounds;
+                if (TryRewriteArithmeticSequenceSliceBounds(
+                    keyExpression, temporaryPrefix, dynamicIndexOffset,
+                    dynamicIndexExpressions, out rewrittenSliceBounds))
+                {
+                    chainBuilder.Append('[').Append(rewrittenSliceBounds).Append(']');
+                }
+                else if (IsLiteralIndexExpression(keyExpression))
                 {
                     chainBuilder.Append(expression, bracketStart, scan - bracketStart + 1);
                 }
@@ -353,6 +360,81 @@ namespace StoryAPI.Runtime
             // values are resolved by the temporary reader at runtime, not by the game
             // expression evaluator.
             return TryParseSequenceSlice(trimmed, true, out _);
+        }
+
+        /// <summary>
+        /// Rewrites arithmetic sequence-slice bounds to scalar temporaries so the game's
+        /// expression evaluator can calculate them before StoryAPI reads the slice.
+        /// Literal bounds and simple variable bounds stay in the slice unchanged.
+        /// </summary>
+        private static bool TryRewriteArithmeticSequenceSliceBounds(string expression,
+            string temporaryPrefix, int dynamicIndexOffset,
+            List<KeyValuePair<string, string>> dynamicIndexExpressions,
+            out string rewrittenExpression)
+        {
+            rewrittenExpression = null;
+            if (string.IsNullOrWhiteSpace(expression) ||
+                expression.IndexOf(':') < 0 ||
+                string.IsNullOrWhiteSpace(temporaryPrefix) ||
+                dynamicIndexExpressions == null)
+                return false;
+
+            string[] parts = expression.Split(':');
+            if (parts.Length < 2 || parts.Length > 3)
+                return false;
+
+            var rewrittenParts = new string[parts.Length];
+            var pendingExpressions = new List<KeyValuePair<string, string>>();
+            bool changed = false;
+
+            for (int i = 0; i < parts.Length; i++)
+            {
+                string bound = parts[i].Trim();
+                rewrittenParts[i] = bound;
+
+                if (bound.Length == 0 ||
+                    int.TryParse(bound, NumberStyles.Integer,
+                        CultureInfo.InvariantCulture, out _))
+                    continue;
+
+                if (IsSimpleIdentifier(bound))
+                    continue;
+
+                // Slice bounds are numeric. Do not route strings, calls, attributes,
+                // nested subscriptions, or comparison expressions through this path.
+                if (bound.IndexOf('"') >= 0 || bound.IndexOf('\'') >= 0 ||
+                    !ContainsArithmeticOperator(bound) ||
+                    !IsSupportedDynamicIndexExpression(bound))
+                    return false;
+
+                string temporaryName = temporaryPrefix + "_key_" +
+                    (dynamicIndexOffset + dynamicIndexExpressions.Count +
+                     pendingExpressions.Count);
+                pendingExpressions.Add(new KeyValuePair<string, string>(
+                    temporaryName, bound));
+                rewrittenParts[i] = temporaryName;
+                changed = true;
+            }
+
+            if (!changed)
+                return false;
+
+            dynamicIndexExpressions.AddRange(pendingExpressions);
+            rewrittenExpression = string.Join(":", rewrittenParts);
+            return true;
+        }
+
+        private static bool ContainsArithmeticOperator(string expression)
+        {
+            if (string.IsNullOrEmpty(expression)) return false;
+            for (int i = 0; i < expression.Length; i++)
+            {
+                char c = expression[i];
+                if (c == '+' || c == '-' || c == '*' || c == '/' || c == '%')
+                    return true;
+            }
+
+            return false;
         }
 
         private static bool TryParseSequenceSlice(string expression,

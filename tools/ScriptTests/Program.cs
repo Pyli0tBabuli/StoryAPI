@@ -3044,6 +3044,57 @@ namespace StoryAPI.Tests
                     Convert.ToInt32(observed) == 7,
                 "index(None) should find the first null entry.");
 
+            context.SetVariable("item_name", new SimpleExpressionEngine.DataValue("battery"));
+            Check(VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "dynamic_index = inventory.index(item_name)", sourcePath, 7, out line),
+                "index() should accept a simple variable search value.");
+            RenPyParser.Line dynamicIndexLine = line;
+            ((RenPyParser.Images.IApply)dynamicIndexLine).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("dynamic_index", out observed) &&
+                    Convert.ToInt32(observed) == 1,
+                "index() should resolve a string search variable at execution time.");
+            context.SetVariable("item_name", new SimpleExpressionEngine.DataValue("medkit"));
+            ((RenPyParser.Images.IApply)dynamicIndexLine).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("dynamic_index", out observed) &&
+                    Convert.ToInt32(observed) == 3,
+                "Re-executing index() should use the variable's current value.");
+
+            context.SetVariable("number_search_value", new SimpleExpressionEngine.DataValue(2f));
+            Check(VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "dynamic_number_index = inventory.index(number_search_value)", sourcePath, 7, out line),
+                "index() should accept a numeric variable search value.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("dynamic_number_index", out observed) &&
+                    Convert.ToInt32(observed) == 4,
+                "index() should match numeric variable values.");
+
+            context.SetVariable("bool_search_value", new SimpleExpressionEngine.DataValue(true));
+            Check(VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "dynamic_bool_index = inventory.index(bool_search_value)", sourcePath, 7, out line),
+                "index() should accept a boolean variable search value.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("dynamic_bool_index", out observed) &&
+                    Convert.ToInt32(observed) == 6,
+                "index() should match boolean variable values without treating them as numbers.");
+
+            context.SetVariable("none_search_value", default(SimpleExpressionEngine.DataValue));
+            Check(VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "dynamic_none_index = inventory.index(none_search_value)", sourcePath, 7, out line),
+                "index() should accept a variable whose value is None.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("dynamic_none_index", out observed) &&
+                    Convert.ToInt32(observed) == 7,
+                "index() should match a variable containing None.");
+
+            context.SetVariable("item_name", new SimpleExpressionEngine.DataValue("battery"));
+            Check(VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "dynamic_range_index = inventory.index(item_name, 2, 4)", sourcePath, 7, out line),
+                "index() should combine a dynamic search value with literal start/stop bounds.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("dynamic_range_index", out observed) &&
+                    Convert.ToInt32(observed) == 2,
+                "Dynamic index search should retain existing start/stop range behavior.");
+
             Check(VariableIndexExpressionLine.TryCreateListIndexLine(
                     "start_index = inventory.index(\"battery\", 2)", sourcePath, 7, out line),
                 "index() should support a start position.");
@@ -3110,13 +3161,16 @@ namespace StoryAPI.Tests
                 "When no item matches, index() should log a warning and leave the destination unchanged.");
 
             Check(!VariableIndexExpressionLine.TryCreateListIndexLine(
-                    "item_index = inventory.index(item_name)", sourcePath, 20, out line),
-                "This restricted index() implementation should reject variable arguments.");
+                    "item_index = inventory.index(item_name.attribute)", sourcePath, 20, out line),
+                "index() should reject attribute expressions as search values.");
             Check(!VariableIndexExpressionLine.TryCreateListIndexLine(
-                    "item_index = inventory.index(\"battery\", \"key\")", sourcePath, 21, out line),
+                    "item_index = inventory.index(random())", sourcePath, 21, out line),
+                "index() should reject function calls as search values.");
+            Check(!VariableIndexExpressionLine.TryCreateListIndexLine(
+                    "item_index = inventory.index(\"battery\", \"key\")", sourcePath, 22, out line),
                 "index() should reject more than one argument.");
             Check(!VariableIndexExpressionLine.TryCreateListIndexLine(
-                    "item_index = inventory[0].index(\"battery\")", sourcePath, 22, out line),
+                    "item_index = inventory[0].index(\"battery\")", sourcePath, 23, out line),
                 "index() should reject indexed targets.");
             Check(!VariableIndexExpressionLine.TryCreateListIndexLine(
                     "inventory.index(\"battery\")", sourcePath, 23, out line),
@@ -3923,14 +3977,59 @@ namespace StoryAPI.Tests
                     Convert.ToInt32(observed) == 0,
                 "count() should return zero when no elements match.");
 
+            context.SetVariable("value_name", new SimpleExpressionEngine.DataValue("battery"));
+            Check(VariableIndexExpressionLine.TryCreateListCountLine(
+                    "dynamic_count = inventory.count(value_name)", sourcePath, 8, out line),
+                "count() should accept a simple variable search value.");
+            RenPyParser.Line dynamicCountLine = line;
+            ((RenPyParser.Images.IApply)dynamicCountLine).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("dynamic_count", out observed) &&
+                    Convert.ToInt32(observed) == 3,
+                "count() should resolve a string search variable at execution time.");
+            context.SetVariable("value_name", new SimpleExpressionEngine.DataValue("medkit"));
+            ((RenPyParser.Images.IApply)dynamicCountLine).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("dynamic_count", out observed) &&
+                    Convert.ToInt32(observed) == 1,
+                "Re-executing count() should use the variable's current value.");
+
+            context.SetVariable("numeric_value_name", new SimpleExpressionEngine.DataValue(2f));
+            Check(VariableIndexExpressionLine.TryCreateListCountLine(
+                    "dynamic_number_count = inventory.count(numeric_value_name)", sourcePath, 8, out line),
+                "count() should accept a numeric variable search value.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("dynamic_number_count", out observed) &&
+                    Convert.ToInt32(observed) == 2,
+                "count() should match numeric variable values.");
+
+            context.SetVariable("bool_value_name", new SimpleExpressionEngine.DataValue(true));
+            Check(VariableIndexExpressionLine.TryCreateListCountLine(
+                    "dynamic_bool_count = inventory.count(bool_value_name)", sourcePath, 8, out line),
+                "count() should accept a boolean variable search value.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("dynamic_bool_count", out observed) &&
+                    Convert.ToInt32(observed) == 1,
+                "count() should match boolean variable values without treating them as numbers.");
+
+            context.SetVariable("none_value_name", default(SimpleExpressionEngine.DataValue));
+            Check(VariableIndexExpressionLine.TryCreateListCountLine(
+                    "dynamic_none_count = inventory.count(none_value_name)", sourcePath, 8, out line),
+                "count() should accept a variable whose value is None.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("dynamic_none_count", out observed) &&
+                    Convert.ToInt32(observed) == 1,
+                "count() should match a variable containing None.");
+
             Check(!VariableIndexExpressionLine.TryCreateListCountLine(
-                    "value_count = inventory.count(value_name)", sourcePath, 20, out line),
-                "This restricted count() implementation should reject variable arguments.");
+                    "value_count = inventory.count(value_name.attribute)", sourcePath, 20, out line),
+                "count() should reject attribute expressions as search values.");
             Check(!VariableIndexExpressionLine.TryCreateListCountLine(
-                    "value_count = inventory.count(\"battery\", \"key\")", sourcePath, 21, out line),
+                    "value_count = inventory.count(random())", sourcePath, 21, out line),
+                "count() should reject function calls as search values.");
+            Check(!VariableIndexExpressionLine.TryCreateListCountLine(
+                    "value_count = inventory.count(\"battery\", \"key\")", sourcePath, 22, out line),
                 "count() should reject more than one argument.");
             Check(!VariableIndexExpressionLine.TryCreateListCountLine(
-                    "value_count = inventory[0].count(\"battery\")", sourcePath, 22, out line),
+                    "value_count = inventory[0].count(\"battery\")", sourcePath, 23, out line),
                 "count() should reject indexed targets.");
             Check(!VariableIndexExpressionLine.TryCreateListCountLine(
                     "inventory.count(\"battery\")", sourcePath, 23, out line),

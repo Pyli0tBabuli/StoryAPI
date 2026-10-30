@@ -1409,8 +1409,8 @@ namespace StoryAPI.Runtime
         }
 
         /// <summary>
-        /// Recognizes assignment from list.index(scalarLiteral). The first matching index
-        /// is returned; arguments are restricted to scalar literal values.
+        /// Recognizes assignment from list.index(value). The search value may be a scalar
+        /// literal or a simple variable reference resolved when the instruction executes.
         /// </summary>
         public static bool TryCreateListIndexLine(string code, string sourcePath,
             int sourceLine, out Line line)
@@ -1500,13 +1500,37 @@ namespace StoryAPI.Runtime
                 return true;
             }
 
+            if (IsIdentifierStart(code[cursor]))
+            {
+                int identifierStart = cursor++;
+                while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+                string identifier = code.Substring(identifierStart, cursor - identifierStart);
+
+                if (identifier == "True") { value = true; return true; }
+                if (identifier == "False") { value = false; return true; }
+                if (identifier == "None") { value = null; return true; }
+
+                if (identifier == "and" || identifier == "as" || identifier == "assert" ||
+                    identifier == "async" || identifier == "await" || identifier == "break" ||
+                    identifier == "class" || identifier == "continue" || identifier == "def" ||
+                    identifier == "del" || identifier == "elif" || identifier == "else" ||
+                    identifier == "except" || identifier == "finally" || identifier == "for" ||
+                    identifier == "from" || identifier == "global" || identifier == "if" ||
+                    identifier == "import" || identifier == "in" || identifier == "is" ||
+                    identifier == "lambda" || identifier == "nonlocal" || identifier == "not" ||
+                    identifier == "or" || identifier == "pass" || identifier == "raise" ||
+                    identifier == "return" || identifier == "try" || identifier == "while" ||
+                    identifier == "with" || identifier == "yield")
+                    return false;
+
+                value = new DynamicIndex(identifier);
+                return true;
+            }
+
             int start = cursor;
             while (cursor < code.Length && code[cursor] != ',' && code[cursor] != ')') cursor++;
             string literal = code.Substring(start, cursor - start).Trim();
             if (literal.Length == 0) return false;
-            if (literal == "True") { value = true; return true; }
-            if (literal == "False") { value = false; return true; }
-            if (literal == "None") { value = null; return true; }
 
             int integer;
             if (int.TryParse(literal, NumberStyles.Integer, CultureInfo.InvariantCulture, out integer))
@@ -1580,7 +1604,7 @@ namespace StoryAPI.Runtime
             if (cursor >= code.Length || code[cursor++] != '(') return false;
             SkipWhitespace(code, ref cursor);
             object soughtValue;
-            if (!TryReadDictionaryGetDefault(code, ref cursor, out soughtValue)) return false;
+            if (!TryReadListIndexScalarArgument(code, ref cursor, out soughtValue)) return false;
             SkipWhitespace(code, ref cursor);
             if (cursor >= code.Length || code[cursor++] != ')') return false;
             SkipWhitespace(code, ref cursor);
@@ -4006,12 +4030,13 @@ namespace StoryAPI.Runtime
                         !(target is IList list))
                         throw new InvalidOperationException("list.index() requires a list target");
 
+                    object soughtValue = ResolveListSearchValue(_soughtValue, context);
                     int start = _hasStart ? NormalizeIndexBound(_start, list.Count) : 0;
                     int stop = _hasStop ? NormalizeIndexBound(_stop, list.Count) : list.Count;
                     int index = -1;
                     for (int i = start; i < stop; i++)
                     {
-                        if (ScalarValuesEqual(list[i], _soughtValue))
+                        if (ScalarValuesEqual(list[i], soughtValue))
                         {
                             index = i;
                             break;
@@ -4075,10 +4100,11 @@ namespace StoryAPI.Runtime
                         !(target is IList list))
                         throw new InvalidOperationException("list.count() requires a list target");
 
+                    object soughtValue = ResolveListSearchValue(_soughtValue, context);
                     int count = 0;
                     for (int i = 0; i < list.Count; i++)
                     {
-                        if (ScalarValuesEqual(list[i], _soughtValue))
+                        if (ScalarValuesEqual(list[i], soughtValue))
                             count++;
                     }
 
@@ -4459,6 +4485,27 @@ namespace StoryAPI.Runtime
                         _sourcePath + ":" + _sourceLine + ": " + e.GetBaseException().Message);
                 }
             }
+        }
+
+        private static object ResolveListSearchValue(object searchValue, IContext context)
+        {
+            DynamicIndex dynamicValue = searchValue as DynamicIndex;
+            if (dynamicValue == null)
+                return searchValue;
+
+            object resolvedValue;
+            if (TryGetDynamicIndexValue(dynamicValue.Name, context, out resolvedValue))
+                return resolvedValue;
+
+            DataValue rawValue;
+            if (context != null &&
+                context.ResolveVariable(dynamicValue.Name, out rawValue) &&
+                object.Equals(rawValue, default(DataValue)))
+                return null;
+
+            throw new InvalidOperationException(
+                "list search value variable '" + dynamicValue.Name +
+                "' must resolve to a supported scalar");
         }
 
         private static string ResolveDictionaryKey(object key, IContext context)

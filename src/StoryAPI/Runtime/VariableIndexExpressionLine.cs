@@ -3090,8 +3090,9 @@ namespace StoryAPI.Runtime
                             List<int> indexes = GetSequenceSliceIndexes(
                                 list.Count, slice, out int ignoredInsertionIndex, out int ignoredStep);
                             // Remove from right to left so earlier indexes remain stable.
-                            foreach (int index in indexes.OrderByDescending(x => x))
-                                list.RemoveAt(index);
+                            indexes.Sort();
+                            for (int i = indexes.Count - 1; i >= 0; i--)
+                                list.RemoveAt(indexes[i]);
                         }
                         else
                         {

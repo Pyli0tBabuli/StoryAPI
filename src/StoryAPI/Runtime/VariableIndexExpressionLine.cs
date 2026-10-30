@@ -4901,19 +4901,33 @@ namespace StoryAPI.Runtime
             string sourcePath, int sourceLine, out Line line)
         {
             return TryCreateSortedForEachPreparationLine(
-                sourceName, destinationName, reverse, false, sourcePath, sourceLine, out line);
+                sourceName, destinationName, reverse, false, false,
+                sourcePath, sourceLine, out line);
         }
 
         public static bool TryCreateSortedForEachPreparationLine(
             string sourceName, string destinationName, bool reverse, bool dictionaryValues,
             string sourcePath, int sourceLine, out Line line)
         {
+            return TryCreateSortedForEachPreparationLine(
+                sourceName, destinationName, reverse, dictionaryValues, false,
+                sourcePath, sourceLine, out line);
+        }
+
+        public static bool TryCreateSortedForEachPreparationLine(
+            string sourceName, string destinationName, bool reverse,
+            bool dictionaryValues, bool dictionaryItems,
+            string sourcePath, int sourceLine, out Line line)
+        {
             line = null;
             if (!IsSimpleIdentifier(sourceName) || !IsSimpleIdentifier(destinationName))
                 return false;
+            if (dictionaryValues && dictionaryItems)
+                return false;
 
             line = new SortedForEachPreparationLine(
-                sourceName, destinationName, reverse, dictionaryValues, sourcePath, sourceLine);
+                sourceName, destinationName, reverse, dictionaryValues, dictionaryItems,
+                sourcePath, sourceLine);
             return true;
         }
 
@@ -4923,16 +4937,19 @@ namespace StoryAPI.Runtime
             private readonly string _destinationName;
             private readonly bool _reverse;
             private readonly bool _dictionaryValues;
+            private readonly bool _dictionaryItems;
             private readonly string _sourcePath;
             private readonly int _sourceLine;
 
             public SortedForEachPreparationLine(string sourceName, string destinationName,
-                bool reverse, bool dictionaryValues, string sourcePath, int sourceLine)
+                bool reverse, bool dictionaryValues, bool dictionaryItems,
+                string sourcePath, int sourceLine)
             {
                 _sourceName = sourceName;
                 _destinationName = destinationName;
                 _reverse = reverse;
                 _dictionaryValues = dictionaryValues;
+                _dictionaryItems = dictionaryItems;
                 _sourcePath = sourcePath;
                 _sourceLine = sourceLine;
             }
@@ -4948,7 +4965,15 @@ namespace StoryAPI.Runtime
                         throw new InvalidOperationException("sorted() requires a list or dictionary variable");
 
                     var sorted = new List<object>();
-                    if (_dictionaryValues)
+                    if (_dictionaryItems)
+                    {
+                        if (!(source is IDictionary itemsDictionary))
+                            throw new InvalidOperationException(
+                                "sorted(dictionary.items()) requires a dictionary variable");
+                        foreach (DictionaryEntry entry in itemsDictionary)
+                            sorted.Add(new object[] { entry.Key, entry.Value });
+                    }
+                    else if (_dictionaryValues)
                     {
                         if (!(source is IDictionary valuesDictionary))
                             throw new InvalidOperationException(
@@ -4975,26 +5000,30 @@ namespace StoryAPI.Runtime
 
                     if (sorted.Count > 1)
                     {
-                        bool strings = sorted[0] is string;
-                        bool numbers = IsNumericSortableScalar(sorted[0]);
+                        object firstSortValue = GetSortValue(sorted[0]);
+                        bool strings = firstSortValue is string;
+                        bool numbers = IsNumericSortableScalar(firstSortValue);
                         if (!strings && !numbers)
                             throw new InvalidOperationException(
-                                "sorted() supports homogeneous string or numeric lists only");
+                                "sorted() supports homogeneous string or numeric values/keys only");
 
                         for (int i = 1; i < sorted.Count; i++)
                         {
-                            if ((strings && !(sorted[i] is string)) ||
-                                (numbers && !IsNumericSortableScalar(sorted[i])))
+                            object sortValue = GetSortValue(sorted[i]);
+                            if ((strings && !(sortValue is string)) ||
+                                (numbers && !IsNumericSortableScalar(sortValue)))
                                 throw new InvalidOperationException(
-                                    "sorted() requires all items to have the same sortable scalar type");
+                                    "sorted() requires all sort values to have the same sortable scalar type");
                         }
 
                         sorted.Sort(delegate(object left, object right)
                         {
+                            object leftValue = GetSortValue(left);
+                            object rightValue = GetSortValue(right);
                             if (strings)
-                                return string.CompareOrdinal((string)left, (string)right);
-                            return Convert.ToDouble(left, CultureInfo.InvariantCulture).CompareTo(
-                                Convert.ToDouble(right, CultureInfo.InvariantCulture));
+                                return string.CompareOrdinal((string)leftValue, (string)rightValue);
+                            return Convert.ToDouble(leftValue, CultureInfo.InvariantCulture).CompareTo(
+                                Convert.ToDouble(rightValue, CultureInfo.InvariantCulture));
                         });
                         if (_reverse)
                             sorted.Reverse();
@@ -5013,6 +5042,18 @@ namespace StoryAPI.Runtime
                     Log.Warn("Could not prepare sorted() iteration for '" + _sourceName + "' at " +
                         _sourcePath + ":" + _sourceLine + ": " + e.GetBaseException().Message);
                 }
+            }
+
+            private object GetSortValue(object item)
+            {
+                if (_dictionaryItems)
+                {
+                    if (!(item is object[] pair) || pair.Length != 2)
+                        throw new InvalidOperationException(
+                            "sorted(dictionary.items()) produced an invalid key/value pair");
+                    return pair[0];
+                }
+                return item;
             }
 
             private static bool IsNumericSortableScalar(object value)

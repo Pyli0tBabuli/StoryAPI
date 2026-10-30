@@ -527,7 +527,7 @@ namespace StoryAPI.Scripting
             {
                 _out.Add(new CustomSpriteLine(_assets, image, variant, statement.Alias,
                                              statement.At, statement.ZOrder ?? 1,
-                                             statement.OnLayer ?? "master"));
+                                             statement.OnLayer ?? "master", statement.Behind));
                 return;
             }
 
@@ -542,7 +542,7 @@ namespace StoryAPI.Scripting
                 if (BaseSprites.IsPose(poseName))
                 {
                     _out.Add(new PoseLine(poseName, statement.At, statement.ZOrder ?? 1,
-                        statement.OnLayer ?? "master"));
+                        statement.OnLayer ?? "master", statement.Behind));
                     return;
                 }
             }
@@ -554,7 +554,7 @@ namespace StoryAPI.Scripting
             {
                 _out.Add(new NativeSpriteLine(image, statement.Alias ?? image,
                                               statement.At, statement.ZOrder ?? 1,
-                                              statement.OnLayer ?? "master"));
+                                              statement.OnLayer ?? "master", statement.Behind));
                 return;
             }
 
@@ -565,7 +565,8 @@ namespace StoryAPI.Scripting
             var showText = "show " + image +
                            (variant == null ? "" : " " + variant) +
                            (string.IsNullOrEmpty(statement.Alias) ? "" : " as " + statement.Alias) +
-                           (string.IsNullOrEmpty(statement.OnLayer) ? "" : " onlayer " + statement.OnLayer);
+                           (string.IsNullOrEmpty(statement.OnLayer) ? "" : " onlayer " + statement.OnLayer) +
+                           (statement.Behind.Count == 0 ? "" : " behind " + string.Join(", ", statement.Behind));
 
             var show = new Show(showText);
             show.ImageName = image;
@@ -578,6 +579,7 @@ namespace StoryAPI.Scripting
                 show.ZOrder = statement.ZOrder.Value;
                 show.HasZOrder = true;
             }
+            ArtInjector.ApplyBehind(show, statement.Behind);
 
             var line = new RenpyShow(string.Empty);
             line.show = show;

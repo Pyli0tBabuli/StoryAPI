@@ -129,6 +129,12 @@ removes the exact renderer when it owns that image. DDLC+'s native `Hide` instru
 has no layer field, so hiding unrelated images that were not created or registered by
 StoryAPI on non-default layers is not available through that game API yet.
 
+The `show` statement also supports Ren'Py's `behind` property:
+`show moon behind mary` or `show moon behind mary, mary2`. The image is placed behind
+the named tags on the same layer. The property can be combined with `as`, `at`,
+`onlayer`, `zorder`, and an inline `with` transition. StoryAPI retains the behind
+tags in its save record so the same ordering is restored after loading.
+
 ### Variable declarations and loop control
 
 StoryAPI supports a limited subset of Ren'Py variable declarations and loop statements:

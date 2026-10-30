@@ -22,6 +22,7 @@ namespace StoryAPI.Tests
             Run("digit-letter sprite attribute", TestDigitLetterSpriteAttribute);
             Run("inline image statement transitions", TestInlineImageStatementTransitions);
             Run("image statement layers", TestImageStatementLayers);
+            Run("show behind ordering", TestShowBehind);
             Run("sprite alias and position", TestSpriteAliasAndPosition);
             Run("define/default scalar declarations", TestVariableDeclarations);
             Run("runtime scalar initializer expressions", TestRuntimeExpressionDeclarations);
@@ -308,6 +309,54 @@ namespace StoryAPI.Tests
                 "label extra_scene_layer_text:\n" +
                 "    scene bg club_day onlayer master extra\n",
                 "one layer name");
+        }
+
+        private static void TestShowBehind()
+        {
+            var statements = Parse(
+                "label show_behind:\n" +
+                "    show moon behind mary, mary2 at center zorder 6 as moon_copy onlayer screens with dissolve\n" +
+                "    show june at left behind yuri\n" +
+                "    show monika\n" +
+                "    return\n");
+
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing show-behind statements.");
+            Check(label.Body.Count == 4, "Behind statements should preserve the line structure.");
+
+            var first = Require<ShowStatement>(label.Body[0],
+                "Expected a show statement with multiple behind tags.");
+            Check(first.Image == "moon" && first.Behind.Count == 2 &&
+                  first.Behind[0] == "mary" && first.Behind[1] == "mary2",
+                "The behind property should preserve every tag in source order.");
+            Check(first.At == "center" && first.ZOrder == 6 &&
+                  first.Alias == "moon_copy" && first.OnLayer == "screens" &&
+                  first.Transition == "dissolve",
+                "Behind should coexist with all other supported show properties.");
+
+            var second = Require<ShowStatement>(label.Body[1],
+                "Expected a show statement with a single behind tag.");
+            Check(second.Behind.Count == 1 && second.Behind[0] == "yuri" &&
+                  second.At == "left",
+                "A single behind tag should be retained.");
+
+            var plain = Require<ShowStatement>(label.Body[2],
+                "Expected a plain show statement.");
+            Check(plain.Behind.Count == 0,
+                "A show without behind must retain its existing behavior.");
+
+            ExpectSyntaxError(
+                "label missing_behind_tag:\n" +
+                "    show moon behind\n",
+                "Expected an image tag");
+            ExpectSyntaxError(
+                "label trailing_behind_comma:\n" +
+                "    show moon behind mary,\n",
+                "Expected an image tag");
+            ExpectSyntaxError(
+                "label duplicate_behind:\n" +
+                "    show moon behind mary behind yuri\n",
+                "only have one 'behind'");
         }
 
         private static void TestSpriteAliasAndPosition()

@@ -41,6 +41,8 @@ namespace StoryAPI.Runtime
 
         /// <summary>The Ren'Py display layer containing this image.</summary>
         public string Layer = "master";
+        /// <summary>Image tags the picture was shown behind.</summary>
+        public List<string> Behind = new List<string>();
 
         /// <summary>The transform a native picture was shown with.</summary>
         public string Transform;
@@ -70,6 +72,7 @@ namespace StoryAPI.Runtime
                 Variant = Variant,
                 Slot = Slot,
                 Layer = Layer,
+                Behind = Behind == null ? new List<string>() : new List<string>(Behind),
                 Transform = Transform,
                 At = At,
                 ZOrder = ZOrder,
@@ -171,7 +174,8 @@ namespace StoryAPI.Runtime
                     art.Transform, art.At, art.ZOrder.ToString(CultureInfo.InvariantCulture),
                     Number(art.X), Number(art.Y), Number(art.ScaleX), Number(art.ScaleY),
                     Number(art.Rotation), Number(art.Alpha),
-                    string.IsNullOrEmpty(art.Layer) ? "master" : art.Layer)).Append('\n');
+                    string.IsNullOrEmpty(art.Layer) ? "master" : art.Layer,
+                    art.Behind == null ? string.Empty : string.Join(",", art.Behind))).Append('\n');
 
                 foreach (var layer in art.Layers)
                 {
@@ -225,6 +229,7 @@ namespace StoryAPI.Runtime
                             Rotation = Float(fields, 13, 0f),
                             Alpha = Float(fields, 14, 1f),
                             Layer = string.IsNullOrEmpty(At(fields, 15)) ? "master" : At(fields, 15),
+                            Behind = ParseTags(At(fields, 16)),
                         };
                         screen.Art.Add(current);
                         break;
@@ -394,6 +399,18 @@ namespace StoryAPI.Runtime
             }
 
             return true;
+        }
+
+        private static List<string> ParseTags(string value)
+        {
+            var result = new List<string>();
+            if (string.IsNullOrWhiteSpace(value)) return result;
+            foreach (string tag in value.Split(','))
+            {
+                string trimmed = tag.Trim();
+                if (trimmed.Length > 0) result.Add(trimmed);
+            }
+            return result;
         }
 
         private static string Join(params string[] fields)

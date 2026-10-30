@@ -166,7 +166,7 @@ namespace StoryAPI.Runtime
         /// same way they do for a mod sprite.
         /// </summary>
         public static BasePose Show(string name, string at, int zOrder, float? x,
-            string layer = "master")
+            string layer = "master", IList<string> behind = null)
         {
             layer = string.IsNullOrEmpty(layer) ? "master" : layer;
             if (!GameBridge.TryLoadPrefab(name, out var prefab) || prefab == null)
@@ -185,12 +185,17 @@ namespace StoryAPI.Runtime
                 string imageName = separator > 0 ? name.Substring(0, separator) : name;
                 string variant = separator > 0 ? name.Substring(separator + 1) : string.Empty;
 
-                var show = new Show("show " + name);
+                string showText = "show " + name +
+                    (!string.IsNullOrEmpty(layer) && layer != "master" ? " onlayer " + layer : "") +
+                    " zorder " + zOrder +
+                    (behind == null || behind.Count == 0 ? "" : " behind " + string.Join(", ", behind));
+                var show = new Show(showText);
                 show.ImageName = imageName;
                 show.Variant = variant;
                 show.Layer = layer;
                 show.ZOrder = zOrder;
                 show.HasZOrder = true;
+                ArtInjector.ApplyBehind(show, behind);
 
                 // Keep a distinct slot key for the complete pose so StoryAPI's
                 // move/zoom/fade/layer helpers can refer to "monika 2a".
@@ -303,6 +308,7 @@ namespace StoryAPI.Runtime
                     Layer = layer,
                     At = at,
                     ZOrder = zOrder,
+                    Behind = behind == null ? new List<string>() : new List<string>(behind),
                 });
 
                 Log.Info("pose: built '" + name + "' with " + pose.Layers.Count +
@@ -376,19 +382,22 @@ namespace StoryAPI.Runtime
         private readonly string _at;
         private readonly int _zOrder;
         private readonly string _layer;
+        private readonly List<string> _behind;
 
-        public PoseLine(string name, string at, int zOrder, string layer = "master")
+        public PoseLine(string name, string at, int zOrder, string layer = "master",
+            IList<string> behind = null)
         {
             _name = name;
             _at = at;
             _zOrder = zOrder;
             _layer = string.IsNullOrEmpty(layer) ? "master" : layer;
+            _behind = behind == null ? new List<string>() : new List<string>(behind);
         }
 
         public void Apply(IContext context)
         {
             Log.Info("story: executing PoseLine");
-            BaseSprites.Show(_name, _at, _zOrder, HorizontalPosition(_at), _layer);
+            BaseSprites.Show(_name, _at, _zOrder, HorizontalPosition(_at), _layer, _behind);
         }
 
         internal static float? HorizontalPosition(string at)

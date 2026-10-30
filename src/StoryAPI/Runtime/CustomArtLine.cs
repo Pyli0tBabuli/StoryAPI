@@ -29,8 +29,11 @@ namespace StoryAPI.Runtime
         /// "j2", so the same picture can be shown twice and then moved or faded one copy
         /// at a time.
         /// </summary>
+        private readonly List<string> _behind;
+
         public CustomSpriteLine(StoryAssets assets, string name, string variant,
-            string slot, string at, int zOrder, string layer = "master")
+            string slot, string at, int zOrder, string layer = "master",
+            IList<string> behind = null)
         {
             _assets = assets;
             _name = name;
@@ -39,12 +42,13 @@ namespace StoryAPI.Runtime
             _at = at;
             _zOrder = zOrder;
             _layer = string.IsNullOrEmpty(layer) ? "master" : layer;
+            _behind = behind == null ? new List<string>() : new List<string>(behind);
         }
 
         public void Apply(IContext context)
         {
             Log.Info("story: executing " + GetType().Name);
-            ShowSprite(_assets, _name, _variant, _slot, _at, _zOrder, _layer);
+            ShowSprite(_assets, _name, _variant, _slot, _at, _zOrder, _layer, _behind);
         }
 
         /// <summary>
@@ -52,15 +56,23 @@ namespace StoryAPI.Runtime
         /// built, so drawing it again after a load is exactly the same work.
         /// </summary>
         internal static ActiveImage ShowSprite(StoryAssets assets, string name, string variant,
-            string slot, string at, int zOrder, string layer = "master")
+            string slot, string at, int zOrder, string layer = "master",
+            IList<string> behind = null)
         {
-            var show = new Show(string.Empty);
+            string showText = "show " + name +
+                (string.IsNullOrEmpty(variant) ? "" : " " + variant) +
+                (string.IsNullOrEmpty(slot) || slot == name ? "" : " as " + slot) +
+                (!string.IsNullOrEmpty(layer) && layer != "master" ? " onlayer " + layer : "") +
+                " zorder " + zOrder +
+                (behind == null || behind.Count == 0 ? "" : " behind " + string.Join(", ", behind));
+            var show = new Show(showText);
             show.ImageName = name;
             show.Variant = variant ?? string.Empty;
             layer = string.IsNullOrEmpty(layer) ? "master" : layer;
             show.Layer = layer;
             show.ZOrder = zOrder;
             show.HasZOrder = true;
+            ArtInjector.ApplyBehind(show, behind);
 
             // The slot is the name the picture is filed under. When a script says
             // "show june as j2", the two differ, and the engine only reads the slot
@@ -89,6 +101,7 @@ namespace StoryAPI.Runtime
                 At = at,
                 Layer = layer,
                 ZOrder = zOrder,
+                Behind = behind == null ? new List<string>() : new List<string>(behind),
             });
 
             return image;
@@ -178,21 +191,23 @@ namespace StoryAPI.Runtime
         private readonly string _transform;
         private readonly int _zOrder;
         private readonly string _layer;
+        private readonly List<string> _behind;
 
         public NativeSpriteLine(string image, string slot, string transform, int zOrder,
-            string layer = "master")
+            string layer = "master", IList<string> behind = null)
         {
             _image = image;
             _slot = string.IsNullOrEmpty(slot) ? image : slot;
             _transform = transform;
             _zOrder = zOrder;
             _layer = string.IsNullOrEmpty(layer) ? "master" : layer;
+            _behind = behind == null ? new List<string>() : new List<string>(behind);
         }
 
         public void Apply(IContext context)
         {
             Log.Info("story: executing " + GetType().Name);
-            ShowNative(_image, _slot, _transform, _zOrder, _layer);
+            ShowNative(_image, _slot, _transform, _zOrder, _layer, _behind);
         }
 
         /// <summary>
@@ -201,7 +216,7 @@ namespace StoryAPI.Runtime
         /// already finished and the saved placement is the truthful one.
         /// </summary>
         internal static bool ShowNative(string image, string slot, string transform, int zOrder,
-            string layer = "master")
+            string layer = "master", IList<string> behind = null)
         {
             if (!StoryAPI.Game.GameBridge.TryLoadNativeSprite(image, out var sprite) || sprite == null)
             {
@@ -209,13 +224,19 @@ namespace StoryAPI.Runtime
                 return false;
             }
 
-            var show = new Show("show " + image);
+            string showText = "show " + image +
+                (string.IsNullOrEmpty(slot) || slot == image ? "" : " as " + slot) +
+                (!string.IsNullOrEmpty(layer) && layer != "master" ? " onlayer " + layer : "") +
+                " zorder " + zOrder +
+                (behind == null || behind.Count == 0 ? "" : " behind " + string.Join(", ", behind));
+            var show = new Show(showText);
             show.ImageName = image;
             show.Variant = string.Empty;
             layer = string.IsNullOrEmpty(layer) ? "master" : layer;
             show.Layer = layer;
             show.ZOrder = zOrder;
             show.HasZOrder = true;
+            ArtInjector.ApplyBehind(show, behind);
 
             if (!string.IsNullOrEmpty(slot) && slot != image)
             {
@@ -234,6 +255,7 @@ namespace StoryAPI.Runtime
                 Layer = layer,
                 Transform = transform,
                 ZOrder = zOrder,
+                Behind = behind == null ? new List<string>() : new List<string>(behind),
             });
 
             return true;

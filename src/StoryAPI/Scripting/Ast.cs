@@ -61,6 +61,8 @@ namespace StoryAPI.Scripting
         public string At { get; set; }
         public string OnLayer { get; set; }
         public int? ZOrder { get; set; }
+        /// <summary>Image tags this image should be displayed behind, in Ren'Py order.</summary>
+        public List<string> Behind { get; } = new List<string>();
         /// <summary>Optional Ren'Py transition applied after this show operation.</summary>
         public string Transition { get; set; }
     }

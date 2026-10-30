@@ -34,7 +34,7 @@ label storyapi_stage63_collection_deletion_smoke:
         return
 
     $ del stage63_probe_reverse[stage63_probe_reverse_start:stage63_probe_reverse_stop:stage63_probe_reverse_step]
-    if len(stage63_probe_reverse) != 3 or stage63_probe_reverse[0] != 2 or stage63_probe_reverse[1] != 4 or stage63_probe_reverse[2] != 5:
+    if len(stage63_probe_reverse) != 3 or stage63_probe_reverse[0] != 1 or stage63_probe_reverse[1] != 2 or stage63_probe_reverse[2] != 4:
         _ "STORYAPI_DELETE_REVERSE_SLICE_FAIL"
         return
 

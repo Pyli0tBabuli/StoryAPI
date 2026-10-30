@@ -56,32 +56,36 @@ namespace StoryAPI.Runtime
         private static string ResolveSlotKey(string container, string layer)
         {
             if (string.IsNullOrEmpty(container)) return null;
-            if (s_sprites.ContainsKey(container)) return container;
 
-            string key = SlotKey(container, layer);
-            if (s_sprites.ContainsKey(key)) return key;
+            bool master = string.IsNullOrEmpty(layer) ||
+                string.Equals(layer, "master", StringComparison.OrdinalIgnoreCase);
+
+            // An explicit non-master request must never fall through to a same-named
+            // master image. This matters when a tag is simultaneously present on two
+            // layers: callers restoring/moving the screens copy must not select master.
+            if (!master)
+            {
+                string layeredKey = SlotKey(container, layer);
+                return s_sprites.ContainsKey(layeredKey) ? layeredKey : null;
+            }
+
+            if (s_sprites.ContainsKey(container)) return container;
 
             // Existing move/zoom/fade commands do not take an onlayer property. If a
             // tag exists on exactly one non-master layer, resolve that unique target;
             // when the same tag exists on multiple layers, refuse to guess.
-            if (string.IsNullOrEmpty(layer) ||
-                string.Equals(layer, "master", StringComparison.OrdinalIgnoreCase))
+            string match = null;
+            foreach (var pair in s_sprites)
             {
-                string match = null;
-                foreach (var pair in s_sprites)
-                {
-                    if (pair.Value?.Recipe == null ||
-                        !string.Equals(pair.Value.Recipe.Slot, container,
-                            StringComparison.OrdinalIgnoreCase))
-                        continue;
+                if (pair.Value?.Recipe == null ||
+                    !string.Equals(pair.Value.Recipe.Slot, container,
+                        StringComparison.OrdinalIgnoreCase))
+                    continue;
 
-                    if (match != null) return null;
-                    match = pair.Key;
-                }
-                return match;
+                if (match != null) return null;
+                match = pair.Key;
             }
-
-            return null;
+            return match;
         }
 
         private static string LayerOf(Show show)

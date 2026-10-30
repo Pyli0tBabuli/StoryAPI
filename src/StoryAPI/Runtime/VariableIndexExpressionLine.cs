@@ -1767,7 +1767,7 @@ namespace StoryAPI.Runtime
             {
                 cursor++;
                 SkipWhitespace(code, ref cursor);
-                if (!TryReadDictionaryGetDefault(code, ref cursor, out defaultValue))
+                if (!TryReadDictionaryMethodDefault(code, ref cursor, out defaultValue))
                     return false;
                 hasDefault = true;
                 SkipWhitespace(code, ref cursor);
@@ -1881,7 +1881,7 @@ namespace StoryAPI.Runtime
             {
                 cursor++;
                 SkipWhitespace(code, ref cursor);
-                if (!TryReadDictionaryGetDefault(code, ref cursor, out defaultValue))
+                if (!TryReadDictionaryMethodDefault(code, ref cursor, out defaultValue))
                     return false;
                 hasDefault = true;
                 SkipWhitespace(code, ref cursor);
@@ -1922,6 +1922,37 @@ namespace StoryAPI.Runtime
 
             key = new DynamicIndex(variableName);
             return true;
+        }
+
+        private static bool TryReadDictionaryMethodDefault(string code, ref int cursor,
+            out object value)
+        {
+            value = null;
+            if (cursor >= code.Length) return false;
+
+            if (IsIdentifierStart(code[cursor]))
+            {
+                int start = cursor++;
+                while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+                string token = code.Substring(start, cursor - start);
+
+                if (token == "True" || token == "False" || token == "None")
+                {
+                    cursor = start;
+                    return TryReadDictionaryGetDefault(code, ref cursor, out value);
+                }
+
+                if (token == "and" || token == "or" || token == "not" ||
+                    token == "is" || token == "in" || token == "if" ||
+                    token == "else" || token == "elif" || token == "for" ||
+                    token == "while" || token == "return" || token == "pass")
+                    return false;
+
+                value = new DynamicIndex(token);
+                return true;
+            }
+
+            return TryReadDictionaryGetDefault(code, ref cursor, out value);
         }
 
         private static bool TryReadDictionaryGetDefault(string code, ref int cursor,
@@ -2023,7 +2054,7 @@ namespace StoryAPI.Runtime
             {
                 cursor++;
                 SkipWhitespace(code, ref cursor);
-                if (!TryReadDictionaryGetDefault(code, ref cursor, out defaultValue))
+                if (!TryReadDictionaryMethodDefault(code, ref cursor, out defaultValue))
                     return false;
                 hasDefault = true;
                 SkipWhitespace(code, ref cursor);
@@ -4290,6 +4321,22 @@ namespace StoryAPI.Runtime
                 "dictionary method key must evaluate to a string");
         }
 
+        private static object ResolveDictionaryMethodDefault(object defaultValue, IContext context)
+        {
+            if (!(defaultValue is DynamicIndex dynamicDefault))
+                return defaultValue;
+
+            if (TryGetDynamicIndexValue(dynamicDefault.Name, context, out object scalarValue))
+                return scalarValue;
+
+            if (TryGetObjectBackedVariable(dynamicDefault.Name, context, out object objectValue))
+                return objectValue;
+
+            throw new InvalidOperationException(
+                "dictionary method default variable '" + dynamicDefault.Name +
+                "' could not be resolved to a supported value");
+        }
+
         private sealed class DictionarySetDefaultLine : Line, IApply
         {
             private readonly string _destinationName;
@@ -4319,6 +4366,9 @@ namespace StoryAPI.Runtime
                     if (context == null)
                         throw new InvalidOperationException("no live script context was available");
                     string key = ResolveDictionaryKey(_key, context);
+                    object defaultValue = _hasDefault
+                        ? ResolveDictionaryMethodDefault(_defaultValue, context)
+                        : null;
                     if (!TryGetObjectBackedVariable(_rootName, context, out object source) ||
                         !(source is IDictionary dictionary))
                         throw new InvalidOperationException("dict.setdefault() requires a dictionary target");
@@ -4329,7 +4379,7 @@ namespace StoryAPI.Runtime
 
                     object value = exists
                         ? dictionary[key]
-                        : (_hasDefault ? _defaultValue : null);
+                        : (_hasDefault ? defaultValue : null);
                     if (!GameBridge.TrySetVariableLiteral(_destinationName, value, false, context))
                         throw new InvalidOperationException(
                             "could not assign dict.setdefault() result to '" + _destinationName + "'");
@@ -4377,13 +4427,16 @@ namespace StoryAPI.Runtime
                     if (context == null)
                         throw new InvalidOperationException("no live script context was available");
                     string key = ResolveDictionaryKey(_key, context);
+                    object defaultValue = _hasDefault
+                        ? ResolveDictionaryMethodDefault(_defaultValue, context)
+                        : null;
                     if (!TryGetObjectBackedVariable(_rootName, context, out object source) ||
                         !(source is IDictionary dictionary))
                         throw new InvalidOperationException("dict.get() requires a dictionary target");
 
                     object value = dictionary.Contains(key)
                         ? dictionary[key]
-                        : (_hasDefault ? _defaultValue : null);
+                        : (_hasDefault ? defaultValue : null);
                     if (!GameBridge.TrySetVariableLiteral(_destinationName, value, false, context))
                         throw new InvalidOperationException(
                             "could not assign dict.get() result to '" + _destinationName + "'");
@@ -4428,6 +4481,9 @@ namespace StoryAPI.Runtime
                     if (context == null)
                         throw new InvalidOperationException("no live script context was available");
                     string key = ResolveDictionaryKey(_key, context);
+                    object defaultValue = _hasDefault
+                        ? ResolveDictionaryMethodDefault(_defaultValue, context)
+                        : null;
                     if (!TryGetObjectBackedVariable(_rootName, context, out object target) ||
                         !(target is IDictionary dictionary))
                         throw new InvalidOperationException("dict.pop() requires a dictionary target");
@@ -4439,7 +4495,7 @@ namespace StoryAPI.Runtime
                             throw new InvalidOperationException("dictionary key '" + key + "' was not found");
 
                         if (_destinationName != null &&
-                            !GameBridge.TrySetVariableLiteral(_destinationName, _defaultValue, false, context))
+                            !GameBridge.TrySetVariableLiteral(_destinationName, defaultValue, false, context))
                             throw new InvalidOperationException(
                                 "could not assign the dict.pop() default to '" + _destinationName + "'");
 

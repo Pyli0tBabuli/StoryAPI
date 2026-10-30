@@ -4763,7 +4763,10 @@ namespace StoryAPI.Runtime
                 return list[index];
             }
 
-            throw new InvalidOperationException("value is not a list or dictionary");
+            if (current is string text)
+                return ReadStringItem(text, key);
+
+            throw new InvalidOperationException("value is not a list, dictionary, or string");
         }
 
         public static bool TryCreateForEachPreparationLine(string sourceName, string destinationName,
@@ -6026,6 +6029,21 @@ namespace StoryAPI.Runtime
             return true;
         }
 
+        private static string ReadStringItem(string text, object key)
+        {
+            if (!TryConvertListIndex(key, out int index))
+                throw new InvalidOperationException("a string index must evaluate to an integer");
+
+            // Match Python string indexing: count Unicode code points, not UTF-16 code units.
+            List<object> characters = CreateStringIterationItems(text);
+            if (index < 0) index += characters.Count;
+            if (index < 0 || index >= characters.Count)
+                throw new IndexOutOfRangeException("string index " + index +
+                    " is outside the valid range");
+
+            return (string)characters[index];
+        }
+
         public void Apply(IContext context)
         {
             if (_state == null || (!_isTemporary && _state.Initialized) || _state.Failed) return;
@@ -6037,7 +6055,7 @@ namespace StoryAPI.Runtime
 
                 if (!TryGetObjectBackedVariable(_rootName, context, out object current))
                     throw new InvalidOperationException("base variable '" + _rootName +
-                        "' does not contain an object-backed list or dictionary");
+                        "' does not contain an object-backed list, dictionary, or string");
 
                 foreach (object key in _indices)
                 {
@@ -6067,9 +6085,14 @@ namespace StoryAPI.Runtime
                                 " is outside the valid range");
                         current = list[index];
                     }
+                    else if (current is string text)
+                    {
+                        current = ReadStringItem(text, resolvedKey);
+                    }
                     else
                     {
-                        throw new InvalidOperationException("value is not a list or dictionary");
+                        throw new InvalidOperationException(
+                            "value is not a list, dictionary, or string");
                     }
                 }
 

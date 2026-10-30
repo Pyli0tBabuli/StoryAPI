@@ -147,12 +147,16 @@ Collection initialization and index reads such as
 `define first_item = starting_points[0]`,
 `define item_count = settings["count"]`, and
 `define nested_item = items[2]["nested"]` use StoryAPI's restricted runtime index reader.
-Literal index keys are integers for lists or quoted strings for dictionaries. Dynamic list
-indexes and variable dictionary keys are also supported when they use a restricted scalar
-expression, for example `define selected = inventory[selected_index]`,
+Integer indexes read list elements or string characters, while quoted string keys read
+dictionary values. String indexes follow Python semantics: negative indexes count backward from
+the end, and each index selects one Unicode code point (so a supplementary character such as an
+emoji is not split into UTF-16 halves). Dynamic list and string indexes and variable dictionary
+keys are also supported when they use a restricted scalar expression, for example
+`define selected = inventory[selected_index]`,
+`define selected_letter = message[character_index]`,
 `define next_item = inventory[selected_index + 1]`, or
 `define selected_setting = settings[key_name]`. StoryAPI evaluates dynamic index expressions
-with DDLC+'s scalar evaluator first, then performs the collection lookup; list indexes must
+with DDLC+'s scalar evaluator first, then performs the lookup; list and string indexes must
 evaluate to integers and dynamic dictionary keys must evaluate to strings. Index reads can also
 be combined with scalar arithmetic, comparisons, and logical operators, for example
 `define bonus = inventory[0] * 2`, `define total = inventory[0] + inventory[1]`, or

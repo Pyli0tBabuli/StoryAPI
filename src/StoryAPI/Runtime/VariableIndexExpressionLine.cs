@@ -37,11 +37,13 @@ namespace StoryAPI.Runtime
 
         private sealed class SequenceSlice
         {
-            public int? Start { get; }
-            public int? Stop { get; }
-            public int? Step { get; }
+            // A bound is either an integer literal, a DynamicIndex variable reference,
+            // or null when that part of the slice is omitted.
+            public object Start { get; }
+            public object Stop { get; }
+            public object Step { get; }
 
-            public SequenceSlice(int? start, int? stop, int? step)
+            public SequenceSlice(object start, object stop, object step)
             {
                 Start = start;
                 Stop = stop;
@@ -347,10 +349,14 @@ namespace StoryAPI.Runtime
                 CultureInfo.InvariantCulture, out number))
                 return true;
 
-            return TryParseSequenceSlice(trimmed, out _);
+            // Variable-bound slices are treated as supported read chains here. Their
+            // values are resolved by the temporary reader at runtime, not by the game
+            // expression evaluator.
+            return TryParseSequenceSlice(trimmed, true, out _);
         }
 
-        private static bool TryParseSequenceSlice(string expression, out SequenceSlice slice)
+        private static bool TryParseSequenceSlice(string expression,
+            bool allowDynamicBounds, out SequenceSlice slice)
         {
             slice = null;
             if (string.IsNullOrWhiteSpace(expression) || expression.IndexOf(':') < 0)
@@ -360,32 +366,44 @@ namespace StoryAPI.Runtime
             if (parts.Length < 2 || parts.Length > 3)
                 return false;
 
-            int? start;
-            int? stop;
-            int? step = null;
-            if (!TryParseOptionalSliceBound(parts[0], out start) ||
-                !TryParseOptionalSliceBound(parts[1], out stop))
+            object start;
+            object stop;
+            object step = null;
+            if (!TryParseOptionalSliceBound(parts[0], allowDynamicBounds, out start) ||
+                !TryParseOptionalSliceBound(parts[1], allowDynamicBounds, out stop))
                 return false;
 
-            if (parts.Length == 3 && !TryParseOptionalSliceBound(parts[2], out step))
+            if (parts.Length == 3 &&
+                !TryParseOptionalSliceBound(parts[2], allowDynamicBounds, out step))
                 return false;
 
             slice = new SequenceSlice(start, stop, step);
             return true;
         }
 
-        private static bool TryParseOptionalSliceBound(string expression, out int? value)
+        private static bool TryParseOptionalSliceBound(string expression,
+            bool allowDynamicBounds, out object value)
         {
             value = null;
             string trimmed = expression == null ? string.Empty : expression.Trim();
             if (trimmed.Length == 0) return true;
 
-            if (!int.TryParse(trimmed, NumberStyles.Integer,
+            if (int.TryParse(trimmed, NumberStyles.Integer,
                 CultureInfo.InvariantCulture, out int parsed))
-                return false;
+            {
+                value = parsed;
+                return true;
+            }
 
-            value = parsed;
-            return true;
+            if (allowDynamicBounds && IsSimpleIdentifier(trimmed) &&
+                trimmed != "True" && trimmed != "False" && trimmed != "None" &&
+                trimmed != "and" && trimmed != "or" && trimmed != "not")
+            {
+                value = new DynamicIndex(trimmed);
+                return true;
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -4799,6 +4817,31 @@ namespace StoryAPI.Runtime
             return value;
         }
 
+        private static SequenceSlice ResolveSequenceSlice(SequenceSlice slice, IContext context)
+        {
+            return new SequenceSlice(
+                ResolveSliceBound(slice.Start, "start", context),
+                ResolveSliceBound(slice.Stop, "stop", context),
+                ResolveSliceBound(slice.Step, "step", context));
+        }
+
+        private static int? ResolveSliceBound(object bound, string name, IContext context)
+        {
+            if (bound == null) return null;
+
+            object value = bound;
+            if (bound is DynamicIndex dynamicIndex &&
+                !TryGetDynamicIndexValue(dynamicIndex.Name, context, out value))
+                throw new InvalidOperationException(
+                    "slice " + name + " variable '" + dynamicIndex.Name + "' was not a supported scalar");
+
+            if (!TryConvertListIndex(value, out int index))
+                throw new InvalidOperationException("slice " + name +
+                    " must evaluate to an integer within the 32-bit range");
+
+            return index;
+        }
+
         private static object ReadSequenceSlice(object current, SequenceSlice slice)
         {
             List<object> values;
@@ -4820,7 +4863,7 @@ namespace StoryAPI.Runtime
                     "slice target is not a list or string");
             }
 
-            int step = slice.Step ?? 1;
+            int step = slice.Step == null ? 1 : (int)slice.Step;
             if (step == 0)
                 throw new InvalidOperationException("slice step cannot be zero");
 
@@ -4829,8 +4872,8 @@ namespace StoryAPI.Runtime
             long stop;
             if (step > 0)
             {
-                start = slice.Start ?? 0;
-                stop = slice.Stop ?? length;
+                start = slice.Start == null ? 0 : (int)slice.Start;
+                stop = slice.Stop == null ? length : (int)slice.Stop;
                 if (start < 0) start += length;
                 if (stop < 0) stop += length;
                 start = Math.Max(0, Math.Min(start, length));
@@ -4838,10 +4881,10 @@ namespace StoryAPI.Runtime
             }
             else
             {
-                start = slice.Start ?? (length - 1);
-                stop = slice.Stop ?? -1;
-                if (slice.Start.HasValue && start < 0) start += length;
-                if (slice.Stop.HasValue && stop < 0) stop += length;
+                start = slice.Start == null ? (length - 1) : (int)slice.Start;
+                stop = slice.Stop == null ? -1 : (int)slice.Stop;
+                if (slice.Start != null && start < 0) start += length;
+                if (slice.Stop != null && stop < 0) stop += length;
                 start = Math.Max(-1, Math.Min(start, length - 1));
                 stop = Math.Max(-1, Math.Min(stop, length - 1));
             }
@@ -5856,7 +5899,7 @@ namespace StoryAPI.Runtime
             }
 
             SequenceSlice slice;
-            if (TryParseSequenceSlice(trimmed, out slice))
+            if (TryParseSequenceSlice(trimmed, allowDynamicIndexes, out slice))
             {
                 key = slice;
                 return true;
@@ -6193,6 +6236,10 @@ namespace StoryAPI.Runtime
                         !TryGetDynamicIndexValue(dynamicIndex.Name, context, out resolvedKey))
                         throw new InvalidOperationException("dynamic index '" + dynamicIndex.Name +
                             "' was not a supported scalar value");
+
+                    SequenceSlice sequenceSlice = key as SequenceSlice;
+                    if (sequenceSlice != null)
+                        resolvedKey = ResolveSequenceSlice(sequenceSlice, context);
 
                     current = ReadContainerItem(current, resolvedKey);
                 }

@@ -39,6 +39,9 @@ namespace StoryAPI.Runtime
         /// <summary>The display slot the picture occupies.</summary>
         public string Slot;
 
+        /// <summary>The Ren'Py display layer containing this image.</summary>
+        public string Layer = "master";
+
         /// <summary>The transform a native picture was shown with.</summary>
         public string Transform;
 
@@ -66,6 +69,7 @@ namespace StoryAPI.Runtime
                 Source = Source,
                 Variant = Variant,
                 Slot = Slot,
+                Layer = Layer,
                 Transform = Transform,
                 At = At,
                 ZOrder = ZOrder,
@@ -166,7 +170,8 @@ namespace StoryAPI.Runtime
                 text.Append(Join("art", art.Kind, art.Mod, art.Source, art.Variant, art.Slot,
                     art.Transform, art.At, art.ZOrder.ToString(CultureInfo.InvariantCulture),
                     Number(art.X), Number(art.Y), Number(art.ScaleX), Number(art.ScaleY),
-                    Number(art.Rotation), Number(art.Alpha))).Append('\n');
+                    Number(art.Rotation), Number(art.Alpha),
+                    string.IsNullOrEmpty(art.Layer) ? "master" : art.Layer)).Append('\n');
 
                 foreach (var layer in art.Layers)
                 {
@@ -219,6 +224,7 @@ namespace StoryAPI.Runtime
                             ScaleY = Float(fields, 12, 1f),
                             Rotation = Float(fields, 13, 0f),
                             Alpha = Float(fields, 14, 1f),
+                            Layer = string.IsNullOrEmpty(At(fields, 15)) ? "master" : At(fields, 15),
                         };
                         screen.Art.Add(current);
                         break;

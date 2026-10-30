@@ -473,20 +473,27 @@ namespace StoryAPI.Scripting
 
         private void EmitScene(SceneStatement statement)
         {
+            string layer = string.IsNullOrEmpty(statement.OnLayer) ? "master" : statement.OnLayer;
             EmitImageStatementWith(statement.Transition, statement.Line, () =>
             {
-                if (_assets.IsCustomImage(statement.Image))
+                if (string.IsNullOrEmpty(statement.Image))
                 {
-                    _out.Add(new CustomBackgroundLine(_assets, statement.Image));
+                    // A bare "scene onlayer X" only clears that layer. DDLC+'s native
+                    // text-based Scene line is not reliable for an empty image name, so
+                    // use the same RenPy image-manager API as StoryAPI's custom scenes.
+                    _out.Add(new LayeredSceneClearLine(layer));
+                }
+                else if (_assets.IsCustomImage(statement.Image))
+                {
+                    _out.Add(new CustomBackgroundLine(_assets, statement.Image, layer));
                 }
                 else
                 {
-                    // The name is written out as it stands. The game names its backgrounds
-                    // in two words ("bg club_day") and its plain colours in one ("black"),
-                    // and which of the two a name is only known from the game's own block
-                    // table, which does not exist yet at compile time. The layer is added
-                    // when the mod is registered.
-                    _out.Add(new RenpyScene("scene " + statement.Image));
+                    // The game scene instruction owns the layer clearing behavior. Keep the
+                    // onlayer clause in the native command so the game clears only that layer.
+                    string command = "scene " + statement.Image +
+                        (string.IsNullOrEmpty(statement.OnLayer) ? "" : " onlayer " + layer);
+                    _out.Add(new RenpyScene(command));
                 }
             });
         }
@@ -519,7 +526,8 @@ namespace StoryAPI.Scripting
             if (_assets.IsCustomImage(variant == null ? image : image + " " + variant))
             {
                 _out.Add(new CustomSpriteLine(_assets, image, variant, statement.Alias,
-                                             statement.At, statement.ZOrder ?? 1));
+                                             statement.At, statement.ZOrder ?? 1,
+                                             statement.OnLayer ?? "master"));
                 return;
             }
 
@@ -533,7 +541,8 @@ namespace StoryAPI.Scripting
                 string poseName = image + " " + variant;
                 if (BaseSprites.IsPose(poseName))
                 {
-                    _out.Add(new PoseLine(poseName, statement.At, statement.ZOrder ?? 1));
+                    _out.Add(new PoseLine(poseName, statement.At, statement.ZOrder ?? 1,
+                        statement.OnLayer ?? "master"));
                     return;
                 }
             }
@@ -544,7 +553,8 @@ namespace StoryAPI.Scripting
             if (!string.IsNullOrEmpty(statement.At) && !IsPosition(statement.At))
             {
                 _out.Add(new NativeSpriteLine(image, statement.Alias ?? image,
-                                              statement.At, statement.ZOrder ?? 1));
+                                              statement.At, statement.ZOrder ?? 1,
+                                              statement.OnLayer ?? "master"));
                 return;
             }
 
@@ -554,12 +564,13 @@ namespace StoryAPI.Scripting
             // writes it, rather than assembled from fields.
             var showText = "show " + image +
                            (variant == null ? "" : " " + variant) +
-                           (string.IsNullOrEmpty(statement.Alias) ? "" : " as " + statement.Alias);
+                           (string.IsNullOrEmpty(statement.Alias) ? "" : " as " + statement.Alias) +
+                           (string.IsNullOrEmpty(statement.OnLayer) ? "" : " onlayer " + statement.OnLayer);
 
             var show = new Show(showText);
             show.ImageName = image;
             show.Variant = variant ?? string.Empty;
-            show.Layer = "master";
+            show.Layer = string.IsNullOrEmpty(statement.OnLayer) ? "master" : statement.OnLayer;
             show.AllowAutoFocus = true;
 
             if (statement.ZOrder.HasValue)
@@ -576,6 +587,17 @@ namespace StoryAPI.Scripting
 
         private void EmitHideCore(HideStatement statement)
         {
+            string layer = string.IsNullOrEmpty(statement.OnLayer) ? "master" : statement.OnLayer;
+
+            // The DDLC+ Hide DTO does not expose a layer member (unlike Show and Scene).
+            // For non-master layers, hide the StoryAPI-owned renderer in that exact layer
+            // instead of silently attempting a master-layer Hide or dropping the command.
+            if (!string.Equals(layer, "master", StringComparison.OrdinalIgnoreCase))
+            {
+                _out.Add(new LayeredHideLine(statement.Image, layer));
+                return;
+            }
+
             var hide = new Hide(string.Empty, false, false);
             hide.Name = statement.Image;
 

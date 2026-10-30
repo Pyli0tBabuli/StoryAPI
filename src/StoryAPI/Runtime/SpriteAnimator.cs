@@ -37,6 +37,159 @@ namespace StoryAPI.Runtime
         private static readonly Dictionary<string, SpriteHandle> s_sprites =
             new Dictionary<string, SpriteHandle>(StringComparer.OrdinalIgnoreCase);
 
+        private const string SlotKeySeparator = "\u001f";
+
+        /// <summary>
+        /// The same image tag can exist on different Ren'Py layers. Keep StoryAPI's
+        /// renderer/animation/save bookkeeping scoped by layer while still asking the
+        /// game's image manager for the original tag within the selected layer.
+        /// </summary>
+        internal static string SlotKey(string container, string layer)
+        {
+            if (string.IsNullOrEmpty(container)) return container;
+            if (string.IsNullOrEmpty(layer) ||
+                string.Equals(layer, "master", StringComparison.OrdinalIgnoreCase))
+                return container;
+            return layer + SlotKeySeparator + container;
+        }
+
+        private static string ResolveSlotKey(string container, string layer)
+        {
+            if (string.IsNullOrEmpty(container)) return null;
+
+            bool master = string.IsNullOrEmpty(layer) ||
+                string.Equals(layer, "master", StringComparison.OrdinalIgnoreCase);
+
+            // An explicit non-master request must never fall through to a same-named
+            // master image. This matters when a tag is simultaneously present on two
+            // layers: callers restoring/moving the screens copy must not select master.
+            if (!master)
+            {
+                string layeredKey = SlotKey(container, layer);
+                return s_sprites.ContainsKey(layeredKey) ? layeredKey : null;
+            }
+
+            if (s_sprites.ContainsKey(container)) return container;
+
+            // Existing move/zoom/fade commands do not take an onlayer property. If a
+            // tag exists on exactly one non-master layer, resolve that unique target;
+            // when the same tag exists on multiple layers, refuse to guess.
+            string match = null;
+            foreach (var pair in s_sprites)
+            {
+                if (pair.Value?.Recipe == null ||
+                    !string.Equals(pair.Value.Recipe.Slot, container,
+                        StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                if (match != null) return null;
+                match = pair.Key;
+            }
+            return match;
+        }
+
+        private static string LayerOf(Show show)
+        {
+            return string.IsNullOrEmpty(show?.Layer) ? "master" : show.Layer;
+        }
+
+        private static string LayerOf(Scene scene)
+        {
+            if (scene == null) return "master";
+            try
+            {
+                var property = scene.GetType().GetProperty("Layer",
+                    BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                object value = property == null ? null : property.GetValue(scene, null);
+                if (value == null)
+                {
+                    var field = scene.GetType().GetField("Layer",
+                        BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic);
+                    value = field == null ? null : field.GetValue(scene);
+                }
+                return string.IsNullOrEmpty(value as string) ? "master" : (string)value;
+            }
+            catch
+            {
+                return "master";
+            }
+        }
+
+        internal static bool TrySetLayer(object target, string layer)
+        {
+            if (target == null || string.IsNullOrEmpty(layer)) return false;
+            // Master is the engine default even on game builds whose Scene wrapper does
+            // not expose a writable Layer member.
+            if (string.Equals(layer, "master", StringComparison.OrdinalIgnoreCase)) return true;
+            Type type = target.GetType();
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+
+            try
+            {
+                bool assigned = false;
+                var property = type.GetProperty("Layer", flags);
+                if (property != null)
+                {
+                    if (property.CanWrite)
+                    {
+                        property.SetValue(target, layer, null);
+                        assigned = true;
+                    }
+                    else
+                    {
+                        var backing = type.GetField("<Layer>k__BackingField", flags);
+                        if (backing != null)
+                        {
+                            backing.SetValue(target, layer);
+                            assigned = true;
+                        }
+                    }
+                }
+
+                if (!assigned)
+                {
+                    var field = type.GetField("Layer", flags);
+                    if (field != null && field.FieldType == typeof(string))
+                    {
+                        field.SetValue(target, layer);
+                        assigned = true;
+                    }
+                }
+
+                if (!assigned) return false;
+
+                // Scene tracks HasLayer separately from the Layer text. Setting only the
+                // backing string leaves Scene.OnScene treating it as an unlayered scene.
+                var hasLayer = type.GetProperty("HasLayer", flags);
+                if (hasLayer != null && hasLayer.CanWrite && hasLayer.PropertyType == typeof(bool))
+                {
+                    hasLayer.SetValue(target, true, null);
+                }
+                else
+                {
+                    var hasLayerBacking = type.GetField("<HasLayer>k__BackingField", flags);
+                    if (hasLayerBacking != null && hasLayerBacking.FieldType == typeof(bool))
+                    {
+                        hasLayerBacking.SetValue(target, true);
+                    }
+                    else
+                    {
+                        var hasLayerField = type.GetField("HasLayer", flags);
+                        if (hasLayerField != null && hasLayerField.FieldType == typeof(bool))
+                            hasLayerField.SetValue(target, true);
+                    }
+                }
+
+                return true;
+            }
+            catch (Exception e)
+            {
+                Log.Warn("Could not set image layer '" + layer + "' on " +
+                    type.FullName + ": " + e.GetBaseException().Message);
+                return false;
+            }
+        }
+
         private sealed class SpriteHandle
         {
             public Transform Renderer;
@@ -72,11 +225,42 @@ namespace StoryAPI.Runtime
             }
         }
 
+        /// <summary>
+        /// Clear a Ren'Py display layer without adding a background image.
+        /// Using the image manager directly avoids routing the empty "scene onlayer"
+        /// form through DDLC+'s text-based Scene instruction parser.
+        /// </summary>
+        internal static bool ClearLayer(string layer)
+        {
+            layer = string.IsNullOrEmpty(layer) ? "master" : layer;
+            var scene = new Scene(string.Empty);
+            if (!TrySetLayer(scene, layer))
+            {
+                Log.Warn("scene: the DDLC+ Scene data cannot select layer '" + layer + "'");
+                return false;
+            }
+
+            try
+            {
+                Renpy.Images.OnScene(scene);
+                Log.Info("scene: cleared layer '" + layer + "'");
+                return true;
+            }
+            catch (Exception e)
+            {
+                Log.Error("Could not clear display layer '" + layer + "': " +
+                    e.GetBaseException().Message);
+                return false;
+            }
+        }
+
         /// <summary>Swap in the mod's sprite, replacing whatever was drawn before.</summary>
         internal static ActiveImage Draw(StoryImage source, string container, Show show, Scene scene, float? x = null)
         {
             if (source == null || !source.TryLoad()) return null;
 
+            string layer = scene != null ? LayerOf(scene) : LayerOf(show);
+            string slotKey = SlotKey(container, layer);
             ActiveImage image = EnsureImage(container, show, scene);
             if (image == null || image.Object == null) return null;
 
@@ -106,15 +290,16 @@ namespace StoryAPI.Runtime
 
                 renderer.transform.SetParent(image.Object.transform, worldPositionStays: false);
 
-                Remember(container, renderer.transform, image, new SavedArt
+                Remember(slotKey, renderer.transform, image, new SavedArt
                 {
                     Kind = SavedArt.Sprite,
                     Mod = source.Mod,
                     Source = source.Name,
                     Slot = container,
+                    Layer = layer,
                 });
                 Place(image);
-                SetPosition(container, x ?? 0.5f, 0.5f);
+                SetPosition(slotKey, x ?? 0.5f, 0.5f);
                 return image;
             }
             catch (Exception e)
@@ -135,14 +320,15 @@ namespace StoryAPI.Runtime
         {
             if (prefab == null) return null;
 
+            string layer = LayerOf(show);
+            string slotKey = SlotKey(container, layer);
             ActiveImage image = EnsureImage(container, show, null);
             if (image == null || image.Object == null) return null;
 
             try
             {
-                // Any earlier version of this pose is taken off the screen first, so that
-                // showing the same pose twice does not stack two copies.
-                DestroyHosted(container);
+                // Any earlier version of this pose in the same layer is replaced.
+                DestroyHosted(container, layer);
 
                 var instance = UnityEngine.Object.Instantiate(prefab);
 
@@ -161,16 +347,17 @@ namespace StoryAPI.Runtime
                 // StoryAPI hosts the prefab directly, so it must explicitly enable the root.
                 instance.SetActive(true);
 
-                Remember(container, instance.transform, image, new SavedArt
+                Remember(slotKey, instance.transform, image, new SavedArt
                 {
                     Kind = SavedArt.Pose,
                     Source = container,
                     Slot = container,
+                    Layer = layer,
                 });
-                s_hosted[container] = instance;
+                s_hosted[slotKey] = instance;
 
                 Place(image);
-                SetPosition(container, x ?? 0.5f, 0.5f);
+                SetPosition(slotKey, x ?? 0.5f, 0.5f);
                 return image;
             }
             catch (Exception e)
@@ -184,23 +371,25 @@ namespace StoryAPI.Runtime
             new Dictionary<string, GameObject>(StringComparer.OrdinalIgnoreCase);
 
         /// <summary>The object instantiated for a hosted pose, if there is one.</summary>
-        internal static GameObject Hosted(string container, GameObject prefab = null)
+        internal static GameObject Hosted(string container, GameObject prefab = null,
+            string layer = "master")
         {
             GameObject instance;
-            if (container != null && s_hosted.TryGetValue(container, out instance) && instance != null)
-            {
+            string key = ResolveSlotKey(container, layer);
+            if (key == null) key = SlotKey(container, layer);
+            if (key != null && s_hosted.TryGetValue(key, out instance) && instance != null)
                 return instance;
-            }
             return prefab;
         }
 
         /// <summary>Tear down a hosted pose and forget it.</summary>
-        private static void DestroyHosted(string container)
+        private static void DestroyHosted(string container, string layer)
         {
             GameObject instance;
-            if (container == null || !s_hosted.TryGetValue(container, out instance)) return;
+            string key = SlotKey(container, layer);
+            if (container == null || !s_hosted.TryGetValue(key, out instance)) return;
 
-            s_hosted.Remove(container);
+            s_hosted.Remove(key);
             if (instance == null) return;
 
             try { UnityEngine.Object.Destroy(instance); }
@@ -220,6 +409,8 @@ namespace StoryAPI.Runtime
         {
             if (sprite == null) return null;
 
+            string layer = LayerOf(show);
+            string slotKey = SlotKey(container, layer);
             ActiveImage image = EnsureImage(container, show, null);
             if (image == null || image.Object == null) return null;
 
@@ -298,11 +489,12 @@ namespace StoryAPI.Runtime
                              " by the game (from " + sprite.rect.width + "x" +
                              sprite.rect.height + " pixels)");
                 }
-                Remember(container, renderer.transform, image, new SavedArt
+                Remember(slotKey, renderer.transform, image, new SavedArt
                 {
                     Kind = SavedArt.Native,
                     Source = container,
                     Slot = container,
+                    Layer = layer,
                     Transform = transformName,
                 });
                 return image;
@@ -377,7 +569,9 @@ namespace StoryAPI.Runtime
         internal static void SetRecipe(string container, SavedArt recipe)
         {
             if (string.IsNullOrEmpty(container) || recipe == null) return;
-            if (s_sprites.TryGetValue(container, out var handle) && handle != null)
+            string key = SlotKey(container,
+                string.IsNullOrEmpty(recipe.Layer) ? "master" : recipe.Layer);
+            if (s_sprites.TryGetValue(key, out var handle) && handle != null)
             {
                 handle.Recipe = recipe;
             }
@@ -403,7 +597,6 @@ namespace StoryAPI.Runtime
                 if (!handle.Renderer.gameObject.activeInHierarchy) continue;
 
                 var saved = handle.Recipe.Clone();
-                saved.Slot = pair.Key;
 
                 saved.X = handle.Renderer.localPosition.x / ScreenWidth + 0.5f;
                 saved.Y = handle.Renderer.localPosition.y / ScreenHeight + 0.5f;
@@ -418,7 +611,7 @@ namespace StoryAPI.Runtime
                 if (saved.Kind == SavedArt.Pose)
                 {
                     for (int i = saved.Layers.Count - 1; i >= 0; i--) saved.Layers.RemoveAt(i);
-                    var pose = BaseSprites.Find(saved.Slot);
+                    var pose = BaseSprites.Find(saved.Slot, saved.Layer);
                     if (pose != null)
                     {
                         foreach (var layer in pose.Overrides)
@@ -464,7 +657,7 @@ namespace StoryAPI.Runtime
                         }
 
                         if (CustomSpriteLine.ShowSprite(assets, saved.Source, saved.Variant,
-                                saved.Slot, saved.At, saved.ZOrder) == null) return false;
+                                saved.Slot, saved.At, saved.ZOrder, saved.Layer) == null) return false;
                         break;
                     }
 
@@ -478,7 +671,8 @@ namespace StoryAPI.Runtime
                             return false;
                         }
 
-                        if (CustomBackgroundLine.ShowScene(assets, saved.Source) == null) return false;
+                        if (CustomBackgroundLine.ShowScene(assets, saved.Source,
+                                saved.Layer) == null) return false;
                         break;
                     }
 
@@ -488,20 +682,21 @@ namespace StoryAPI.Runtime
                         // movement that had already finished, and starting it over would
                         // make the picture jump back to where it began.
                         if (!NativeSpriteLine.ShowNative(saved.Source, saved.Slot, null,
-                                saved.ZOrder)) return false;
+                                saved.ZOrder, saved.Layer)) return false;
                         break;
                     }
 
                     case SavedArt.Pose:
                     {
-                        if (BaseSprites.Show(saved.Source, saved.At, saved.ZOrder, saved.X) == null)
+                        if (BaseSprites.Show(saved.Source, saved.At, saved.ZOrder,
+                                saved.X, saved.Layer) == null)
                         {
                             return false;
                         }
 
                         foreach (var layer in saved.Layers)
                         {
-                            BaseSprites.SetLayer(saved.Source, layer.Layer, layer.Asset);
+                            BaseSprites.SetLayer(saved.Source, layer.Layer, layer.Asset, saved.Layer);
                         }
                         break;
                     }
@@ -523,7 +718,7 @@ namespace StoryAPI.Runtime
         /// <summary>Put a picture back where the save says it was.</summary>
         private static void ApplyPose(SavedArt saved)
         {
-            var renderer = RendererFor(saved.Slot);
+            var renderer = RendererFor(saved.Slot, saved.Layer);
             if (renderer != null)
             {
                 renderer.localPosition = new Vector3(
@@ -532,7 +727,7 @@ namespace StoryAPI.Runtime
                 renderer.localRotation = Quaternion.Euler(0f, 0f, -saved.Rotation);
             }
 
-            var image = ImageFor(saved.Slot);
+            var image = ImageFor(saved.Slot, saved.Layer);
             if (image == null) return;
 
             image.SetZOrder(saved.ZOrder);
@@ -543,14 +738,106 @@ namespace StoryAPI.Runtime
             data.Alpha = Mathf.Clamp01(saved.Alpha);
         }
 
-        public static void Forget(string container)
+        public static void Forget(string container, string layer = "master")
         {
-            if (!string.IsNullOrEmpty(container)) s_sprites.Remove(container);
+            string key = ResolveSlotKey(container, layer);
+            if (key != null) s_sprites.Remove(key);
+
+            string hostedKey = SlotKey(container, layer);
+            if (s_hosted.TryGetValue(hostedKey, out var hosted))
+            {
+                s_hosted.Remove(hostedKey);
+                if (hosted != null)
+                {
+                    try { UnityEngine.Object.Destroy(hosted); } catch (Exception) { }
+                }
+            }
+        }
+
+        /// <summary>
+        /// Hide a tag on a non-default layer when the picture is managed by StoryAPI.
+        ///
+        /// DDLC+'s RenpyParser Hide value has no layer member, so its native Hide line
+        /// cannot express Ren'Py's onlayer property. StoryAPI owns the renderer for its
+        /// custom sprites, poses, and native sprites, and can remove that exact renderer
+        /// without touching a same-named image on another layer.
+        /// </summary>
+        internal static bool HideOwned(string imageTag, string layer)
+        {
+            if (string.IsNullOrEmpty(imageTag)) return false;
+            if (string.IsNullOrEmpty(layer)) layer = "master";
+
+            string matchKey = null;
+            SavedArt match = null;
+
+            foreach (var pair in s_sprites)
+            {
+                var recipe = pair.Value?.Recipe;
+                if (recipe == null ||
+                    !string.Equals(recipe.Layer ?? "master", layer,
+                        StringComparison.OrdinalIgnoreCase) ||
+                    !MatchesImageTag(recipe, imageTag))
+                    continue;
+
+                if (matchKey != null)
+                {
+                    Log.Warn("hide: more than one StoryAPI image on layer '" + layer +
+                             "' matches tag '" + imageTag + "'; nothing was hidden.");
+                    return false;
+                }
+
+                matchKey = pair.Key;
+                match = recipe;
+            }
+
+            if (matchKey == null || match == null)
+            {
+                Log.Warn("hide: no StoryAPI-managed image with tag '" + imageTag +
+                         "' exists on layer '" + layer + "'. This DDLC+ Hide instruction " +
+                         "cannot hide an unmanaged image on a non-master layer.");
+                return false;
+            }
+
+            SpriteHandle handle;
+            if (s_sprites.TryGetValue(matchKey, out handle) && handle != null)
+            {
+                if (match.Kind == SavedArt.Pose)
+                {
+                    DestroyHosted(match.Slot, layer);
+                    BaseSprites.Forget(match.Slot, layer);
+                }
+                else if (handle.Renderer != null && handle.Renderer.gameObject != null)
+                {
+                    handle.Renderer.gameObject.SetActive(false);
+                    SafeDestroy(handle.Renderer.gameObject);
+                }
+            }
+
+            s_sprites.Remove(matchKey);
+            Log.Info("hide: removed StoryAPI tag '" + imageTag + "' from layer '" + layer + "'");
+            return true;
+        }
+
+        private static bool MatchesImageTag(SavedArt recipe, string imageTag)
+        {
+            if (string.Equals(recipe.Slot, imageTag, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            // StoryAPI hosts DDLC+'s character prefabs under their full pose name
+            // (e.g. "monika 1a"), while Ren'Py hide addresses the first name as tag.
+            if (recipe.Kind == SavedArt.Pose && !string.IsNullOrEmpty(recipe.Source))
+            {
+                int separator = recipe.Source.IndexOf(' ');
+                string tag = separator < 0 ? recipe.Source : recipe.Source.Substring(0, separator);
+                return string.Equals(tag, imageTag, StringComparison.OrdinalIgnoreCase);
+            }
+
+            return false;
         }
 
         public static void ForgetAll()
         {
-                s_sprites.Clear();
+            s_sprites.Clear();
             foreach (var instance in new List<GameObject>(s_hosted.Values))
             {
                 if (instance == null) continue;
@@ -559,19 +846,21 @@ namespace StoryAPI.Runtime
             s_hosted.Clear();
         }
 
-        public static bool Has(string container)
+        public static bool Has(string container, string layer = "master")
         {
-            return !string.IsNullOrEmpty(container) && s_sprites.ContainsKey(container);
+            return ResolveSlotKey(container, layer) != null;
         }
 
-        internal static Transform RendererFor(string container)
+        internal static Transform RendererFor(string container, string layer = "master")
         {
-            return container != null && s_sprites.TryGetValue(container, out var h) ? h.Renderer : null;
+            string key = ResolveSlotKey(container, layer);
+            return key != null && s_sprites.TryGetValue(key, out var h) ? h.Renderer : null;
         }
 
-        internal static ActiveImage ImageFor(string container)
+        internal static ActiveImage ImageFor(string container, string layer = "master")
         {
-            return container != null && s_sprites.TryGetValue(container, out var h) ? h.Image : null;
+            string key = ResolveSlotKey(container, layer);
+            return key != null && s_sprites.TryGetValue(key, out var h) ? h.Image : null;
         }
 
         // ------------------------------------------------------------- the pose

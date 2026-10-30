@@ -19,6 +19,7 @@ namespace StoryAPI.Runtime
         private readonly string _slot;
         private readonly string _at;
         private readonly int _zOrder;
+        private readonly string _layer;
 
         /// <summary>
         /// Shows a mod-supplied sprite.
@@ -29,7 +30,7 @@ namespace StoryAPI.Runtime
         /// at a time.
         /// </summary>
         public CustomSpriteLine(StoryAssets assets, string name, string variant,
-            string slot, string at, int zOrder)
+            string slot, string at, int zOrder, string layer = "master")
         {
             _assets = assets;
             _name = name;
@@ -37,12 +38,13 @@ namespace StoryAPI.Runtime
             _slot = string.IsNullOrEmpty(slot) ? name : slot;
             _at = at;
             _zOrder = zOrder;
+            _layer = string.IsNullOrEmpty(layer) ? "master" : layer;
         }
 
         public void Apply(IContext context)
         {
             Log.Info("story: executing " + GetType().Name);
-            ShowSprite(_assets, _name, _variant, _slot, _at, _zOrder);
+            ShowSprite(_assets, _name, _variant, _slot, _at, _zOrder, _layer);
         }
 
         /// <summary>
@@ -50,12 +52,13 @@ namespace StoryAPI.Runtime
         /// built, so drawing it again after a load is exactly the same work.
         /// </summary>
         internal static ActiveImage ShowSprite(StoryAssets assets, string name, string variant,
-            string slot, string at, int zOrder)
+            string slot, string at, int zOrder, string layer = "master")
         {
             var show = new Show(string.Empty);
             show.ImageName = name;
             show.Variant = variant ?? string.Empty;
-            show.Layer = "master";
+            layer = string.IsNullOrEmpty(layer) ? "master" : layer;
+            show.Layer = layer;
             show.ZOrder = zOrder;
             show.HasZOrder = true;
 
@@ -84,6 +87,7 @@ namespace StoryAPI.Runtime
                 Variant = variant,
                 Slot = slot ?? name,
                 At = at,
+                Layer = layer,
                 ZOrder = zOrder,
             });
 
@@ -111,23 +115,32 @@ namespace StoryAPI.Runtime
     {
         private readonly StoryAssets _assets;
         private readonly string _name;
+        private readonly string _layer;
 
-        public CustomBackgroundLine(StoryAssets assets, string name)
+        public CustomBackgroundLine(StoryAssets assets, string name, string layer = "master")
         {
             _assets = assets;
             _name = name;
+            _layer = string.IsNullOrEmpty(layer) ? "master" : layer;
         }
 
         public void Apply(IContext context)
         {
             Log.Info("story: executing " + GetType().Name);
-            ShowScene(_assets, _name);
+            ShowScene(_assets, _name, _layer);
         }
 
         /// <summary>Set a mod background, in the same way whether it is first shown or drawn again.</summary>
-        internal static ActiveImage ShowScene(StoryAssets assets, string name)
+        internal static ActiveImage ShowScene(StoryAssets assets, string name,
+            string layer = "master")
         {
+            layer = string.IsNullOrEmpty(layer) ? "master" : layer;
             var scene = new Scene(name);
+            if (!ArtInjector.TrySetLayer(scene, layer))
+            {
+                Log.Warn("scene: the DDLC+ Scene instruction cannot select layer '" + layer + "'");
+                return null;
+            }
             var image = ArtInjector.Draw(assets.GetImage(name), "bg", null, scene);
             if (image == null || image.Object == null) return null;
 
@@ -140,6 +153,7 @@ namespace StoryAPI.Runtime
                 Mod = assets.ModName,
                 Source = name,
                 Slot = "bg",
+                Layer = layer,
                 ZOrder = 0,
             });
 
@@ -163,19 +177,22 @@ namespace StoryAPI.Runtime
         private readonly string _slot;
         private readonly string _transform;
         private readonly int _zOrder;
+        private readonly string _layer;
 
-        public NativeSpriteLine(string image, string slot, string transform, int zOrder)
+        public NativeSpriteLine(string image, string slot, string transform, int zOrder,
+            string layer = "master")
         {
             _image = image;
             _slot = string.IsNullOrEmpty(slot) ? image : slot;
             _transform = transform;
             _zOrder = zOrder;
+            _layer = string.IsNullOrEmpty(layer) ? "master" : layer;
         }
 
         public void Apply(IContext context)
         {
             Log.Info("story: executing " + GetType().Name);
-            ShowNative(_image, _slot, _transform, _zOrder);
+            ShowNative(_image, _slot, _transform, _zOrder, _layer);
         }
 
         /// <summary>
@@ -183,7 +200,8 @@ namespace StoryAPI.Runtime
         /// after a load passes no transform, because the movement it describes has
         /// already finished and the saved placement is the truthful one.
         /// </summary>
-        internal static bool ShowNative(string image, string slot, string transform, int zOrder)
+        internal static bool ShowNative(string image, string slot, string transform, int zOrder,
+            string layer = "master")
         {
             if (!StoryAPI.Game.GameBridge.TryLoadNativeSprite(image, out var sprite) || sprite == null)
             {
@@ -194,7 +212,8 @@ namespace StoryAPI.Runtime
             var show = new Show("show " + image);
             show.ImageName = image;
             show.Variant = string.Empty;
-            show.Layer = "master";
+            layer = string.IsNullOrEmpty(layer) ? "master" : layer;
+            show.Layer = layer;
             show.ZOrder = zOrder;
             show.HasZOrder = true;
 
@@ -212,11 +231,48 @@ namespace StoryAPI.Runtime
                 Kind = SavedArt.Native,
                 Source = image,
                 Slot = slot ?? image,
+                Layer = layer,
                 Transform = transform,
                 ZOrder = zOrder,
             });
 
             return true;
+        }
+    }
+
+    /// <summary>Clears one Ren'Py display layer without showing a new background.</summary>
+    internal sealed class LayeredSceneClearLine : Line, IApply
+    {
+        private readonly string _layer;
+
+        public LayeredSceneClearLine(string layer)
+        {
+            _layer = string.IsNullOrEmpty(layer) ? "master" : layer;
+        }
+
+        public void Apply(IContext context)
+        {
+            Log.Info("story: executing LayeredSceneClearLine");
+            ArtInjector.ClearLayer(_layer);
+        }
+    }
+
+    /// <summary>Hides a StoryAPI-managed image from one non-default display layer.</summary>
+    internal sealed class LayeredHideLine : Line, IApply
+    {
+        private readonly string _imageTag;
+        private readonly string _layer;
+
+        public LayeredHideLine(string imageTag, string layer)
+        {
+            _imageTag = imageTag;
+            _layer = string.IsNullOrEmpty(layer) ? "master" : layer;
+        }
+
+        public void Apply(IContext context)
+        {
+            Log.Info("story: executing LayeredHideLine");
+            ArtInjector.HideOwned(_imageTag, _layer);
         }
     }
 

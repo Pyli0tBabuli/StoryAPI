@@ -5168,7 +5168,7 @@ namespace StoryAPI.Runtime
             return items;
         }
 
-                private sealed class ForEachPreparationLine : Line, IApply
+        private sealed class ForEachPreparationLine : Line, IApply
         {
             private readonly string _sourceName;
             private readonly string _destinationName;

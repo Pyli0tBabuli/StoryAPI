@@ -1042,9 +1042,9 @@ namespace StoryAPI.Tests
                 "Nested deletion targets should remain unsupported.");
 
             var statements = Parse(
-                "label collection_deletion_test:\\n" +
-                "    $ del inventory[1:3]\\n" +
-                "    return\\n");
+                "label collection_deletion_test:\n" +
+                "    $ del inventory[1:3]\n" +
+                "    return\n");
             var label = Require<LabelStatement>(statements[0],
                 "Expected a label containing a collection deletion statement.");
             Check(Require<PythonStatement>(label.Body[0],

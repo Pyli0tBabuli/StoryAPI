@@ -1409,8 +1409,8 @@ namespace StoryAPI.Runtime
         }
 
         /// <summary>
-        /// Recognizes assignment from list.index(scalarLiteral). The first matching index
-        /// is returned; arguments are restricted to scalar literal values.
+        /// Recognizes assignment from list.index(value). The search value may be a scalar
+        /// literal or a simple variable reference resolved when the instruction executes.
         /// </summary>
         public static bool TryCreateListIndexLine(string code, string sourcePath,
             int sourceLine, out Line line)
@@ -1500,13 +1500,37 @@ namespace StoryAPI.Runtime
                 return true;
             }
 
+            if (IsIdentifierStart(code[cursor]))
+            {
+                int identifierStart = cursor++;
+                while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+                string identifier = code.Substring(identifierStart, cursor - identifierStart);
+
+                if (identifier == "True") { value = true; return true; }
+                if (identifier == "False") { value = false; return true; }
+                if (identifier == "None") { value = null; return true; }
+
+                if (identifier == "and" || identifier == "as" || identifier == "assert" ||
+                    identifier == "async" || identifier == "await" || identifier == "break" ||
+                    identifier == "class" || identifier == "continue" || identifier == "def" ||
+                    identifier == "del" || identifier == "elif" || identifier == "else" ||
+                    identifier == "except" || identifier == "finally" || identifier == "for" ||
+                    identifier == "from" || identifier == "global" || identifier == "if" ||
+                    identifier == "import" || identifier == "in" || identifier == "is" ||
+                    identifier == "lambda" || identifier == "nonlocal" || identifier == "not" ||
+                    identifier == "or" || identifier == "pass" || identifier == "raise" ||
+                    identifier == "return" || identifier == "try" || identifier == "while" ||
+                    identifier == "with" || identifier == "yield")
+                    return false;
+
+                value = new DynamicIndex(identifier);
+                return true;
+            }
+
             int start = cursor;
             while (cursor < code.Length && code[cursor] != ',' && code[cursor] != ')') cursor++;
             string literal = code.Substring(start, cursor - start).Trim();
             if (literal.Length == 0) return false;
-            if (literal == "True") { value = true; return true; }
-            if (literal == "False") { value = false; return true; }
-            if (literal == "None") { value = null; return true; }
 
             int integer;
             if (int.TryParse(literal, NumberStyles.Integer, CultureInfo.InvariantCulture, out integer))
@@ -1580,7 +1604,7 @@ namespace StoryAPI.Runtime
             if (cursor >= code.Length || code[cursor++] != '(') return false;
             SkipWhitespace(code, ref cursor);
             object soughtValue;
-            if (!TryReadDictionaryGetDefault(code, ref cursor, out soughtValue)) return false;
+            if (!TryReadListIndexScalarArgument(code, ref cursor, out soughtValue)) return false;
             SkipWhitespace(code, ref cursor);
             if (cursor >= code.Length || code[cursor++] != ')') return false;
             SkipWhitespace(code, ref cursor);
@@ -4006,12 +4030,13 @@ namespace StoryAPI.Runtime
                         !(target is IList list))
                         throw new InvalidOperationException("list.index() requires a list target");
 
+                    object soughtValue = ResolveListSearchValue(_soughtValue, context);
                     int start = _hasStart ? NormalizeIndexBound(_start, list.Count) : 0;
                     int stop = _hasStop ? NormalizeIndexBound(_stop, list.Count) : list.Count;
                     int index = -1;
                     for (int i = start; i < stop; i++)
                     {
-                        if (ScalarValuesEqual(list[i], _soughtValue))
+                        if (ScalarValuesEqual(list[i], soughtValue))
                         {
                             index = i;
                             break;
@@ -4020,14 +4045,16 @@ namespace StoryAPI.Runtime
 
                     if (index < 0)
                         throw new InvalidOperationException(
-                            "index(value) could not find a matching list item in the requested range");
+                            "index(value) could not find a matching list item in the requested range; " +
+                            "search value was " + DescribeListSearchScalar(soughtValue));
 
                     if (!GameBridge.TrySetVariableLiteral(_destinationName, index, false, context))
                         throw new InvalidOperationException(
                             "could not assign list.index() result to '" + _destinationName + "'");
 
                     Log.Info("Applied list.index on '" + _rootName + "' at " +
-                        _sourcePath + ":" + _sourceLine + ".");
+                        _sourcePath + ":" + _sourceLine + "; result=" + index +
+                        "; searchValue=" + DescribeListSearchScalar(soughtValue) + ".");
                 }
                 catch (Exception e)
                 {
@@ -4075,10 +4102,11 @@ namespace StoryAPI.Runtime
                         !(target is IList list))
                         throw new InvalidOperationException("list.count() requires a list target");
 
+                    object soughtValue = ResolveListSearchValue(_soughtValue, context);
                     int count = 0;
                     for (int i = 0; i < list.Count; i++)
                     {
-                        if (ScalarValuesEqual(list[i], _soughtValue))
+                        if (ScalarValuesEqual(list[i], soughtValue))
                             count++;
                     }
 
@@ -4087,7 +4115,8 @@ namespace StoryAPI.Runtime
                             "could not assign list.count() result to '" + _destinationName + "'");
 
                     Log.Info("Applied list.count on '" + _rootName + "' at " +
-                        _sourcePath + ":" + _sourceLine + ".");
+                        _sourcePath + ":" + _sourceLine + "; result=" + count +
+                        "; searchValue=" + DescribeListSearchScalar(soughtValue) + ".");
                 }
                 catch (Exception e)
                 {
@@ -4458,6 +4487,62 @@ namespace StoryAPI.Runtime
                     Log.Warn("Could not apply dict.copy on '" + _rootName + "' at " +
                         _sourcePath + ":" + _sourceLine + ": " + e.GetBaseException().Message);
                 }
+            }
+        }
+
+        private static object ResolveListSearchValue(object searchValue, IContext context)
+        {
+            DynamicIndex dynamicValue = searchValue as DynamicIndex;
+            if (dynamicValue == null)
+                return searchValue;
+
+            // DDLC+ represents the script-level None literal with default(DataValue).
+            // Include the live wrapper details in failures so game-only expression
+            // conversions can be distinguished from the unit-test context.
+            DataValue rawValue = default(DataValue);
+            bool hasRawValue = context != null &&
+                context.ResolveVariable(dynamicValue.Name, out rawValue);
+            if (hasRawValue && object.Equals(rawValue, default(DataValue)))
+                return null;
+
+            object resolvedValue;
+            if (TryGetDynamicIndexValue(dynamicValue.Name, context, out resolvedValue))
+                return resolvedValue;
+
+            throw new InvalidOperationException(
+                "list search value variable '" + dynamicValue.Name +
+                "' must resolve to a supported scalar; runtime DataValue: " +
+                (hasRawValue ? DescribeListSearchDataValue(rawValue) : "<variable not resolved>"));
+        }
+
+        private static string DescribeListSearchScalar(object value)
+        {
+            if (value == null) return "None";
+            return Convert.ToString(value, CultureInfo.InvariantCulture) +
+                " [" + value.GetType().FullName + "]";
+        }
+
+        private static string DescribeListSearchDataValue(DataValue value)
+        {
+            try
+            {
+                var fields = typeof(DataValue).GetFields(
+                    BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                var descriptions = new List<string>();
+                foreach (FieldInfo field in fields)
+                {
+                    object fieldValue = field.GetValue(value);
+                    descriptions.Add(field.Name + "=" +
+                        (fieldValue == null ? "<null>" :
+                            fieldValue + " [" + fieldValue.GetType().FullName + "]"));
+                }
+                return descriptions.Count == 0
+                    ? value.ToString()
+                    : string.Join(", ", descriptions);
+            }
+            catch (Exception e)
+            {
+                return "<DataValue diagnostic failed: " + e.GetBaseException().Message + ">";
             }
         }
 
@@ -6591,6 +6676,17 @@ namespace StoryAPI.Runtime
                     "objectRef", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
                 object objectValue = objectField == null ? null : objectField.GetValue(dataValue);
 
+                // Some DDLC+ builds expose the script-level None discriminator as
+                // DataType.None rather than a default DataValue that compares equal
+                // through object.Equals. Only this explicit discriminator is converted
+                // to null; arbitrary object-backed nulls remain unsupported.
+                if (string.Equals(typeName, "None", StringComparison.OrdinalIgnoreCase) &&
+                    objectValue == null)
+                {
+                    value = null;
+                    return true;
+                }
+
                 // Prefer the discriminator over the backing fields: DDLC+ keeps inactive
                 // fields at their default values (for example stringVal may be empty for a
                 // numeric DataValue). Reading stringVal before type used to turn index 1
@@ -6603,6 +6699,51 @@ namespace StoryAPI.Runtime
                     if (!(stringValue is string)) return false;
                     value = (string)stringValue;
                     return true;
+                }
+
+                // The Boolean discriminator is authoritative. Some game builds store
+                // the active boolean payload in objectRef as 1f/0f rather than System.Boolean.
+                // Check the discriminator before accepting objectRef as an ordinary number,
+                // otherwise True becomes the numeric value 1 and no longer matches list bools.
+                if (isBoolean)
+                {
+                    if (objectValue is bool)
+                    {
+                        value = objectValue;
+                        return true;
+                    }
+
+                    if (objectValue is byte || objectValue is sbyte || objectValue is short ||
+                        objectValue is ushort || objectValue is int || objectValue is uint ||
+                        objectValue is long || objectValue is ulong || objectValue is float ||
+                        objectValue is double || objectValue is decimal)
+                    {
+                        value = Convert.ToDouble(objectValue, CultureInfo.InvariantCulture) != 0d;
+                        return true;
+                    }
+
+                    FieldInfo boolField = dataValueType.GetField(
+                        "boolVal", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                    object boolValue = boolField == null ? null : boolField.GetValue(dataValue);
+                    if (boolValue is bool)
+                    {
+                        value = (bool)boolValue;
+                        return true;
+                    }
+
+                    FieldInfo boolNumberField = dataValueType.GetField(
+                        "floatVal", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                    object boolNumber = boolNumberField == null ? null : boolNumberField.GetValue(dataValue);
+                    if (boolNumber is byte || boolNumber is sbyte || boolNumber is short ||
+                        boolNumber is ushort || boolNumber is int || boolNumber is uint ||
+                        boolNumber is long || boolNumber is ulong || boolNumber is float ||
+                        boolNumber is double || boolNumber is decimal)
+                    {
+                        value = Convert.ToDouble(boolNumber, CultureInfo.InvariantCulture) != 0d;
+                        return true;
+                    }
+
+                    return false;
                 }
 
                 if (objectValue is bool)
@@ -6618,29 +6759,6 @@ namespace StoryAPI.Runtime
                 {
                     value = objectValue;
                     return true;
-                }
-
-                if (isBoolean)
-                {
-                    FieldInfo boolField = dataValueType.GetField(
-                        "boolVal", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-                    object boolValue = boolField == null ? null : boolField.GetValue(dataValue);
-                    if (boolValue is bool)
-                    {
-                        value = (bool)boolValue;
-                        return true;
-                    }
-
-                    FieldInfo boolNumberField = dataValueType.GetField(
-                        "floatVal", BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
-                    object boolNumber = boolNumberField == null ? null : boolNumberField.GetValue(dataValue);
-                    if (boolNumber is float)
-                    {
-                        value = (float)boolNumber != 0f;
-                        return true;
-                    }
-
-                    return false;
                 }
 
                 if (isNumeric)

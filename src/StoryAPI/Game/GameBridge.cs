@@ -4223,6 +4223,69 @@ namespace StoryAPI.Game
 
             Type sourceType = source == null ? typeof(string) : source.GetType();
 
+            // DDLC+'s DataValue(bool) constructor can normalize booleans to Float
+            // (1/0) in some builds. That representation is indistinguishable from a
+            // numeric literal and breaks strict equality with boolean list items.
+            // Prefer DataValue(object) so the boxed System.Boolean stays in objectRef.
+            // Verify the resulting wrapper rather than assuming the constructor preserves it.
+            if (source is bool booleanSource)
+            {
+                ConstructorInfo objectConstructor = targetType.GetConstructor(
+                    Instance, null, new[] { typeof(object) }, null);
+                if (objectConstructor != null)
+                {
+                    try
+                    {
+                        DataValue objectBacked = (DataValue)objectConstructor.Invoke(
+                            new object[] { (object)booleanSource });
+                        FieldInfo objectReferenceField = targetType.GetField("objectRef", Instance);
+                        object objectReference = objectReferenceField == null
+                            ? null
+                            : objectReferenceField.GetValue(objectBacked);
+                        if (objectReference is bool && (bool)objectReference == booleanSource)
+                        {
+                            value = objectBacked;
+                            return true;
+                        }
+                    }
+                    catch
+                    {
+                        // Try the native Boolean representation below.
+                    }
+                }
+
+                // Retain support for builds whose Boolean constructor has a real Boolean
+                // discriminator/payload instead of coercing bool to a float.
+                ConstructorInfo booleanConstructor = targetType.GetConstructor(
+                    Instance, null, new[] { typeof(bool) }, null);
+                if (booleanConstructor != null)
+                {
+                    try
+                    {
+                        DataValue booleanValue = (DataValue)booleanConstructor.Invoke(
+                            new object[] { booleanSource });
+                        FieldInfo typeField = targetType.GetField("type", Instance);
+                        object typeValue = typeField == null ? null : typeField.GetValue(booleanValue);
+                        string typeName = typeValue == null
+                            ? string.Empty
+                            : Convert.ToString(typeValue, System.Globalization.CultureInfo.InvariantCulture);
+                        if (typeName.IndexOf("bool", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            value = booleanValue;
+                            return true;
+                        }
+                    }
+                    catch
+                    {
+                        // Report the unsupported representation below.
+                    }
+                }
+
+                Log.LogWarning("[StoryAPI] This DDLC+ build cannot preserve a Boolean literal " +
+                    "as a boolean DataValue; refusing to store it as numeric 1/0.");
+                return false;
+            }
+
             // Prefer an implicit conversion supplied by the game, then try a public
             // one-argument constructor for builds that expose it instead.
             foreach (Type declaringType in new[] { targetType, sourceType }.Distinct())

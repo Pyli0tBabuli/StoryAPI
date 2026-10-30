@@ -227,19 +227,22 @@ The optional `reverse` keyword accepts only the literal `True` or `False`; `True
 descending order and `False` (the default) sorts in ascending order. Mixed or unsupported item
 types are left unchanged with a warning. Lists also support `$ inventory.reverse()`, which
 reverses the existing list in place and accepts no arguments. Assignment from `$ item_index = inventory.index("battery")` is supported for a quoted string,
-number, `True`, `False`, or `None` literal. Optional integer `start` and `stop` bounds are also
-supported, as in `$ item_index = inventory.index("battery", 1, 4)`; the start is inclusive, stop
-is exclusive, and negative bounds are normalized like Python. If no matching item exists in the
-requested range, StoryAPI logs a warning and leaves the destination unchanged. Variable search
-values, non-integer bounds, indexed targets, and more than three arguments remain unsupported.
+number, `True`, `False`, or `None` literal, or a simple variable name containing one of those
+scalar values. Dynamic variables are resolved each time the assignment executes. Optional integer
+`start` and `stop` bounds are also supported, as in `$ item_index = inventory.index("battery", 1, 4)`;
+the start is inclusive, stop is exclusive, and negative bounds are normalized like Python. If no
+matching item exists in the requested range, StoryAPI logs a warning and leaves the destination
+unchanged. Indexed targets, compound search expressions, dynamic bounds, and more than three
+arguments remain unsupported.
 Assignment from
 `$ copied_inventory = inventory.copy()` is supported as a shallow list copy: the new list can
 be changed without adding or removing items in the source list, while nested objects remain shared.
 The call accepts no arguments and requires a simple list variable and assignment target.
-Assignment from `$ battery_count = inventory.count("battery")` is also supported for a quoted string, number,
-`True`, `False`, or `None` literal argument; it counts all matching scalar values and returns zero
-when there are no matches. Variable arguments, indexed targets, and multiple statements are not
-supported by this restricted `count()` form. Lists support one-argument scalar
+Assignment from `$ battery_count = inventory.count("battery")` is supported for a quoted string,
+number, `True`, `False`, or `None` literal, as well as a simple variable name containing one
+of those scalar values. Dynamic variables are resolved when the assignment executes, and
+`count()` returns zero when there are no matches. Indexed targets, compound search expressions,
+and multiple statements remain unsupported. Lists support one-argument scalar
 method calls `$ inventory.append("battery")` and `$ inventory.remove("key")`; `remove`
 deletes the first matching item. Lists also support `$ inventory.extend(rewards)`, which
 appends the items from another named list in order without changing the source list. The

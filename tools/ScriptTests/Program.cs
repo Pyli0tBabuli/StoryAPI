@@ -1562,10 +1562,18 @@ namespace StoryAPI.Tests
                 Math.Abs(Convert.ToSingle(result) - 3f) < 0.001f,
                 "A chained index should read an item from the newly sliced list.");
 
-            Check(!VariableIndexExpressionLine.TryCreateAssignmentLines(
+            Check(VariableIndexExpressionLine.TryCreateAssignmentLines(
                     "numbers[1:3] = 9", prefix + "_assignment",
                     sourcePath, 69, 200, out List<RenPyParser.Line> assignmentLines),
-                "Assigning directly to a slice should remain unsupported.");
+                "A slice assignment target should be recognized even when runtime validation must reject its replacement.");
+            context.SetVariable(prefix + "_assignment_value",
+                new SimpleExpressionEngine.DataValue(9f));
+            ((RenPyParser.Images.IApply)assignmentLines[assignmentLines.Count - 1]).Apply(context);
+            Check(numbers.Count == 5 &&
+                    Convert.ToSingle(numbers[0]) == 1f &&
+                    Convert.ToSingle(numbers[1]) == 2f &&
+                    Convert.ToSingle(numbers[2]) == 3f,
+                "A scalar replacement must be rejected without changing the source list.");
 
             Check(VariableIndexExpressionLine.TryCreateTemporary(
                     prefix + "_zero_step", "numbers[::0]", sourcePath, 70,

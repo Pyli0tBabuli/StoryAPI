@@ -39,6 +39,7 @@ namespace StoryAPI.Tests
             Run("sequence slice reads", TestSequenceSliceReads);
             Run("arithmetic sequence slice read bounds", TestArithmeticSequenceSliceReadBounds);
             Run("sequence slice assignments", TestSequenceSliceAssignments);
+            Run("arithmetic sequence slice assignment bounds", TestArithmeticSequenceSliceAssignmentBounds);
             Run("None comparison conditions", TestNoneComparisonConditions);
             Run("list and dictionary clear methods", TestCollectionClearMethods);
             Run("list reverse method", TestListReverseMethod);
@@ -1980,6 +1981,106 @@ namespace StoryAPI.Tests
                     "The slice assignment should parse as a Python statement.").Code ==
                     "numbers[1:3] = replacement",
                 "The parser should preserve slice assignment statements.");
+        }
+
+        private static void TestArithmeticSequenceSliceAssignmentBounds()
+        {
+            const string sourcePath = "arithmetic-sequence-slice-assignment-test.rpy";
+            const string prefix = "_storyapi_arithmetic_slice_assignment";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var numbers = new List<object> { 1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f };
+            var replacement = new List<object> { 20f, 40f, 60f };
+            context.SetVariable("numbers", new SimpleExpressionEngine.DataValue((object)numbers));
+            context.SetVariable("replacement", new SimpleExpressionEngine.DataValue((object)replacement));
+            context.SetVariable("slice_start", new SimpleExpressionEngine.DataValue(0f));
+            context.SetVariable("slice_stop", new SimpleExpressionEngine.DataValue(7f));
+            context.SetVariable("slice_step", new SimpleExpressionEngine.DataValue(1f));
+
+            List<RenPyParser.Line> lines;
+            Check(VariableIndexExpressionLine.TryCreateAssignmentLines(
+                    "numbers[slice_start + 1:slice_stop - 1:slice_step * 2] = replacement",
+                    prefix, sourcePath, 1, 20, out lines),
+                "Arithmetic start, stop, and step expressions should be accepted for slice assignment.");
+            Check(lines.Count == 7 &&
+                    lines[0] is RenpyParser.RenpyOneLinePython &&
+                    lines[1] is RenpyParser.RenpyGoToLineUnless &&
+                    lines[2] is RenpyParser.RenpyOneLinePython &&
+                    lines[3] is RenpyParser.RenpyOneLinePython &&
+                    lines[4] is RenpyParser.RenpyOneLinePython &&
+                    lines[5] is RenpyParser.RenpyOneLinePython &&
+                    lines[6].GetType().Name == "CollectionMutationLine",
+                "Target arithmetic bounds should be emitted after the RHS and before the mutation.");
+
+            var emitted = lines.OfType<RenpyParser.RenpyOneLinePython>()
+                .Select(x => x.Code).ToArray();
+            Check(emitted[1] == "$ " + prefix + "_value = replacement" &&
+                    emitted[2] == "$ " + prefix + "_target_key_0 = slice_start + 1" &&
+                    emitted[3] == "$ " + prefix + "_target_key_1 = slice_stop - 1" &&
+                    emitted[4] == "$ " + prefix + "_target_key_2 = slice_step * 2",
+                "Arithmetic target bounds should be evaluated in order after the replacement expression.");
+
+            context.SetVariable(prefix + "_target_key_0", new SimpleExpressionEngine.DataValue(1f));
+            context.SetVariable(prefix + "_target_key_1", new SimpleExpressionEngine.DataValue(6f));
+            context.SetVariable(prefix + "_target_key_2", new SimpleExpressionEngine.DataValue(2f));
+            context.SetVariable(prefix + "_value", new SimpleExpressionEngine.DataValue((object)replacement));
+            ((RenPyParser.Images.IApply)lines[6]).Apply(context);
+            Check(numbers.Count == 8 &&
+                    Convert.ToSingle(numbers[0]) == 1f &&
+                    Convert.ToSingle(numbers[1]) == 20f &&
+                    Convert.ToSingle(numbers[2]) == 3f &&
+                    Convert.ToSingle(numbers[3]) == 40f &&
+                    Convert.ToSingle(numbers[4]) == 5f &&
+                    Convert.ToSingle(numbers[5]) == 60f &&
+                    Convert.ToSingle(numbers[6]) == 7f &&
+                    Convert.ToSingle(numbers[7]) == 8f,
+                "Positive arithmetic bounds should replace the selected elements without changing list length.");
+
+            numbers = new List<object> { 1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f };
+            replacement = new List<object> { 80f, 60f, 40f };
+            context.SetVariable("numbers", new SimpleExpressionEngine.DataValue((object)numbers));
+            context.SetVariable("replacement", new SimpleExpressionEngine.DataValue((object)replacement));
+            context.SetVariable(prefix + "_target_key_0", new SimpleExpressionEngine.DataValue(7f));
+            context.SetVariable(prefix + "_target_key_1", new SimpleExpressionEngine.DataValue(1f));
+            context.SetVariable(prefix + "_target_key_2", new SimpleExpressionEngine.DataValue(-2f));
+            context.SetVariable(prefix + "_value", new SimpleExpressionEngine.DataValue((object)replacement));
+            ((RenPyParser.Images.IApply)lines[6]).Apply(context);
+            Check(numbers.Count == 8 &&
+                    Convert.ToSingle(numbers[0]) == 1f &&
+                    Convert.ToSingle(numbers[1]) == 2f &&
+                    Convert.ToSingle(numbers[2]) == 3f &&
+                    Convert.ToSingle(numbers[3]) == 40f &&
+                    Convert.ToSingle(numbers[4]) == 5f &&
+                    Convert.ToSingle(numbers[5]) == 60f &&
+                    Convert.ToSingle(numbers[6]) == 7f &&
+                    Convert.ToSingle(numbers[7]) == 80f,
+                "Negative arithmetic steps should apply replacement values in slice iteration order.");
+
+            numbers = new List<object> { 1f, 2f, 3f, 4f, 5f };
+            replacement = new List<object> { 9f, 8f };
+            context.SetVariable("numbers", new SimpleExpressionEngine.DataValue((object)numbers));
+            context.SetVariable("replacement", new SimpleExpressionEngine.DataValue((object)replacement));
+            Check(VariableIndexExpressionLine.TryCreateAssignmentLines(
+                    "numbers[:slice_stop - 1] = replacement",
+                    prefix, sourcePath, 2, 40, out lines),
+                "Omitted slice bounds should remain supported alongside arithmetic bounds.");
+            Check(lines.Count == 5 &&
+                    ((RenpyParser.RenpyOneLinePython)lines[3]).Code ==
+                        "$ " + prefix + "_target_key_0 = slice_stop - 1",
+                "Only the present arithmetic bound should create a target temporary.");
+            context.SetVariable(prefix + "_target_key_0", new SimpleExpressionEngine.DataValue(3f));
+            context.SetVariable(prefix + "_value", new SimpleExpressionEngine.DataValue((object)replacement));
+            ((RenPyParser.Images.IApply)lines[4]).Apply(context);
+            Check(numbers.Count == 4 &&
+                    Convert.ToSingle(numbers[0]) == 9f &&
+                    Convert.ToSingle(numbers[1]) == 8f &&
+                    Convert.ToSingle(numbers[2]) == 4f &&
+                    Convert.ToSingle(numbers[3]) == 5f,
+                "An omitted start bound should preserve unit-step slice insertion/replacement behavior.");
+
+            Check(!VariableIndexExpressionLine.TryCreateAssignmentLines(
+                    "numbers[get_slice_start() + 1:slice_stop] = replacement",
+                    prefix, sourcePath, 3, 60, out lines),
+                "Function calls inside arithmetic slice-assignment bounds should remain unsupported.");
         }
 
         private static void TestNoneComparisonConditions()

@@ -3043,8 +3043,21 @@ namespace StoryAPI.Runtime
                 string keyExpression = code.Substring(keyStart, close - keyStart).Trim();
                 object literalKey;
                 bool isSliceExpression = keyExpression.IndexOf(':') >= 0;
-                if (TryParseIndexKey(keyExpression, isSliceExpression, out literalKey))
+                string rewrittenKeyExpression = keyExpression;
+                var sliceBoundExpressions = new List<KeyValuePair<string, string>>();
+                if (isSliceExpression &&
+                    !TryRewriteArithmeticSequenceSliceBounds(
+                        keyExpression, temporaryPrefix + "_target", dynamicIndexes.Count,
+                        sliceBoundExpressions, out rewrittenKeyExpression))
                 {
+                    rewrittenKeyExpression = keyExpression;
+                }
+
+                if (TryParseIndexKey(rewrittenKeyExpression, isSliceExpression, out literalKey))
+                {
+                    // Evaluate arithmetic target bounds only after the assignment's RHS
+                    // has been computed, matching Python's assignment evaluation order.
+                    dynamicIndexes.AddRange(sliceBoundExpressions);
                     indices.Add(literalKey);
                 }
                 else

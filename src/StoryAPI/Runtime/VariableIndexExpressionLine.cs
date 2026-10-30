@@ -5151,7 +5151,24 @@ namespace StoryAPI.Runtime
             }
         }
 
-        private sealed class ForEachPreparationLine : Line, IApply
+        private static List<object> CreateStringIterationItems(string value)
+        {
+            var items = new List<object>();
+            if (string.IsNullOrEmpty(value)) return items;
+
+            // Python strings iterate Unicode code points rather than UTF-16 code units.
+            for (int i = 0; i < value.Length; i++)
+            {
+                int width = char.IsHighSurrogate(value[i]) && i + 1 < value.Length &&
+                    char.IsLowSurrogate(value[i + 1]) ? 2 : 1;
+                items.Add(value.Substring(i, width));
+                if (width == 2) i++;
+            }
+
+            return items;
+        }
+
+                private sealed class ForEachPreparationLine : Line, IApply
         {
             private readonly string _sourceName;
             private readonly string _destinationName;
@@ -5222,6 +5239,15 @@ namespace StoryAPI.Runtime
                                 iterationItems = enumerateSource;
                             }
                         }
+                        else if (source is string enumerateText)
+                        {
+                            // Strings are iterable by Unicode code point. enumerate(reversed(text))
+                            // reverses the captured character sequence but still counts upward.
+                            var enumerateCharacters = CreateStringIterationItems(enumerateText);
+                            if (_reverseList)
+                                enumerateCharacters.Reverse();
+                            iterationItems = enumerateCharacters;
+                        }
                         else if (source is IDictionary enumerateDictionary)
                         {
                             // Python's enumerate(dict) visits keys. Snapshot keys so dictionary
@@ -5279,10 +5305,17 @@ namespace StoryAPI.Runtime
                                 iterationItems = reversedKeys;
                             }
                         }
+                        else if (source is string reverseText)
+                        {
+                            // Python's reversed(string) yields Unicode code points backwards.
+                            var reversedCharacters = CreateStringIterationItems(reverseText);
+                            reversedCharacters.Reverse();
+                            iterationItems = reversedCharacters;
+                        }
                         else
                         {
                             throw new InvalidOperationException(
-                                "reversed() iteration requires a list or dictionary source");
+                                "reversed() iteration requires a list, dictionary, or string source");
                         }
                     }
                     else if (_includeDictionaryItems)
@@ -5337,10 +5370,15 @@ namespace StoryAPI.Runtime
                         foreach (object key in dictionary.Keys) keys.Add(key);
                         iterationItems = keys;
                     }
+                    else if (source is string text)
+                    {
+                        // A string is immutable, so its character sequence is safely snapshotted.
+                        iterationItems = CreateStringIterationItems(text);
+                    }
                     else
                     {
                         throw new InvalidOperationException(
-                            "for-in currently supports lists and dictionaries");
+                            "for-in currently supports lists, dictionaries, and strings");
                     }
 
                     if (!GameBridge.TrySetVariableLiteral(

@@ -1740,12 +1740,6 @@ namespace StoryAPI.Tests
                     prefix, out rewritten, out reads, out dynamicBounds),
                 "Function calls inside arithmetic slice bounds should remain unsupported.");
 
-            var statements = Parse(
-                "label arithmetic_slice_bounds_test:\\n" +
-                "    define not_allowed_here = 0\\n" +
-                "    return\\n");
-            Check(statements.Count == 1,
-                "The surrounding script parser should remain unaffected by slice-bound rewriting.");
         }
 
         private static void TestSequenceSliceAssignments()

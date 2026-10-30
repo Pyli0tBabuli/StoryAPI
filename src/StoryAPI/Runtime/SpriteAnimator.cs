@@ -98,7 +98,8 @@ namespace StoryAPI.Runtime
             try
             {
                 var property = type.GetProperty("Behind", flags);
-                var field = property == null ? type.GetField("Behind", flags) : null;
+                var field = type.GetField("Behind", flags) ??
+                    type.GetField("<Behind>k__BackingField", flags);
                 Type valueType = property != null ? property.PropertyType :
                     (field != null ? field.FieldType : null);
                 if (valueType == null)
@@ -131,7 +132,8 @@ namespace StoryAPI.Runtime
                 }
 
                 var hasProperty = type.GetProperty("HasBehind", flags);
-                var hasField = hasProperty == null ? type.GetField("HasBehind", flags) : null;
+                var hasField = type.GetField("HasBehind", flags) ??
+                    type.GetField("<HasBehind>k__BackingField", flags);
                 if (hasProperty != null && hasProperty.CanWrite && hasProperty.PropertyType == typeof(bool))
                     hasProperty.SetValue(show, true, null);
                 else if (hasField != null && hasField.FieldType == typeof(bool))

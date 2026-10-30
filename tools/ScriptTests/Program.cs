@@ -31,6 +31,7 @@ namespace StoryAPI.Tests
             Run("indexed collection conditions", TestIndexedCollectionConditions);
             Run("list and dictionary membership conditions", TestCollectionMembershipConditions);
             Run("list and dictionary length conditions", TestCollectionLengthConditions);
+            Run("string membership and length conditions", TestStringConditionBuiltins);
             Run("None comparison conditions", TestNoneComparisonConditions);
             Run("list and dictionary clear methods", TestCollectionClearMethods);
             Run("list reverse method", TestListReverseMethod);
@@ -1199,6 +1200,80 @@ namespace StoryAPI.Tests
                     stringCondition, prefix, "length-test.rpy", 26, out lines, out prepared) &&
                 prepared == stringCondition,
                 "Text containing len(collection) inside a string must not be rewritten.");
+        }
+
+        private static void TestStringConditionBuiltins()
+        {
+            const string sourcePath = "string-condition-test.rpy";
+            const string prefix = "_storyapi_string_condition_test";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            context.SetVariable("message", new SimpleExpressionEngine.DataValue("a😀bc"));
+            context.SetVariable("empty_message", new SimpleExpressionEngine.DataValue(""));
+
+            List<RenPyParser.Line> lines;
+            string prepared;
+            object result;
+
+            Check(VariableIndexExpressionLine.TryPrepareCondition(
+                    "len(message) == 4", prefix + "_length",
+                    sourcePath, 40, out lines, out prepared),
+                "len(string) should be prepared as a runtime scalar in a condition.");
+            RenPyParser.Line lengthLine = lines.Single(
+                line => line.GetType().Name == "CollectionLengthLine");
+            ((RenPyParser.Images.IApply)lengthLine).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(
+                    prefix + "_length_length_result_0", out result) &&
+                    Convert.ToInt32(result) == 4,
+                "len(string) should count Unicode code points rather than UTF-16 code units.");
+
+            Check(VariableIndexExpressionLine.TryPrepareCondition(
+                    "\"😀b\" in message", prefix + "_contains",
+                    sourcePath, 41, out lines, out prepared),
+                "A substring membership check should be prepared.");
+            Check(prepared.Contains(prefix + "_contains_membership_result_0"),
+                "String membership should replace the native in operator with a temporary.");
+            context.SetVariable(prefix + "_contains_membership_value_0",
+                new SimpleExpressionEngine.DataValue("😀b"));
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(
+                    prefix + "_contains_membership_result_0", out result) &&
+                    result is bool && (bool)result,
+                "A substring present in the source string should match.");
+
+            Check(VariableIndexExpressionLine.TryPrepareCondition(
+                    "\"xyz\" not in message", prefix + "_absent",
+                    sourcePath, 42, out lines, out prepared),
+                "A not-in substring check should be prepared.");
+            context.SetVariable(prefix + "_absent_membership_value_0",
+                new SimpleExpressionEngine.DataValue("xyz"));
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(
+                    prefix + "_absent_membership_result_0", out result) &&
+                    result is bool && !(bool)result,
+                "An absent substring should produce a false membership result.");
+
+            Check(VariableIndexExpressionLine.TryPrepareCondition(
+                    "\"\" in message", prefix + "_empty",
+                    sourcePath, 43, out lines, out prepared),
+                "An empty substring membership check should be prepared.");
+            context.SetVariable(prefix + "_empty_membership_value_0",
+                new SimpleExpressionEngine.DataValue(""));
+            ((RenPyParser.Images.IApply)lines.Last()).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(
+                    prefix + "_empty_membership_result_0", out result) &&
+                    result is bool && (bool)result,
+                "An empty substring should be present in every string.");
+
+            Check(VariableIndexExpressionLine.TryPrepareCondition(
+                    "len(empty_message) == 0", prefix + "_empty_length",
+                    sourcePath, 44, out lines, out prepared),
+                "len(empty_string) should be prepared.");
+            ((RenPyParser.Images.IApply)lines.Single(
+                line => line.GetType().Name == "CollectionLengthLine")).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(
+                    prefix + "_empty_length_length_result_0", out result) &&
+                    Convert.ToInt32(result) == 0,
+                "An empty string should have length zero.");
         }
 
         private static void TestNoneComparisonConditions()

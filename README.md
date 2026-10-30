@@ -245,15 +245,17 @@ Other list/dictionary methods and arbitrary Python calls remain unsupported.
 Runtime `if`, `elif`, and `while` conditions also support restricted membership checks such as
 `"key" in inventory`, `selected_item in inventory`, `"count" in settings`, and
 `"battery" not in inventory`. For lists, `in` searches for a matching scalar item; for dictionaries,
-it checks whether a quoted string key exists. Membership checks can be combined with `and`/`or`
-and with indexed reads. The left operand is currently a scalar literal or simple variable name,
-and the right operand must be a named object-backed list or dictionary.
+it checks whether a quoted string key exists. For strings, `in` and `not in` perform ordinal
+substring checks and require a string left operand, for example `"ana" in message`. Membership
+checks can be combined with `and`/`or` and with indexed reads. The left operand is currently a
+scalar literal or simple variable name, and the right operand must be a named list, dictionary, or string.
 
 Runtime `if`, `elif`, and `while` conditions also support the restricted form
-`len(collection)` for a named list or dictionary, for example `if len(inventory) >= 3:`.
-The call is resolved before the native condition is evaluated, and several length calls can
-be used in one condition or combined with indexed reads. Other function calls and nested
-forms such as `len(inventory[0])` remain unsupported.
+`len(collection)` for a named list, dictionary, or string, for example `if len(inventory) >= 3:`
+or `if len(message) == 5:`. For strings, length counts Unicode code points. The call is
+resolved before the native condition is evaluated, and several length calls can be used in one
+condition or combined with indexed reads. Other function calls and nested forms such as
+`len(inventory[0])` remain unsupported.
 
 The Python `None` literal is supported in runtime `if`, `elif`, and `while` comparisons,
 for example `if optional_value == None:` and `if optional_value != None:`. Simple variable-to-`None`

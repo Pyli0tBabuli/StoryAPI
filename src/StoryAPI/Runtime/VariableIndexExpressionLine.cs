@@ -4434,9 +4434,14 @@ namespace StoryAPI.Runtime
                     {
                         count = dictionary.Count;
                     }
+                    else if (collection is string text)
+                    {
+                        // Python len(str) counts Unicode code points, not UTF-16 code units.
+                        count = CreateStringIterationItems(text).Count;
+                    }
                     else
                     {
-                        throw new InvalidOperationException("len() target is not a list or dictionary");
+                        throw new InvalidOperationException("len() target is not a list, dictionary, or string");
                     }
 
                     if (!GameBridge.TrySetVariableLiteral(_resultName, count, false, context))
@@ -4514,9 +4519,15 @@ namespace StoryAPI.Runtime
                         // operand simply cannot match one of those keys.
                         contains = value is string && dictionary.Contains(value);
                     }
+                    else if (collection is string text)
+                    {
+                        if (!(value is string substring))
+                            throw new InvalidOperationException("string membership requires a string operand");
+                        contains = text.IndexOf(substring, StringComparison.Ordinal) >= 0;
+                    }
                     else
                     {
-                        throw new InvalidOperationException("membership target is not a list or dictionary");
+                        throw new InvalidOperationException("membership target is not a list, dictionary, or string");
                     }
 
                     if (!GameBridge.TrySetVariableLiteral(_resultName, contains, false, context))

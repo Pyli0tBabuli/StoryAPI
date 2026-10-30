@@ -28,6 +28,7 @@ namespace StoryAPI.Tests
             Run("dynamic index scalar value extraction", TestDynamicIndexScalarValueExtraction);
             Run("re-evaluate indexed reads on repeated execution", TestRepeatedIndexedTemporaryReads);
             Run("indexed collection assignment", TestIndexedCollectionAssignments);
+            Run("list and slice deletion", TestCollectionDeletion);
             Run("list append and remove methods", TestListMethodMutations);
             Run("indexed collection conditions", TestIndexedCollectionConditions);
             Run("list and dictionary membership conditions", TestCollectionMembershipConditions);
@@ -960,6 +961,96 @@ namespace StoryAPI.Tests
                 "The None comparison should be rewritten, while quoted text remains unchanged.");
             Check(noIndexLines.Any(line => line.GetType().Name == "NoneComparisonLine"),
                 "Condition preparation should emit a dedicated runtime None comparison.");
+        }
+
+        private static void TestCollectionDeletion()
+        {
+            const string sourcePath = "collection-deletion-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            RenPyParser.Line line;
+
+            var inventory = new List<object> { "key", "flashlight", "battery", "map", "food" };
+            context.SetVariable("inventory", new SimpleExpressionEngine.DataValue((object)inventory));
+            context.SetVariable("remove_index", new SimpleExpressionEngine.DataValue(1f));
+            context.SetVariable("slice_start", new SimpleExpressionEngine.DataValue(1f));
+            context.SetVariable("slice_stop", new SimpleExpressionEngine.DataValue(3f));
+
+            Check(VariableIndexExpressionLine.TryCreateCollectionDeleteLine(
+                    "del inventory[remove_index]", sourcePath, 1, out line),
+                "Deleting an item through a dynamic list index should be recognized.");
+            Check(line.GetType().Name == "CollectionDeleteLine",
+                "The del statement should emit a dedicated collection-delete instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(inventory.Count == 4 && Equals(inventory[0], "key") &&
+                    Equals(inventory[1], "battery"),
+                "Deleting a dynamic list index should remove exactly that item.");
+
+            Check(VariableIndexExpressionLine.TryCreateCollectionDeleteLine(
+                    "del inventory[slice_start:slice_stop]", sourcePath, 2, out line),
+                "Deleting a list slice with variable bounds should be recognized.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(inventory.Count == 2 && Equals(inventory[0], "key") &&
+                    Equals(inventory[1], "map"),
+                "Deleting a unit-step slice should remove its selected contiguous items.");
+
+            inventory = new List<object> { 1f, 2f, 3f, 4f, 5f, 6f };
+            context.SetVariable("inventory", new SimpleExpressionEngine.DataValue((object)inventory));
+            context.SetVariable("slice_start", new SimpleExpressionEngine.DataValue(0f));
+            context.SetVariable("slice_stop", new SimpleExpressionEngine.DataValue(6f));
+            context.SetVariable("slice_step", new SimpleExpressionEngine.DataValue(2f));
+            Check(VariableIndexExpressionLine.TryCreateCollectionDeleteLine(
+                    "del inventory[slice_start:slice_stop:slice_step]", sourcePath, 3, out line),
+                "Deleting an extended slice should be recognized.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(inventory.Count == 3 && Convert.ToSingle(inventory[0]) == 2f &&
+                    Convert.ToSingle(inventory[1]) == 4f && Convert.ToSingle(inventory[2]) == 6f,
+                "Extended slice deletion should preserve unselected items.");
+
+            inventory = new List<object> { 1f, 2f, 3f, 4f, 5f };
+            context.SetVariable("inventory", new SimpleExpressionEngine.DataValue((object)inventory));
+            context.SetVariable("slice_start", new SimpleExpressionEngine.DataValue(4f));
+            context.SetVariable("slice_stop", new SimpleExpressionEngine.DataValue(0f));
+            context.SetVariable("slice_step", new SimpleExpressionEngine.DataValue(-2f));
+            Check(VariableIndexExpressionLine.TryCreateCollectionDeleteLine(
+                    "del inventory[slice_start:slice_stop:slice_step]", sourcePath, 4, out line),
+                "Deleting a negative-step slice should be recognized.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(inventory.Count == 3 && Convert.ToSingle(inventory[0]) == 2f &&
+                    Convert.ToSingle(inventory[1]) == 4f &&
+                    Convert.ToSingle(inventory[2]) == 5f,
+                "Negative-step deletion should remove the intended indexes without shifting errors.");
+
+            var settings = new Dictionary<string, object>
+            {
+                { "theme", "dark" },
+                { "sound", "on" }
+            };
+            context.SetVariable("settings", new SimpleExpressionEngine.DataValue((object)settings));
+            Check(VariableIndexExpressionLine.TryCreateCollectionDeleteLine(
+                    "del settings[\"theme\"]", sourcePath, 5, out line),
+                "Deleting a dictionary string key should be recognized.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(settings.Count == 1 && !settings.ContainsKey("theme") &&
+                    Equals(settings["sound"], "on"),
+                "Dictionary deletion should remove only the requested key.");
+
+            Check(!VariableIndexExpressionLine.TryCreateCollectionDeleteLine(
+                    "del inventory[1]; inventory.clear()", sourcePath, 6, out line),
+                "Multiple statements in a del line should be rejected.");
+            Check(!VariableIndexExpressionLine.TryCreateCollectionDeleteLine(
+                    "del inventory[1][0]", sourcePath, 7, out line),
+                "Nested deletion targets should remain unsupported.");
+
+            var statements = Parse(
+                "label collection_deletion_test:\\n" +
+                "    $ del inventory[1:3]\\n" +
+                "    return\\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing a collection deletion statement.");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "The del statement should parse as a Python statement.").Code ==
+                    "del inventory[1:3]",
+                "The parser should preserve del statements for the compiler.");
         }
 
         private static void TestListMethodMutations()

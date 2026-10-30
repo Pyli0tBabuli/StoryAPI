@@ -2021,9 +2021,9 @@ namespace StoryAPI.Tests
             Check(VariableIndexExpressionLine.TryCreateDictionaryPopLines(
                     "settings.pop(\"sound\", \"off\")", sourcePath, 23, out lines),
                 "dict.pop() should accept a literal default argument.");
-            Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+            Check(VariableIndexExpressionLine.TryCreateDictionaryPopLines(
                     "settings.pop(key_name)", sourcePath, 24, out lines),
-                "dict.pop() should require a quoted string key.");
+                "dict.pop() should accept a simple variable key.");
             Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
                     "settings[\"nested\"].pop(\"sound\")", sourcePath, 25, out lines),
                 "dict.pop() should reject indexed targets.");

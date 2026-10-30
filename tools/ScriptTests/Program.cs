@@ -57,6 +57,7 @@ namespace StoryAPI.Tests
             Run("dictionary get method", TestDictionaryGetMethod);
             Run("dictionary setdefault method", TestDictionarySetDefaultMethod);
             Run("dynamic dictionary method keys", TestDynamicDictionaryMethodKeys);
+            Run("dynamic dictionary method defaults", TestDynamicDictionaryMethodDefaults);
             Run("dictionary copy method", TestDictionaryCopyMethod);
             Run("compound scalar assignments", TestCompoundScalarAssignments);
             Run("compound indexed collection assignments", TestIndexedCompoundAssignments);
@@ -2105,9 +2106,9 @@ namespace StoryAPI.Tests
             Check(GameBridge.TryGetLastTestLiteral("nullable_value", out observed) && observed == null,
                 "pop() should assign None when the key is missing and its default is None.");
 
-            Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+            Check(VariableIndexExpressionLine.TryCreateDictionaryPopLines(
                     "settings.pop(\"missing\", fallback)", sourcePath, 20, out lines),
-                "pop() should reject variable defaults in this restricted implementation.");
+                "pop() should accept a simple variable default.");
             Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
                     "settings.pop(\"missing\", \"a\", \"b\")", sourcePath, 21, out lines),
                 "pop() should reject more than two arguments.");
@@ -2196,9 +2197,9 @@ namespace StoryAPI.Tests
             Check(VariableIndexExpressionLine.TryCreateDictionaryGetLine(
                     "theme = settings.get(key_name)", sourcePath, 15, out line),
                 "dict.get() should accept a simple variable as its key.");
-            Check(!VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+            Check(VariableIndexExpressionLine.TryCreateDictionaryGetLine(
                     "theme = settings.get(\"theme\", fallback)", sourcePath, 16, out line),
-                "dict.get() should reject non-literal defaults in this subset.");
+                "dict.get() should accept a simple variable default.");
             Check(!VariableIndexExpressionLine.TryCreateDictionaryGetLine(
                     "theme = settings.get(\"theme\", \"fallback\", \"extra\")",
                     sourcePath, 17, out line),
@@ -2425,9 +2426,9 @@ namespace StoryAPI.Tests
             Check(VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
                     "value = settings.setdefault(key_name)", sourcePath, 20, out line),
                 "setdefault() should accept a simple variable as its key.");
-            Check(!VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+            Check(VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
                     "value = settings.setdefault(\"key\", fallback)", sourcePath, 21, out line),
-                "setdefault() should reject non-literal defaults in this subset.");
+                "setdefault() should accept a simple variable default.");
             Check(!VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
                     "value = settings.setdefault(\"key\", \"one\", \"two\")",
                     sourcePath, 22, out line),
@@ -2459,6 +2460,130 @@ namespace StoryAPI.Tests
                     "The missing-key call should parse as a Python statement.").Code ==
                     "inserted = settings.setdefault(\"accent\", \"blue\")",
                 "The parser should preserve setdefault() assignments with defaults.");
+        }
+
+        private static void TestDynamicDictionaryMethodDefaults()
+        {
+            const string sourcePath = "dynamic-dictionary-method-defaults-test.rpy";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var settings = new Dictionary<string, object>
+            {
+                { "theme", "dark" },
+                { "count", 5f }
+            };
+            context.SetVariable("settings",
+                new SimpleExpressionEngine.DataValue((object)settings));
+            context.SetVariable("missing_key",
+                new SimpleExpressionEngine.DataValue("absent"));
+
+            RenPyParser.Line line;
+            object observed;
+
+            context.SetVariable("fallback_text",
+                new SimpleExpressionEngine.DataValue("first fallback"));
+            Check(VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "fallback_result = settings.get(missing_key, fallback_text)",
+                    sourcePath, 10, out line),
+                "dict.get() should accept a simple variable as its default.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("fallback_result", out observed) &&
+                    Equals(observed, "first fallback"),
+                "dict.get() should resolve a string default variable.");
+            context.SetVariable("fallback_text",
+                new SimpleExpressionEngine.DataValue("updated fallback"));
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("fallback_result", out observed) &&
+                    Equals(observed, "updated fallback"),
+                "A dynamic dict.get() default should be re-evaluated on every execution.");
+
+            context.SetVariable("new_key",
+                new SimpleExpressionEngine.DataValue("new_count"));
+            context.SetVariable("numeric_fallback",
+                new SimpleExpressionEngine.DataValue(7f));
+            Check(VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                    "inserted_result = settings.setdefault(new_key, numeric_fallback)",
+                    sourcePath, 11, out line),
+                "dict.setdefault() should accept a numeric variable default.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("inserted_result", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 7f) < 0.001f &&
+                    Math.Abs(Convert.ToSingle(settings["new_count"]) - 7f) < 0.001f,
+                "dict.setdefault() should insert the resolved numeric default.");
+            context.SetVariable("numeric_fallback",
+                new SimpleExpressionEngine.DataValue(9f));
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("inserted_result", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 7f) < 0.001f &&
+                    Math.Abs(Convert.ToSingle(settings["new_count"]) - 7f) < 0.001f,
+                "dict.setdefault() should keep an existing value even when the variable default changes.");
+
+            context.SetVariable("missing_pop_key",
+                new SimpleExpressionEngine.DataValue("absent_pop"));
+            context.SetVariable("numeric_pop_fallback",
+                new SimpleExpressionEngine.DataValue(23f));
+            Check(VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "pop_fallback_result = settings.pop(missing_pop_key, numeric_pop_fallback)",
+                    sourcePath, 12, out List<RenPyParser.Line> lines),
+                "dict.pop() should accept a variable default.");
+            ((RenPyParser.Images.IApply)lines[0]).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("pop_fallback_result", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 23f) < 0.001f &&
+                    !settings.ContainsKey("absent_pop"),
+                "dict.pop() should return a variable default without inserting the missing key.");
+            context.SetVariable("numeric_pop_fallback",
+                new SimpleExpressionEngine.DataValue(31f));
+            ((RenPyParser.Images.IApply)lines[0]).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("pop_fallback_result", out observed) &&
+                    Math.Abs(Convert.ToSingle(observed) - 31f) < 0.001f,
+                "A dynamic dict.pop() default should be re-evaluated on every execution.");
+
+            var fallbackList = new List<object> { "torch", 2f };
+            context.SetVariable("inventory_fallback",
+                new SimpleExpressionEngine.DataValue((object)fallbackList));
+            Check(VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "inventory_result = settings.get(missing_key, inventory_fallback)",
+                    sourcePath, 13, out line),
+                "dict.get() should accept an object-backed collection variable as a default.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("inventory_result", out observed) &&
+                    ReferenceEquals(observed, fallbackList) && settings.Count == 3,
+                "dict.get() should preserve an object-backed list default without mutating the dictionary.");
+
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "bad_result = settings.get(missing_key, fallback_text + 1)",
+                    sourcePath, 20, out line),
+                "Dictionary method defaults should reject arithmetic expressions.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionarySetDefaultLine(
+                    "bad_result = settings.setdefault(\"key\", fallback_text.upper())",
+                    sourcePath, 21, out line),
+                "Dictionary method defaults should reject method calls.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryPopLines(
+                    "settings.pop(\"key\", defaults[\"key\"])",
+                    sourcePath, 22, out lines),
+                "Dictionary method defaults should reject indexed expressions.");
+            Check(!VariableIndexExpressionLine.TryCreateDictionaryGetLine(
+                    "bad_result = settings.get(missing_key, and)",
+                    sourcePath, 23, out line),
+                "Dictionary method defaults should reject reserved keywords.");
+
+            var statements = Parse(
+                "label dynamic_dictionary_method_defaults_test:\n" +
+                "    $ fallback_result = settings.get(missing_key, fallback_text)\n" +
+                "    $ inserted_result = settings.setdefault(new_key, numeric_fallback)\n" +
+                "    $ popped_result = settings.pop(missing_pop_key, numeric_pop_fallback)\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing dictionary methods with variable defaults.");
+            Check(Require<PythonStatement>(label.Body[0],
+                    "dict.get() with a variable default should parse.").Code ==
+                    "fallback_result = settings.get(missing_key, fallback_text)" &&
+                Require<PythonStatement>(label.Body[1],
+                    "dict.setdefault() with a variable default should parse.").Code ==
+                    "inserted_result = settings.setdefault(new_key, numeric_fallback)" &&
+                Require<PythonStatement>(label.Body[2],
+                    "dict.pop() with a variable default should parse.").Code ==
+                    "popped_result = settings.pop(missing_pop_key, numeric_pop_fallback)",
+                "The parser should preserve dynamic dictionary method defaults.");
         }
 
         private static void TestDictionaryCopyMethod()

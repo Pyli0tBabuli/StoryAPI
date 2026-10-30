@@ -227,16 +227,13 @@ The optional `reverse` keyword accepts only the literal `True` or `False`; `True
 descending order and `False` (the default) sorts in ascending order. Mixed or unsupported item
 types are left unchanged with a warning. Lists also support `$ inventory.reverse()`, which
 reverses the existing list in place and accepts no arguments. Assignment from `$ item_index = inventory.index("battery")` is supported for a quoted string,
-number, `True`, `False`, or `None` literal. Optional integer `start` and `stop` bounds are also
-supported, as in `$ item_index = inventory.index("battery", 1, 4)`; the start is inclusive, stop
-is exclusive, and negative bounds are normalized like Python. If no matching item exists in the
-requested range, StoryAPI logs a warning and leaves the destination unchanged. The search value
-may be a scalar literal or a simple variable name; variable values are resolved each time the
-assignment executes. Bounds must remain integer literals; indexed targets, dynamic bounds, and
-more than three arguments are unsupported.
-The `index()` search value may also be a simple variable name; it is resolved at execution time
-and supports strings, numbers, booleans, and `None`. Its optional `start` and `stop` bounds
-remain integer literals.
+number, `True`, `False`, or `None` literal, or a simple variable name containing one of those
+scalar values. Dynamic variables are resolved each time the assignment executes. Optional integer
+`start` and `stop` bounds are also supported, as in `$ item_index = inventory.index("battery", 1, 4)`;
+the start is inclusive, stop is exclusive, and negative bounds are normalized like Python. If no
+matching item exists in the requested range, StoryAPI logs a warning and leaves the destination
+unchanged. Indexed targets, compound search expressions, dynamic bounds, and more than three
+arguments remain unsupported.
 Assignment from
 `$ copied_inventory = inventory.copy()` is supported as a shallow list copy: the new list can
 be changed without adding or removing items in the source list, while nested objects remain shared.

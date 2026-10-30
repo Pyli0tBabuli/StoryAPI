@@ -3404,7 +3404,7 @@ namespace StoryAPI.Runtime
                         bool numbers = IsNumericScalar(sorted[0]);
                         if (!strings && !numbers)
                             throw new InvalidOperationException(
-                                "sorted() supports homogeneous string or numeric lists only");
+                                "sorted() supports homogeneous string or numeric values only");
 
                         for (int i = 1; i < sorted.Count; i++)
                         {
@@ -4934,12 +4934,26 @@ namespace StoryAPI.Runtime
                     if (context == null)
                         throw new InvalidOperationException("no live script context was available");
                     if (!TryGetObjectBackedVariable(_sourceName, context, out object source) ||
-                        !(source is IList sourceList))
-                        throw new InvalidOperationException("sorted() requires a list variable");
+                        source == null)
+                        throw new InvalidOperationException("sorted() requires a list or dictionary variable");
 
-                    var sorted = new List<object>(sourceList.Count);
-                    for (int i = 0; i < sourceList.Count; i++)
-                        sorted.Add(sourceList[i]);
+                    var sorted = new List<object>();
+                    if (source is IList sourceList)
+                    {
+                        for (int i = 0; i < sourceList.Count; i++)
+                            sorted.Add(sourceList[i]);
+                    }
+                    else if (source is IDictionary sourceDictionary)
+                    {
+                        // Python's sorted(dictionary) iterates the dictionary's keys.
+                        foreach (DictionaryEntry entry in sourceDictionary)
+                            sorted.Add(entry.Key);
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException(
+                            "sorted() requires a list or dictionary variable");
+                    }
 
                     if (sorted.Count > 1)
                     {

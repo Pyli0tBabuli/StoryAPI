@@ -32,6 +32,7 @@ namespace StoryAPI.Tests
             Run("list and dictionary membership conditions", TestCollectionMembershipConditions);
             Run("list and dictionary length conditions", TestCollectionLengthConditions);
             Run("string membership and length conditions", TestStringConditionBuiltins);
+            Run("string index reads", TestStringIndexReads);
             Run("None comparison conditions", TestNoneComparisonConditions);
             Run("list and dictionary clear methods", TestCollectionClearMethods);
             Run("list reverse method", TestListReverseMethod);
@@ -1274,6 +1275,74 @@ namespace StoryAPI.Tests
                     prefix + "_empty_length_length_result_0", out result) &&
                     Convert.ToInt32(result) == 0,
                 "An empty string should have length zero.");
+        }
+
+        private static void TestStringIndexReads()
+        {
+            const string sourcePath = "string-index-test.rpy";
+            const string prefix = "_storyapi_string_index_test";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            context.SetVariable("message", new SimpleExpressionEngine.DataValue("A😀BC"));
+            context.SetVariable("character_index", new SimpleExpressionEngine.DataValue(2f));
+
+            VariableIndexExpressionLine line;
+            object result;
+
+            Check(VariableIndexExpressionLine.TryCreateTemporary(
+                    prefix + "_first", "message[0]", sourcePath, 50,
+                    new VariableInitializationState(), prefix + "_gate", "first_character",
+                    out line),
+                "A string index read should create a runtime line.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(prefix + "_first", out result) &&
+                    result is string && (string)result == "A",
+                "A positive string index should return the character at that position.");
+
+            Check(VariableIndexExpressionLine.TryCreateTemporary(
+                    prefix + "_emoji", "message[1]", sourcePath, 51,
+                    new VariableInitializationState(), prefix + "_gate", "emoji_character",
+                    out line),
+                "A string index read should accept a Unicode character.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(prefix + "_emoji", out result) &&
+                    result is string && (string)result == "😀",
+                "A supplementary Unicode character should be returned as one code point.");
+
+            Check(VariableIndexExpressionLine.TryCreateTemporary(
+                    prefix + "_negative", "message[-1]", sourcePath, 52,
+                    new VariableInitializationState(), prefix + "_gate", "last_character",
+                    out line),
+                "A negative string index should create a runtime line.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(prefix + "_negative", out result) &&
+                    result is string && (string)result == "C",
+                "A negative string index should count backward from the final code point.");
+
+            Check(VariableIndexExpressionLine.TryCreateTemporary(
+                    prefix + "_nested", "message[1][0]", sourcePath, 53,
+                    new VariableInitializationState(), prefix + "_gate", "nested_character",
+                    out line),
+                "Chained string indexes should create a runtime line.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(prefix + "_nested", out result) &&
+                    result is string && (string)result == "😀",
+                "A string index result should itself support another string index.");
+
+            Check(VariableIndexExpressionLine.TryCreateTemporary(
+                    prefix + "_dynamic", "message[character_index]", sourcePath, 54,
+                    new VariableInitializationState(), prefix + "_gate", "dynamic_character",
+                    out line),
+                "A dynamic variable should be accepted as a string index.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(prefix + "_dynamic", out result) &&
+                    result is string && (string)result == "B",
+                "A dynamic string index should resolve using the runtime integer value.");
+
+            context.SetVariable("character_index", new SimpleExpressionEngine.DataValue(3f));
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(prefix + "_dynamic", out result) &&
+                    result is string && (string)result == "C",
+                "A temporary dynamic string index should be re-evaluated when revisited.");
         }
 
         private static void TestNoneComparisonConditions()

@@ -5203,7 +5203,7 @@ namespace StoryAPI.Runtime
                         throw new InvalidOperationException("no live script context was available");
                     if (!TryGetObjectBackedVariable(_sourceName, context, out object source))
                         throw new InvalidOperationException("source variable '" + _sourceName +
-                            "' is not an object-backed list or dictionary");
+                            "' is not a supported list, dictionary, or string");
 
                     object iterationItems;
                     if (_enumerateList && _includeDictionaryItems)
@@ -5797,7 +5797,7 @@ namespace StoryAPI.Runtime
                 if (field == null) return false;
 
                 value = field.GetValue(dataValue);
-                return value is IList || value is IDictionary;
+                return value is IList || value is IDictionary || value is string;
             }
             catch
             {

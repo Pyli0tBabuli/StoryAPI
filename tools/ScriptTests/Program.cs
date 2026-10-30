@@ -3522,7 +3522,7 @@ namespace StoryAPI.Tests
                 "label sorted_dictionary_keys_method_invalid:\n" +
                 "    for value in sorted(settings.keys()):\n" +
                 "        pass\n",
-                "named list or dictionary variable");
+                "dictionary.values()");
         }
 
         private static void TestForEnumerateSortedDictionaryValuesIteration()
@@ -3552,6 +3552,7 @@ namespace StoryAPI.Tests
             context.SetVariable("settings",
                 new SimpleExpressionEngine.DataValue((object)settings));
             context.SetVariable("start_index", new SimpleExpressionEngine.DataValue(7f));
+            context.SetVariable("_stage55_start_value", new SimpleExpressionEngine.DataValue(8f));
             RenPyParser.Line preparation;
             Check(VariableIndexExpressionLine.TryCreateSortedForEachPreparationLine(
                     "settings", "_stage55_enumerated_values", true, true,
@@ -3571,7 +3572,7 @@ namespace StoryAPI.Tests
             RenPyParser.Line itemLine;
             Check(VariableIndexExpressionLine.TryCreateForEachItemLine(
                     "index", "value", "_stage55_enumerated_values", "_stage55_index", "_stage55_gate",
-                    true, 0, "start_index + 1", sourcePath, 21, out itemLine),
+                    true, 0, "_stage55_start_value", sourcePath, 21, out itemLine),
                 "The runtime should create the enumerate(sorted(dictionary.values())) item assignment line.");
             ((RenPyParser.Images.IApply)itemLine).Apply(context);
             object observedIndex, observedValue;

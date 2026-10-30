@@ -35,6 +35,20 @@ namespace StoryAPI.Runtime
             public override string ToString() => Name;
         }
 
+        private sealed class SequenceSlice
+        {
+            public int? Start { get; }
+            public int? Stop { get; }
+            public int? Step { get; }
+
+            public SequenceSlice(int? start, int? stop, int? step)
+            {
+                Start = start;
+                Stop = stop;
+                Step = step;
+            }
+        }
+
         private readonly string _name;
         private readonly string _rootName;
         private readonly List<object> _indices;
@@ -329,8 +343,49 @@ namespace StoryAPI.Runtime
             }
 
             int number;
-            return int.TryParse(trimmed, NumberStyles.Integer,
-                CultureInfo.InvariantCulture, out number);
+            if (int.TryParse(trimmed, NumberStyles.Integer,
+                CultureInfo.InvariantCulture, out number))
+                return true;
+
+            return TryParseSequenceSlice(trimmed, out _);
+        }
+
+        private static bool TryParseSequenceSlice(string expression, out SequenceSlice slice)
+        {
+            slice = null;
+            if (string.IsNullOrWhiteSpace(expression) || expression.IndexOf(':') < 0)
+                return false;
+
+            string[] parts = expression.Split(':');
+            if (parts.Length < 2 || parts.Length > 3)
+                return false;
+
+            int? start;
+            int? stop;
+            int? step = null;
+            if (!TryParseOptionalSliceBound(parts[0], out start) ||
+                !TryParseOptionalSliceBound(parts[1], out stop))
+                return false;
+
+            if (parts.Length == 3 && !TryParseOptionalSliceBound(parts[2], out step))
+                return false;
+
+            slice = new SequenceSlice(start, stop, step);
+            return true;
+        }
+
+        private static bool TryParseOptionalSliceBound(string expression, out int? value)
+        {
+            value = null;
+            string trimmed = expression == null ? string.Empty : expression.Trim();
+            if (trimmed.Length == 0) return true;
+
+            if (!int.TryParse(trimmed, NumberStyles.Integer,
+                CultureInfo.InvariantCulture, out int parsed))
+                return false;
+
+            value = parsed;
+            return true;
         }
 
         /// <summary>
@@ -2824,6 +2879,8 @@ namespace StoryAPI.Runtime
                 object literalKey;
                 if (TryParseIndexKey(keyExpression, false, out literalKey))
                 {
+                    if (literalKey is SequenceSlice)
+                        return false; // Slices are read-only; assignment to a slice is not implemented.
                     indices.Add(literalKey);
                 }
                 else
@@ -4742,8 +4799,72 @@ namespace StoryAPI.Runtime
             return value;
         }
 
+        private static object ReadSequenceSlice(object current, SequenceSlice slice)
+        {
+            List<object> values;
+            bool isString;
+            if (current is string text)
+            {
+                values = CreateStringIterationItems(text);
+                isString = true;
+            }
+            else if (current is IList list)
+            {
+                values = new List<object>(list.Count);
+                foreach (object item in list) values.Add(item);
+                isString = false;
+            }
+            else
+            {
+                throw new InvalidOperationException(
+                    "slice target is not a list or string");
+            }
+
+            int step = slice.Step ?? 1;
+            if (step == 0)
+                throw new InvalidOperationException("slice step cannot be zero");
+
+            int length = values.Count;
+            long start;
+            long stop;
+            if (step > 0)
+            {
+                start = slice.Start ?? 0;
+                stop = slice.Stop ?? length;
+                if (start < 0) start += length;
+                if (stop < 0) stop += length;
+                start = Math.Max(0, Math.Min(start, length));
+                stop = Math.Max(0, Math.Min(stop, length));
+            }
+            else
+            {
+                start = slice.Start ?? (length - 1);
+                stop = slice.Stop ?? -1;
+                if (slice.Start.HasValue && start < 0) start += length;
+                if (slice.Stop.HasValue && stop < 0) stop += length;
+                start = Math.Max(-1, Math.Min(start, length - 1));
+                stop = Math.Max(-1, Math.Min(stop, length - 1));
+            }
+
+            if (isString)
+            {
+                var builder = new StringBuilder();
+                for (long i = start; step > 0 ? i < stop : i > stop; i += step)
+                    builder.Append((string)values[(int)i]);
+                return builder.ToString();
+            }
+
+            var result = new List<object>();
+            for (long i = start; step > 0 ? i < stop : i > stop; i += step)
+                result.Add(values[(int)i]);
+            return result;
+        }
+
         private static object ReadContainerItem(object current, object key)
         {
+            if (key is SequenceSlice slice)
+                return ReadSequenceSlice(current, slice);
+
             if (current is IDictionary dictionary)
             {
                 if (!(key is string) || !dictionary.Contains(key))
@@ -5734,6 +5855,13 @@ namespace StoryAPI.Runtime
                 return true;
             }
 
+            SequenceSlice slice;
+            if (TryParseSequenceSlice(trimmed, out slice))
+            {
+                key = slice;
+                return true;
+            }
+
             if (allowDynamicIndexes && IsSimpleIdentifier(trimmed))
             {
                 key = new DynamicIndex(trimmed);
@@ -6066,34 +6194,7 @@ namespace StoryAPI.Runtime
                         throw new InvalidOperationException("dynamic index '" + dynamicIndex.Name +
                             "' was not a supported scalar value");
 
-                    if (current is IDictionary dictionary)
-                    {
-                        if (!(resolvedKey is string) || !dictionary.Contains(resolvedKey))
-                            throw new InvalidOperationException("dictionary key '" + resolvedKey +
-                                "' was not found or did not evaluate to a string key");
-                        current = dictionary[resolvedKey];
-                    }
-                    else if (current is IList list)
-                    {
-                        int index;
-                        if (!TryConvertListIndex(resolvedKey, out index))
-                            throw new InvalidOperationException(
-                                "a list index must evaluate to an integer scalar");
-                        if (index < 0) index += list.Count;
-                        if (index < 0 || index >= list.Count)
-                            throw new IndexOutOfRangeException("list index " + index +
-                                " is outside the valid range");
-                        current = list[index];
-                    }
-                    else if (current is string text)
-                    {
-                        current = ReadStringItem(text, resolvedKey);
-                    }
-                    else
-                    {
-                        throw new InvalidOperationException(
-                            "value is not a list, dictionary, or string");
-                    }
+                    current = ReadContainerItem(current, resolvedKey);
                 }
 
                 if (!GameBridge.TrySetVariableLiteral(_name, current, _isDefault, context))

@@ -1389,8 +1389,8 @@ namespace StoryAPI.Tests
             const string prefix = "_storyapi_sequence_slice_test";
             var context = new RenpyParser.DynamicIndexTestContext();
             context.SetVariable("message", new SimpleExpressionEngine.DataValue("A😀BC"));
-            context.SetVariable("numbers", new SimpleExpressionEngine.DataValue(
-                (object)new List<object> { 1f, 2f, 3f, 4f, 5f }));
+            var numbers = new List<object> { 1f, 2f, 3f, 4f, 5f };
+            context.SetVariable("numbers", new SimpleExpressionEngine.DataValue((object)numbers));
 
             VariableIndexExpressionLine line;
             object result;

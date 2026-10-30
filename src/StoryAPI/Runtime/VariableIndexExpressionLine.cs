@@ -3370,7 +3370,6 @@ namespace StoryAPI.Runtime
             private readonly string _destinationName;
             private readonly string _rootName;
             private readonly bool _reverse;
-            private readonly bool _dictionaryValues;
             private readonly string _sourcePath;
             private readonly int _sourceLine;
 
@@ -4923,6 +4922,7 @@ namespace StoryAPI.Runtime
             private readonly string _sourceName;
             private readonly string _destinationName;
             private readonly bool _reverse;
+            private readonly bool _dictionaryValues;
             private readonly string _sourcePath;
             private readonly int _sourceLine;
 

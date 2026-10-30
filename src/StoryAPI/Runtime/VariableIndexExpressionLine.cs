@@ -2927,6 +2927,83 @@ namespace StoryAPI.Runtime
             return !string.IsNullOrWhiteSpace(rightExpression);
         }
 
+        /// <summary>
+        /// Recognizes deletion of one list item, a list slice, or a dictionary string key.
+        /// The target supports integer/string literals, simple variable indexes, and slices
+        /// whose bounds are integer literals or simple variable names.
+        /// </summary>
+        public static bool TryCreateCollectionDeleteLine(string code, string sourcePath,
+            int sourceLine, out Line line)
+        {
+            line = null;
+            if (string.IsNullOrWhiteSpace(code)) return false;
+
+            int cursor = 0;
+            SkipWhitespace(code, ref cursor);
+            const string keyword = "del";
+            if (cursor + keyword.Length > code.Length ||
+                string.Compare(code, cursor, keyword, 0, keyword.Length,
+                    StringComparison.Ordinal) != 0)
+                return false;
+            cursor += keyword.Length;
+            if (cursor >= code.Length || !char.IsWhiteSpace(code[cursor])) return false;
+            SkipWhitespace(code, ref cursor);
+
+            if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
+            int nameStart = cursor++;
+            while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
+            string rootName = code.Substring(nameStart, cursor - nameStart);
+
+            SkipWhitespace(code, ref cursor);
+            if (cursor >= code.Length || code[cursor] != '[') return false;
+            int keyStart = ++cursor;
+            bool inString = false;
+            bool escaped = false;
+            char quote = '\0';
+            int close = -1;
+            while (cursor < code.Length)
+            {
+                char c = code[cursor];
+                if (inString)
+                {
+                    if (escaped) escaped = false;
+                    else if (c == '\\') escaped = true;
+                    else if (c == quote) inString = false;
+                    cursor++;
+                    continue;
+                }
+
+                if (c == '"' || c == '\'')
+                {
+                    inString = true;
+                    quote = c;
+                    cursor++;
+                    continue;
+                }
+
+                // Nested subscriptions and multiple deletion targets are kept outside
+                // this intentionally small statement form.
+                if (c == '[') return false;
+                if (c == ']')
+                {
+                    close = cursor;
+                    break;
+                }
+                cursor++;
+            }
+
+            if (close < 0 || inString) return false;
+            string keyExpression = code.Substring(keyStart, close - keyStart).Trim();
+            if (!TryParseIndexKey(keyExpression, true, out object key)) return false;
+
+            cursor = close + 1;
+            SkipWhitespace(code, ref cursor);
+            if (cursor != code.Length) return false;
+
+            line = new CollectionDeleteLine(rootName, key, sourcePath, sourceLine);
+            return true;
+        }
+
         private sealed class CollectionClearLine : Line, IApply
         {
             private readonly string _rootName;
@@ -2970,6 +3047,90 @@ namespace StoryAPI.Runtime
                 catch (Exception e)
                 {
                     Log.Warn("Could not clear collection '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ": " +
+                        e.GetBaseException().Message);
+                }
+            }
+        }
+
+        private sealed class CollectionDeleteLine : Line, IApply
+        {
+            private readonly string _rootName;
+            private readonly object _key;
+            private readonly string _sourcePath;
+            private readonly int _sourceLine;
+
+            public CollectionDeleteLine(string rootName, object key, string sourcePath, int sourceLine)
+            {
+                _rootName = rootName;
+                _key = key;
+                _sourcePath = sourcePath;
+                _sourceLine = sourceLine;
+            }
+
+            public void Apply(IContext context)
+            {
+                try
+                {
+                    if (context == null)
+                        throw new InvalidOperationException("no live script context was available");
+                    if (!TryGetObjectBackedVariable(_rootName, context, out object collection))
+                        throw new InvalidOperationException(
+                            "variable '" + _rootName + "' does not contain an object-backed list or dictionary");
+
+                    object key = ResolveMutationKey(_key, context);
+                    SequenceSlice slice = key as SequenceSlice;
+                    if (collection is IList list)
+                    {
+                        if (list.IsReadOnly || list.IsFixedSize)
+                            throw new InvalidOperationException("list deletion target is not mutable");
+
+                        if (slice != null)
+                        {
+                            List<int> indexes = GetSequenceSliceIndexes(
+                                list.Count, slice, out int ignoredInsertionIndex, out int ignoredStep);
+                            // Remove from right to left so earlier indexes remain stable.
+                            foreach (int index in indexes.OrderByDescending(x => x))
+                                list.RemoveAt(index);
+                        }
+                        else
+                        {
+                            if (!TryConvertListIndex(key, out int index))
+                                throw new InvalidOperationException(
+                                    "a list deletion index must evaluate to an integer");
+                            if (index < 0) index += list.Count;
+                            if (index < 0 || index >= list.Count)
+                                throw new IndexOutOfRangeException(
+                                    "list deletion index " + index + " is outside the valid range");
+                            list.RemoveAt(index);
+                        }
+                    }
+                    else if (collection is IDictionary dictionary)
+                    {
+                        if (slice != null)
+                            throw new InvalidOperationException("dictionary slices are not supported");
+                        if (!(key is string))
+                            throw new InvalidOperationException(
+                                "a dictionary deletion key must evaluate to a string");
+                        if (!dictionary.Contains(key))
+                            throw new InvalidOperationException(
+                                "dictionary key '" + key + "' was not found");
+                        if (dictionary.IsReadOnly || dictionary.IsFixedSize)
+                            throw new InvalidOperationException("dictionary deletion target is not mutable");
+                        dictionary.Remove(key);
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException(
+                            "deletion target must be a list or dictionary");
+                    }
+
+                    Log.Info("Deleted an item from collection '" + _rootName + "' at " +
+                        _sourcePath + ":" + _sourceLine + ".");
+                }
+                catch (Exception e)
+                {
+                    Log.Warn("Could not delete from collection '" + _rootName + "' at " +
                         _sourcePath + ":" + _sourceLine + ": " +
                         e.GetBaseException().Message);
                 }

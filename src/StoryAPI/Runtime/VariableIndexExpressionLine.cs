@@ -2454,6 +2454,11 @@ namespace StoryAPI.Runtime
                 targetIndices.Count == 0)
                 return false;
 
+            // Augmented slice assignment has different semantics from ordinary list slice
+            // assignment and is intentionally not part of this restricted feature.
+            if (targetIndices[targetIndices.Count - 1] is SequenceSlice)
+                return false;
+
             // Modulo is computed by StoryAPI at runtime because DDLC+'s scalar expression
             // evaluator does not reliably execute the native % operator. Keep RHS resolution
             // and the guarded collection mutation pipeline, but let the mutation line combine
@@ -2895,10 +2900,9 @@ namespace StoryAPI.Runtime
                 if (close < 0 || inString) return false;
                 string keyExpression = code.Substring(keyStart, close - keyStart).Trim();
                 object literalKey;
-                if (TryParseIndexKey(keyExpression, false, out literalKey))
+                bool isSliceExpression = keyExpression.IndexOf(':') >= 0;
+                if (TryParseIndexKey(keyExpression, isSliceExpression, out literalKey))
                 {
-                    if (literalKey is SequenceSlice)
-                        return false; // Slices are read-only; assignment to a slice is not implemented.
                     indices.Add(literalKey);
                 }
                 else
@@ -4755,11 +4759,24 @@ namespace StoryAPI.Runtime
                         throw new InvalidOperationException("base variable '" + _rootName +
                             "' does not contain an object-backed list or dictionary");
 
-                    if (!TryGetDynamicIndexValue(_valueName, context, out object value))
+                    bool isSliceAssignment = _indices[_indices.Count - 1] is SequenceSlice;
+                    object value;
+                    if (isSliceAssignment)
+                    {
+                        if (!TryGetObjectBackedVariable(_valueName, context, out value))
+                            throw new InvalidOperationException(
+                                "slice assignment requires a list or string replacement");
+                    }
+                    else if (!TryGetDynamicIndexValue(_valueName, context, out value))
+                    {
                         throw new InvalidOperationException("assigned value must be a supported scalar");
+                    }
 
                     for (int i = 0; i < _indices.Count - 1; i++)
                     {
+                        if (_indices[i] is SequenceSlice)
+                            throw new InvalidOperationException(
+                                "a slice cannot be used as an intermediate assignment target");
                         object key = ResolveMutationKey(_indices[i], context);
                         current = ReadContainerItem(current, key);
                     }
@@ -4768,7 +4785,41 @@ namespace StoryAPI.Runtime
                     if (_compoundOperation == '%')
                         value = CalculatePythonModulo(ReadContainerItem(current, finalKey), value);
 
-                    if (current is IList list)
+                    SequenceSlice finalSlice = finalKey as SequenceSlice;
+                    if (finalSlice != null)
+                    {
+                        if (!(current is IList targetList))
+                            throw new InvalidOperationException(
+                                "slice assignment target must be a list");
+                        if (targetList.IsReadOnly || targetList.IsFixedSize)
+                            throw new InvalidOperationException(
+                                "slice assignment target is not a mutable list");
+
+                        List<object> replacementItems = GetSequenceReplacementItems(value);
+                        List<int> selectedIndexes = GetSequenceSliceIndexes(
+                            targetList.Count, finalSlice, out int insertionIndex, out int step);
+
+                        if (step == 1)
+                        {
+                            // A unit-step slice may grow or shrink the target list.
+                            for (int i = 0; i < selectedIndexes.Count; i++)
+                                targetList.RemoveAt(insertionIndex);
+                            for (int i = 0; i < replacementItems.Count; i++)
+                                targetList.Insert(insertionIndex + i, replacementItems[i]);
+                        }
+                        else
+                        {
+                            // Extended slices replace selected elements one-for-one.
+                            if (selectedIndexes.Count != replacementItems.Count)
+                                throw new InvalidOperationException(
+                                    "extended slice assignment requires " + selectedIndexes.Count +
+                                    " replacement items, but received " + replacementItems.Count);
+
+                            for (int i = 0; i < selectedIndexes.Count; i++)
+                                targetList[selectedIndexes[i]] = replacementItems[i];
+                        }
+                    }
+                    else if (current is IList list)
                     {
                         if (!TryConvertListIndex(finalKey, out int index))
                             throw new InvalidOperationException(
@@ -4807,6 +4858,10 @@ namespace StoryAPI.Runtime
 
         private static object ResolveMutationKey(object key, IContext context)
         {
+            SequenceSlice sequenceSlice = key as SequenceSlice;
+            if (sequenceSlice != null)
+                return ResolveSequenceSlice(sequenceSlice, context);
+
             DynamicIndex dynamicIndex = key as DynamicIndex;
             if (dynamicIndex == null) return key;
 
@@ -4840,6 +4895,59 @@ namespace StoryAPI.Runtime
                     " must evaluate to an integer within the 32-bit range");
 
             return index;
+        }
+
+        private static List<object> GetSequenceReplacementItems(object value)
+        {
+            var result = new List<object>();
+            if (value is IList list)
+            {
+                foreach (object item in list)
+                    result.Add(item);
+                return result;
+            }
+
+            if (value is string text)
+                return CreateStringIterationItems(text);
+
+            throw new InvalidOperationException(
+                "slice assignment replacement must be a list or string");
+        }
+
+        private static List<int> GetSequenceSliceIndexes(int length, SequenceSlice slice,
+            out int insertionIndex, out int step)
+        {
+            step = slice.Step == null ? 1 : (int)slice.Step;
+            if (step == 0)
+                throw new InvalidOperationException("slice step cannot be zero");
+
+            long start;
+            long stop;
+            if (step > 0)
+            {
+                start = slice.Start == null ? 0 : (int)slice.Start;
+                stop = slice.Stop == null ? length : (int)slice.Stop;
+                if (start < 0) start += length;
+                if (stop < 0) stop += length;
+                start = Math.Max(0, Math.Min(start, length));
+                stop = Math.Max(0, Math.Min(stop, length));
+                insertionIndex = (int)start;
+            }
+            else
+            {
+                start = slice.Start == null ? (length - 1) : (int)slice.Start;
+                stop = slice.Stop == null ? -1 : (int)slice.Stop;
+                if (slice.Start != null && start < 0) start += length;
+                if (slice.Stop != null && stop < 0) stop += length;
+                start = Math.Max(-1, Math.Min(start, length - 1));
+                stop = Math.Max(-1, Math.Min(stop, length - 1));
+                insertionIndex = 0;
+            }
+
+            var indexes = new List<int>();
+            for (long i = start; step > 0 ? i < stop : i > stop; i += step)
+                indexes.Add((int)i);
+            return indexes;
         }
 
         private static object ReadSequenceSlice(object current, SequenceSlice slice)

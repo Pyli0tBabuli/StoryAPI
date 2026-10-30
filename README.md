@@ -159,15 +159,20 @@ keys are also supported when they use a restricted scalar expression, for exampl
 with DDLC+'s scalar evaluator first, then performs the lookup; list and string indexes must
 evaluate to integers and dynamic dictionary keys must evaluate to strings.
 
-Read-only sequence slices are supported for lists and strings with integer literal bounds:
+Sequence slices can be read from lists and strings with integer literal bounds:
 `message[1:4]`, `inventory[:3]`, `inventory[2:]`, and `message[::-1]`. Each bound may also
 be a simple variable name, such as `message[start:end:step]`; it is resolved when the slice is
 read and must evaluate to an integer within the 32-bit range. The optional third bound is the
 step; positive and negative steps are supported, and a zero step fails safely. Omitted bounds
 and negative bounds follow Python slicing rules, including clamping bounds that fall outside
 the sequence. A list slice returns a new list, while a string slice returns a string and counts
-Unicode code points, so emoji remain intact. Arithmetic expressions inside slice bounds,
-dictionary slices, and assigning to a slice are not supported yet.
+Unicode code points, so emoji remain intact.
+List slices can also be assigned from a list or string, for example
+`$ inventory[start:end] = replacement`. Unit-step slice assignment can grow or shrink a list;
+non-unit and negative steps replace selected elements one-for-one and require a replacement
+with exactly the same number of items. Replacement strings are split into Unicode code points.
+String slices remain read-only. Arithmetic expressions inside slice bounds, dictionary slices,
+and slice assignment through an intermediate slice are not supported yet.
 
 Index reads can also be combined with scalar arithmetic, comparisons, and logical operators, for example
 `define bonus = inventory[0] * 2`, `define total = inventory[0] + inventory[1]`, or
@@ -180,8 +185,8 @@ example `$ inventory[0] = 10`, `$ settings["count"] = 5`, or
 the same restricted dynamic scalar indexes supported by reads. Assignment values may use scalar
 expressions; collection reads on the right-hand side are resolved before the assignment. Compound assignments to simple scalar variables and indexed list/dictionary entries support
 `+=`, `-=`, `*=`, `/=`, and `%=`; their right-hand side may use supported scalar expressions and
-collection index reads. Other compound operators such as `**=`, slices, and assigning a new value
-beyond the end of a list remain unsupported. The restricted assignment `$ lowest = min(inventory)` selects the smallest scalar from a named list.
+collection index reads. Compound assignment to slices, other compound operators such as `**=`,
+and assigning a new value beyond the end of a list remain unsupported. The restricted assignment `$ lowest = min(inventory)` selects the smallest scalar from a named list.
 It supports homogeneous string lists (ordinal ordering) and homogeneous numeric lists (numeric ordering).
 The source list is unchanged. Empty lists or mixed/unsupported values log a warning and leave the destination
 unchanged; extra arguments and indexed source expressions are not supported.

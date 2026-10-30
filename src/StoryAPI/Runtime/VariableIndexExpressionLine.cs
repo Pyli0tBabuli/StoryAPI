@@ -384,6 +384,7 @@ namespace StoryAPI.Runtime
                 return false;
 
             var rewrittenParts = new string[parts.Length];
+            var pendingExpressions = new List<KeyValuePair<string, string>>();
             bool changed = false;
 
             for (int i = 0; i < parts.Length; i++)
@@ -407,8 +408,9 @@ namespace StoryAPI.Runtime
                     return false;
 
                 string temporaryName = temporaryPrefix + "_key_" +
-                    (dynamicIndexOffset + dynamicIndexExpressions.Count);
-                dynamicIndexExpressions.Add(new KeyValuePair<string, string>(
+                    (dynamicIndexOffset + dynamicIndexExpressions.Count +
+                     pendingExpressions.Count);
+                pendingExpressions.Add(new KeyValuePair<string, string>(
                     temporaryName, bound));
                 rewrittenParts[i] = temporaryName;
                 changed = true;
@@ -417,6 +419,7 @@ namespace StoryAPI.Runtime
             if (!changed)
                 return false;
 
+            dynamicIndexExpressions.AddRange(pendingExpressions);
             rewrittenExpression = string.Join(":", rewrittenParts);
             return true;
         }

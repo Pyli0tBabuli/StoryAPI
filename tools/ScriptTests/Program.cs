@@ -36,6 +36,7 @@ namespace StoryAPI.Tests
             Run("string membership and length conditions", TestStringConditionBuiltins);
             Run("string index reads", TestStringIndexReads);
             Run("sequence slice reads", TestSequenceSliceReads);
+            Run("arithmetic sequence slice read bounds", TestArithmeticSequenceSliceReadBounds);
             Run("sequence slice assignments", TestSequenceSliceAssignments);
             Run("None comparison conditions", TestNoneComparisonConditions);
             Run("list and dictionary clear methods", TestCollectionClearMethods);
@@ -1677,6 +1678,74 @@ namespace StoryAPI.Tests
             Check(GameBridge.TryGetLastTestLiteral(prefix + "_zero_step_gate", out result) &&
                 result is bool && !(bool)result,
                 "A zero slice step should fail safely and close the runtime guard.");
+        }
+
+        private static void TestArithmeticSequenceSliceReadBounds()
+        {
+            const string sourcePath = "arithmetic-sequence-slice-bounds-test.rpy";
+            const string prefix = "_storyapi_arithmetic_slice_bounds";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var numbers = new List<object> { 1f, 2f, 3f, 4f, 5f };
+            context.SetVariable("numbers", new SimpleExpressionEngine.DataValue((object)numbers));
+
+            Check(VariableIndexExpressionLine.TryRewriteExpression(
+                    "numbers[slice_start + 1:slice_stop - 1:slice_step * 2]",
+                    prefix, out string rewritten,
+                    out List<KeyValuePair<string, string>> reads,
+                    out List<KeyValuePair<string, string>> dynamicBounds),
+                "Arithmetic expressions should be accepted in sequence-slice read bounds.");
+            Check(reads.Count == 1 &&
+                    reads[0].Value == "numbers[" + prefix + "_key_0:" +
+                        prefix + "_key_1:" + prefix + "_key_2]" &&
+                    dynamicBounds.Count == 3 &&
+                    dynamicBounds[0].Key == prefix + "_key_0" &&
+                    dynamicBounds[0].Value == "slice_start + 1" &&
+                    dynamicBounds[1].Key == prefix + "_key_1" &&
+                    dynamicBounds[1].Value == "slice_stop - 1" &&
+                    dynamicBounds[2].Key == prefix + "_key_2" &&
+                    dynamicBounds[2].Value == "slice_step * 2",
+                "Each arithmetic bound should be scheduled as a unique scalar temporary.");
+
+            Check(rewritten == prefix + "_index_0",
+                "A slice read inside an expression should be replaced by its temporary result.");
+
+            context.SetVariable(prefix + "_key_0", new SimpleExpressionEngine.DataValue(1f));
+            context.SetVariable(prefix + "_key_1", new SimpleExpressionEngine.DataValue(4f));
+            context.SetVariable(prefix + "_key_2", new SimpleExpressionEngine.DataValue(2f));
+
+            Check(VariableIndexExpressionLine.TryCreateTemporary(
+                    prefix + "_slice", reads[0].Value, sourcePath, 1,
+                    new VariableInitializationState(), prefix + "_gate", "slice",
+                    out VariableIndexExpressionLine line),
+                "The rewritten arithmetic slice should be readable by the runtime index instruction.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(prefix + "_slice", out object result) &&
+                    result is IList && ((IList)result).Count == 2 &&
+                    Convert.ToSingle(((IList)result)[0]) == 2f &&
+                    Convert.ToSingle(((IList)result)[1]) == 4f,
+                "Arithmetic start, stop, and step values should select the expected list elements.");
+
+            context.SetVariable(prefix + "_key_0", new SimpleExpressionEngine.DataValue(0f));
+            context.SetVariable(prefix + "_key_1", new SimpleExpressionEngine.DataValue(5f));
+            context.SetVariable(prefix + "_key_2", new SimpleExpressionEngine.DataValue(1f));
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(prefix + "_slice", out result) &&
+                    result is IList && ((IList)result).Count == 5 &&
+                    Convert.ToSingle(((IList)result)[0]) == 1f &&
+                    Convert.ToSingle(((IList)result)[4]) == 5f,
+                "A compiled arithmetic slice should use the current bound temporaries on each execution.");
+
+            Check(!VariableIndexExpressionLine.TryRewriteExpression(
+                    "numbers[get_slice_start() + 1:slice_stop]",
+                    prefix, out rewritten, out reads, out dynamicBounds),
+                "Function calls inside arithmetic slice bounds should remain unsupported.");
+
+            var statements = Parse(
+                "label arithmetic_slice_bounds_test:\\n" +
+                "    define not_allowed_here = 0\\n" +
+                "    return\\n");
+            Check(statements.Count == 1,
+                "The surrounding script parser should remain unaffected by slice-bound rewriting.");
         }
 
         private static void TestSequenceSliceAssignments()

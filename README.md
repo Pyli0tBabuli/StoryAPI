@@ -274,9 +274,11 @@ Sorted iteration is available as `for item in sorted(inventory):` and
 the source list; homogeneous strings are ordered ordinally and homogeneous numeric values are ordered
 numerically. The same syntax also accepts a dictionary, sorting its keys:
 `for key in sorted(settings):`. The optional `reverse` argument accepts only the literal `True` or
-`False`, and invalid/mixed sortable values log a warning and skip the loop body. Indexed forms such as
-`for index, item in enumerate(sorted(inventory), start):` and
-`for index, key in enumerate(sorted(settings), start):` are supported, including the `reverse=True` option.
+`False`, and invalid/mixed sortable values log a warning and skip the loop body. Dictionary values can
+be sorted explicitly with `sorted(settings.values())`, including `reverse=True`, without changing the
+source dictionary. Indexed forms such as `for index, item in enumerate(sorted(inventory), start):`,
+`for index, key in enumerate(sorted(settings), start):`, and
+`for index, value in enumerate(sorted(settings.values()), start):` are supported.
 
 Reverse iteration is available as `for item in reversed(inventory):`; it snapshots the named list
 from last item to first and leaves the source list unchanged. Dictionaries can also be traversed in reverse

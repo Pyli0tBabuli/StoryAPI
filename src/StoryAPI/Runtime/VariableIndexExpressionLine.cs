@@ -3370,6 +3370,7 @@ namespace StoryAPI.Runtime
             private readonly string _destinationName;
             private readonly string _rootName;
             private readonly bool _reverse;
+            private readonly bool _dictionaryValues;
             private readonly string _sourcePath;
             private readonly int _sourceLine;
 
@@ -4900,12 +4901,20 @@ namespace StoryAPI.Runtime
             string sourceName, string destinationName, bool reverse,
             string sourcePath, int sourceLine, out Line line)
         {
+            return TryCreateSortedForEachPreparationLine(
+                sourceName, destinationName, reverse, false, sourcePath, sourceLine, out line);
+        }
+
+        public static bool TryCreateSortedForEachPreparationLine(
+            string sourceName, string destinationName, bool reverse, bool dictionaryValues,
+            string sourcePath, int sourceLine, out Line line)
+        {
             line = null;
             if (!IsSimpleIdentifier(sourceName) || !IsSimpleIdentifier(destinationName))
                 return false;
 
             line = new SortedForEachPreparationLine(
-                sourceName, destinationName, reverse, sourcePath, sourceLine);
+                sourceName, destinationName, reverse, dictionaryValues, sourcePath, sourceLine);
             return true;
         }
 
@@ -4918,11 +4927,12 @@ namespace StoryAPI.Runtime
             private readonly int _sourceLine;
 
             public SortedForEachPreparationLine(string sourceName, string destinationName,
-                bool reverse, string sourcePath, int sourceLine)
+                bool reverse, bool dictionaryValues, string sourcePath, int sourceLine)
             {
                 _sourceName = sourceName;
                 _destinationName = destinationName;
                 _reverse = reverse;
+                _dictionaryValues = dictionaryValues;
                 _sourcePath = sourcePath;
                 _sourceLine = sourceLine;
             }
@@ -4938,7 +4948,15 @@ namespace StoryAPI.Runtime
                         throw new InvalidOperationException("sorted() requires a list or dictionary variable");
 
                     var sorted = new List<object>();
-                    if (source is IList sourceList)
+                    if (_dictionaryValues)
+                    {
+                        if (!(source is IDictionary valuesDictionary))
+                            throw new InvalidOperationException(
+                                "sorted(dictionary.values()) requires a dictionary variable");
+                        foreach (DictionaryEntry entry in valuesDictionary)
+                            sorted.Add(entry.Value);
+                    }
+                    else if (source is IList sourceList)
                     {
                         for (int i = 0; i < sourceList.Count; i++)
                             sorted.Add(sourceList[i]);

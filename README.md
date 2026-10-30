@@ -160,12 +160,14 @@ with DDLC+'s scalar evaluator first, then performs the lookup; list and string i
 evaluate to integers and dynamic dictionary keys must evaluate to strings.
 
 Read-only sequence slices are supported for lists and strings with integer literal bounds:
-`message[1:4]`, `inventory[:3]`, `inventory[2:]`, and `message[::-1]`. The optional third
-bound is the step; positive and negative steps are supported, and a zero step fails safely.
-Omitted bounds and negative bounds follow Python slicing rules, including clamping bounds that
-fall outside the sequence. A list slice returns a new list, while a string slice returns a string
-and counts Unicode code points, so emoji remain intact. Dynamic slice bounds, dictionary slices,
-and assigning to a slice are not supported yet.
+`message[1:4]`, `inventory[:3]`, `inventory[2:]`, and `message[::-1]`. Each bound may also
+be a simple variable name, such as `message[start:end:step]`; it is resolved when the slice is
+read and must evaluate to an integer within the 32-bit range. The optional third bound is the
+step; positive and negative steps are supported, and a zero step fails safely. Omitted bounds
+and negative bounds follow Python slicing rules, including clamping bounds that fall outside
+the sequence. A list slice returns a new list, while a string slice returns a string and counts
+Unicode code points, so emoji remain intact. Arithmetic expressions inside slice bounds,
+dictionary slices, and assigning to a slice are not supported yet.
 
 Index reads can also be combined with scalar arithmetic, comparisons, and logical operators, for example
 `define bonus = inventory[0] * 2`, `define total = inventory[0] + inventory[1]`, or

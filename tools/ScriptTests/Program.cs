@@ -1410,7 +1410,62 @@ namespace StoryAPI.Tests
 
             Check(!VariableIndexExpressionLine.CanHandle("message[start:3]") &&
                 !VariableIndexExpressionLine.CanHandle("message[1:3:2:4]"),
-                "Dynamic slice bounds and slices with too many separators should remain unsupported.");
+                "Variable-bound slices must use the rewritten temporary-read path; slices with too many separators remain unsupported.");
+
+            Check(VariableIndexExpressionLine.TryRewriteExpression(
+                    "message[slice_start:slice_stop:slice_step]", prefix,
+                    out string dynamicRewritten,
+                    out List<KeyValuePair<string, string>> dynamicReads),
+                "Slices with variable bounds should be rewritable as indexed reads.");
+            Check(dynamicReads.Count == 1 &&
+                dynamicReads[0].Value == "message[slice_start:slice_stop:slice_step]",
+                "Variable-bound slices should be kept together as one indexed read.");
+
+            context.SetVariable("slice_start", new SimpleExpressionEngine.DataValue(1f));
+            context.SetVariable("slice_stop", new SimpleExpressionEngine.DataValue(4f));
+            context.SetVariable("slice_step", new SimpleExpressionEngine.DataValue(2f));
+            Check(VariableIndexExpressionLine.TryCreateTemporary(
+                    prefix + "_dynamic_string", "message[slice_start:slice_stop:slice_step]",
+                    sourcePath, 59, new VariableInitializationState(), prefix + "_dynamic_gate",
+                    "dynamic_string", out line),
+                "A string slice should accept variable start, stop, and step bounds.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(prefix + "_dynamic_string", out result) &&
+                result is string && (string)result == "😀C",
+                "Variable slice bounds should select the expected Unicode code points.");
+
+            context.SetVariable("slice_start", new SimpleExpressionEngine.DataValue(0f));
+            context.SetVariable("slice_stop", new SimpleExpressionEngine.DataValue(4f));
+            context.SetVariable("slice_step", new SimpleExpressionEngine.DataValue(2f));
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(prefix + "_dynamic_string", out result) &&
+                result is string && (string)result == "AB",
+                "A temporary string slice should re-evaluate its variable bounds on each execution.");
+
+            context.SetVariable("slice_start", new SimpleExpressionEngine.DataValue(1f));
+            context.SetVariable("slice_stop", new SimpleExpressionEngine.DataValue(5f));
+            Check(VariableIndexExpressionLine.TryCreateTemporary(
+                    prefix + "_dynamic_list", "numbers[slice_start:slice_stop:slice_step]",
+                    sourcePath, 59, new VariableInitializationState(), prefix + "_dynamic_list_gate",
+                    "dynamic_list", out line),
+                "A list slice should accept variable start, stop, and step bounds.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(prefix + "_dynamic_list", out result) &&
+                result is IList && ((IList)result).Count == 2 &&
+                Convert.ToSingle(((IList)result)[0]) == 2f &&
+                Convert.ToSingle(((IList)result)[1]) == 4f,
+                "Variable list-slice bounds should select the expected elements.");
+
+            context.SetVariable("slice_step", new SimpleExpressionEngine.DataValue(1.5f));
+            Check(VariableIndexExpressionLine.TryCreateTemporary(
+                    prefix + "_invalid_dynamic", "numbers[0:slice_stop:slice_step]",
+                    sourcePath, 59, new VariableInitializationState(), prefix + "_invalid_dynamic_gate",
+                    "invalid_dynamic", out line),
+                "A dynamic non-integer step should pass syntax parsing and be checked at runtime.");
+            ((RenPyParser.Images.IApply)line).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral(prefix + "_invalid_dynamic_gate", out result) &&
+                result is bool && !(bool)result,
+                "A non-integer dynamic slice bound should fail safely and close its guard.");
 
             Check(VariableIndexExpressionLine.TryCreateTemporary(
                     prefix + "_forward", "message[1:3]", sourcePath, 60,

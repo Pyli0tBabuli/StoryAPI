@@ -20,6 +20,7 @@ namespace StoryAPI.Tests
         {
             Run("dialogue and narration", TestDialogueAndNarration);
             Run("digit-letter sprite attribute", TestDigitLetterSpriteAttribute);
+            Run("inline image statement transitions", TestInlineImageStatementTransitions);
             Run("sprite alias and position", TestSpriteAliasAndPosition);
             Run("define/default scalar declarations", TestVariableDeclarations);
             Run("runtime scalar initializer expressions", TestRuntimeExpressionDeclarations);
@@ -187,6 +188,60 @@ namespace StoryAPI.Tests
             Check(show.Image == "monika", "Image name should be monika.");
             Check(show.Variant == "2a", "The adjacent digit-letter attribute should be 2a.");
             Check(show.At == "left", "Position should be left.");
+        }
+
+        private static void TestInlineImageStatementTransitions()
+        {
+            var statements = Parse(
+                "label inline_image_transitions:\n" +
+                "    scene bg club_day with Dissolve(0.5)\n" +
+                "    show monika 2a as monika_copy at left zorder 4 with Dissolve(0.75)\n" +
+                "    hide monika_copy with dissolve\n" +
+                "    scene black with None\n" +
+                "    show eileen happy\n" +
+                "    with dissolve\n" +
+                "    return\n");
+
+            var label = Require<LabelStatement>(statements[0],
+                "Expected a label containing inline image transitions.");
+            Check(label.Body.Count == 7, "Inline transition statements should preserve line structure.");
+
+            var scene = Require<SceneStatement>(label.Body[0], "Expected scene statement.");
+            Check(scene.Image == "bg club_day" && scene.Transition == "Dissolve(0.5)",
+                "Scene inline transition expression should be preserved.");
+
+            var show = Require<ShowStatement>(label.Body[1], "Expected show statement.");
+            Check(show.Image == "monika" && show.Variant == "2a" &&
+                  show.Alias == "monika_copy" && show.At == "left" &&
+                  show.ZOrder == 4 && show.Transition == "Dissolve(0.75)",
+                "Show properties and its trailing inline transition should be preserved.");
+
+            var hide = Require<HideStatement>(label.Body[2], "Expected hide statement.");
+            Check(hide.Image == "monika_copy" && hide.Transition == "dissolve",
+                "Hide inline transition should be preserved.");
+
+            var clearScene = Require<SceneStatement>(label.Body[3], "Expected second scene statement.");
+            Check(clearScene.Image == "black" && clearScene.Transition == "None",
+                "An explicit None transition should be preserved.");
+
+            var showWithoutTransition = Require<ShowStatement>(label.Body[4],
+                "A show without an inline transition should remain valid.");
+            Check(showWithoutTransition.Transition == null,
+                "A show without a with-clause must not acquire a transition.");
+
+            var standaloneWith = Require<WithStatement>(label.Body[5],
+                "A standalone with statement should remain a separate statement.");
+            Check(standaloneWith.Transition == "dissolve",
+                "Standalone with should retain its original semantics.");
+
+            ExpectSyntaxError(
+                "label missing_show_transition:\n" +
+                "    show monika with\n",
+                "Expected a transition");
+            ExpectSyntaxError(
+                "label missing_hide_transition:\n" +
+                "    hide monika with\n",
+                "Expected a transition");
         }
 
         private static void TestSpriteAliasAndPosition()

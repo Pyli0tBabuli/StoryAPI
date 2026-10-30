@@ -344,29 +344,53 @@ namespace StoryAPI.Scripting
                 statement.Variant = ReadPosePart();
             }
 
-            if (MatchIdentifier("as"))
+            // Ren'Py image properties precede the optional trailing with-clause.
+            // Accept the supported options in sequence so zorder can appear before it.
+            bool readAlias = false;
+            bool readPosition = false;
+            bool readZOrder = false;
+            while (true)
             {
-                // `show s_kill as the_kill` names the slot. It has to be read as its own
-                // clause, otherwise "as" is swallowed as a pose name and the line is left
-                // with a stray word on it.
-                statement.Alias = ReadName("a name to file this sprite under");
-            }
+                if (MatchIdentifier("as"))
+                {
+                    if (readAlias)
+                        throw new ScriptSyntaxException("A show statement can only have one 'as' alias.", Current.Line);
+                    statement.Alias = ReadName("a name to file this sprite under");
+                    readAlias = true;
+                    continue;
+                }
 
-            if (MatchIdentifier("at"))
-            {
-                statement.At = ReadName("position");
-            }
+                if (MatchIdentifier("at"))
+                {
+                    if (readPosition)
+                        throw new ScriptSyntaxException("A show statement can only have one 'at' transform.", Current.Line);
+                    statement.At = ReadName("position or transform");
+                    readPosition = true;
+                    continue;
+                }
 
-            if (MatchIdentifier("with"))
-            {
-                statement.Transform = ReadName("transform");
-            }
+                if (MatchIdentifier("zorder") || MatchIdentifier("z"))
+                {
+                    if (readZOrder)
+                        throw new ScriptSyntaxException("A show statement can only have one 'zorder'.", Current.Line);
+                    if (Current.Type != TokenType.Number)
+                        throw new ScriptSyntaxException("Expected a number after 'zorder'.", Current.Line);
+                    statement.ZOrder = (int)double.Parse(Advance().Text, CultureInfo.InvariantCulture);
+                    readZOrder = true;
+                    continue;
+                }
 
-            if (MatchIdentifier("zorder") || MatchIdentifier("z"))
-            {
-                if (Current.Type != TokenType.Number)
-                    throw new ScriptSyntaxException("Expected a number after 'zorder'.", Current.Line);
-                statement.ZOrder = (int)double.Parse(Advance().Text, CultureInfo.InvariantCulture);
+                if (MatchIdentifier("with"))
+                {
+                    // A with-clause is an expression, not a transform name. Preserve its
+                    // source text so Dissolve(0.5), ImageDissolve(...), etc. reach the game.
+                    statement.Transition = ReadRestOfLine();
+                    if (string.IsNullOrEmpty(statement.Transition))
+                        throw new ScriptSyntaxException("Expected a transition after 'with'.", line);
+                    break;
+                }
+
+                break;
             }
 
             FinishLine();
@@ -387,8 +411,17 @@ namespace StoryAPI.Scripting
             int line = Current.Line;
             _index++;   // hide
             string image = ReadName("image name");
+            string transition = null;
+
+            if (MatchIdentifier("with"))
+            {
+                transition = ReadRestOfLine();
+                if (string.IsNullOrEmpty(transition))
+                    throw new ScriptSyntaxException("Expected a transition after 'with'.", line);
+            }
+
             FinishLine();
-            return new HideStatement { Image = image, Line = line };
+            return new HideStatement { Image = image, Transition = transition, Line = line };
         }
 
         private Statement ParseWith()

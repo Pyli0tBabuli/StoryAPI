@@ -4419,7 +4419,7 @@ namespace StoryAPI.Tests
                     "phrase", "_stage57_string", false, false, false, false, false,
                     sourcePath, 10, out preparation),
                 "The runtime should prepare direct string iteration.");
-            ((RenpyParser.Images.IApply)preparation).Apply(context);
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
             Check(GameBridge.TryGetLastTestLiteral("_stage57_string", out observed) &&
                     observed is List<object> &&
                     ((List<object>)observed).SequenceEqual(new object[] { "a", "😀", "b" }),
@@ -4429,7 +4429,7 @@ namespace StoryAPI.Tests
                     "phrase", "_stage57_reversed", false, false, false, true, false,
                     sourcePath, 11, out preparation),
                 "The runtime should prepare reversed string iteration.");
-            ((RenpyParser.Images.IApply)preparation).Apply(context);
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
             Check(GameBridge.TryGetLastTestLiteral("_stage57_reversed", out observed) &&
                     observed is List<object> &&
                     ((List<object>)observed).SequenceEqual(new object[] { "b", "😀", "a" }),
@@ -4439,7 +4439,7 @@ namespace StoryAPI.Tests
                     "phrase", "_stage57_enumerated", false, false, false, false, true,
                     sourcePath, 12, out preparation),
                 "The runtime should prepare enumerate(string).");
-            ((RenpyParser.Images.IApply)preparation).Apply(context);
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
             Check(GameBridge.TryGetLastTestLiteral("_stage57_enumerated", out observed) &&
                     observed is List<object> &&
                     ((List<object>)observed).SequenceEqual(new object[] { "a", "😀", "b" }),
@@ -4449,7 +4449,7 @@ namespace StoryAPI.Tests
                     "phrase", "_stage57_enumerated_reversed", false, false, false, true, true,
                     sourcePath, 13, out preparation),
                 "The runtime should prepare enumerate(reversed(string)).");
-            ((RenpyParser.Images.IApply)preparation).Apply(context);
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
             Check(GameBridge.TryGetLastTestLiteral("_stage57_enumerated_reversed", out observed) &&
                     observed is List<object> &&
                     ((List<object>)observed).SequenceEqual(new object[] { "b", "😀", "a" }),
@@ -4460,7 +4460,7 @@ namespace StoryAPI.Tests
                     "phrase", "_stage57_empty_string", false, false, false, false, false,
                     sourcePath, 14, out preparation),
                 "The runtime should prepare an empty string iteration.");
-            ((RenpyParser.Images.IApply)preparation).Apply(context);
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
             Check(GameBridge.TryGetLastTestLiteral("_stage57_empty_string", out observed) &&
                     observed is List<object> && ((List<object>)observed).Count == 0,
                 "An empty string should produce an empty iteration sequence.");

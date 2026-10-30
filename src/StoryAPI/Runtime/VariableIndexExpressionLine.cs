@@ -4858,16 +4858,16 @@ namespace StoryAPI.Runtime
 
         private static object ResolveMutationKey(object key, IContext context)
         {
+            SequenceSlice sequenceSlice = key as SequenceSlice;
+            if (sequenceSlice != null)
+                return ResolveSequenceSlice(sequenceSlice, context);
+
             DynamicIndex dynamicIndex = key as DynamicIndex;
             if (dynamicIndex == null) return key;
 
             if (!TryGetDynamicIndexValue(dynamicIndex.Name, context, out object value))
                 throw new InvalidOperationException("dynamic index '" + dynamicIndex.Name +
                     "' was not a supported scalar value");
-
-            SequenceSlice sequenceSlice = key as SequenceSlice;
-            if (sequenceSlice != null)
-                return ResolveSequenceSlice(sequenceSlice, context);
 
             return value;
         }

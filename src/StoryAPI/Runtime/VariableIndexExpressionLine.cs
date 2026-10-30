@@ -4512,7 +4512,7 @@ namespace StoryAPI.Runtime
             throw new InvalidOperationException(
                 "list search value variable '" + dynamicValue.Name +
                 "' must resolve to a supported scalar; runtime DataValue: " +
-                (hasRawValue ? GameBridge.DescribeDataValue(rawValue) : "<variable not resolved>"));
+                (hasRawValue ? DescribeListSearchDataValue(rawValue) : "<variable not resolved>"));
         }
 
         private static string DescribeListSearchScalar(object value)
@@ -4520,6 +4520,30 @@ namespace StoryAPI.Runtime
             if (value == null) return "None";
             return Convert.ToString(value, CultureInfo.InvariantCulture) +
                 " [" + value.GetType().FullName + "]";
+        }
+
+        private static string DescribeListSearchDataValue(DataValue value)
+        {
+            try
+            {
+                var fields = typeof(DataValue).GetFields(
+                    BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public);
+                var descriptions = new List<string>();
+                foreach (FieldInfo field in fields)
+                {
+                    object fieldValue = field.GetValue(value);
+                    descriptions.Add(field.Name + "=" +
+                        (fieldValue == null ? "<null>" :
+                            fieldValue + " [" + fieldValue.GetType().FullName + "]"));
+                }
+                return descriptions.Count == 0
+                    ? value.ToString()
+                    : string.Join(", ", descriptions);
+            }
+            catch (Exception e)
+            {
+                return "<DataValue diagnostic failed: " + e.GetBaseException().Message + ">";
+            }
         }
 
         private static string ResolveDictionaryKey(object key, IContext context)

@@ -4118,7 +4118,7 @@ namespace StoryAPI.Game
             return assigned;
         }
 
-        internal static string DescribeDataValue(DataValue value)
+        private static string DescribeDataValue(DataValue value)
         {
             try
             {

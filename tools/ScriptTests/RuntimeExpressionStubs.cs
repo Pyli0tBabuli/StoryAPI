@@ -79,6 +79,7 @@ namespace SimpleExpressionEngine
 {
     public enum TestDataValueType
     {
+        Unknown,
         None,
         Float,
         String,
@@ -114,6 +115,16 @@ namespace SimpleExpressionEngine
             type = TestDataValueType.Boolean;
             objectRef = value;
             floatVal = value ? 1f : 0f;
+            stringVal = string.Empty;
+        }
+
+        // Models the game's explicit DataType.None value, which is not necessarily
+        // equal to default(DataValue) even when its inactive fields are zero/null.
+        public DataValue(float inactiveNumber, bool isNone)
+        {
+            type = isNone ? TestDataValueType.None : TestDataValueType.Float;
+            objectRef = null;
+            floatVal = inactiveNumber;
             stringVal = string.Empty;
         }
 

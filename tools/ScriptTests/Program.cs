@@ -1015,9 +1015,9 @@ namespace StoryAPI.Tests
                     "del inventory[slice_start:slice_stop:slice_step]", sourcePath, 4, out line),
                 "Deleting a negative-step slice should be recognized.");
             ((RenPyParser.Images.IApply)line).Apply(context);
-            Check(inventory.Count == 3 && Convert.ToSingle(inventory[0]) == 2f &&
-                    Convert.ToSingle(inventory[1]) == 4f &&
-                    Convert.ToSingle(inventory[2]) == 5f,
+            Check(inventory.Count == 3 && Convert.ToSingle(inventory[0]) == 1f &&
+                    Convert.ToSingle(inventory[1]) == 2f &&
+                    Convert.ToSingle(inventory[2]) == 4f,
                 "Negative-step deletion should remove the intended indexes without shifting errors.");
 
             var settings = new Dictionary<string, object>

@@ -473,20 +473,21 @@ namespace StoryAPI.Scripting
 
         private void EmitScene(SceneStatement statement)
         {
+            string layer = string.IsNullOrEmpty(statement.OnLayer) ? "master" : statement.OnLayer;
             EmitImageStatementWith(statement.Transition, statement.Line, () =>
             {
                 if (_assets.IsCustomImage(statement.Image))
                 {
-                    _out.Add(new CustomBackgroundLine(_assets, statement.Image));
+                    _out.Add(new CustomBackgroundLine(_assets, statement.Image, layer));
                 }
                 else
                 {
-                    // The name is written out as it stands. The game names its backgrounds
-                    // in two words ("bg club_day") and its plain colours in one ("black"),
-                    // and which of the two a name is only known from the game's own block
-                    // table, which does not exist yet at compile time. The layer is added
-                    // when the mod is registered.
-                    _out.Add(new RenpyScene("scene " + statement.Image));
+                    // The game scene instruction owns the layer clearing behavior. Keep the
+                    // onlayer clause in the native command so the game clears only that layer.
+                    string command = "scene" +
+                        (string.IsNullOrEmpty(statement.Image) ? "" : " " + statement.Image) +
+                        (string.IsNullOrEmpty(statement.OnLayer) ? "" : " onlayer " + layer);
+                    _out.Add(new RenpyScene(command));
                 }
             });
         }
@@ -519,7 +520,8 @@ namespace StoryAPI.Scripting
             if (_assets.IsCustomImage(variant == null ? image : image + " " + variant))
             {
                 _out.Add(new CustomSpriteLine(_assets, image, variant, statement.Alias,
-                                             statement.At, statement.ZOrder ?? 1));
+                                             statement.At, statement.ZOrder ?? 1,
+                                             statement.OnLayer ?? "master"));
                 return;
             }
 
@@ -533,7 +535,8 @@ namespace StoryAPI.Scripting
                 string poseName = image + " " + variant;
                 if (BaseSprites.IsPose(poseName))
                 {
-                    _out.Add(new PoseLine(poseName, statement.At, statement.ZOrder ?? 1));
+                    _out.Add(new PoseLine(poseName, statement.At, statement.ZOrder ?? 1,
+                        statement.OnLayer ?? "master"));
                     return;
                 }
             }
@@ -544,7 +547,8 @@ namespace StoryAPI.Scripting
             if (!string.IsNullOrEmpty(statement.At) && !IsPosition(statement.At))
             {
                 _out.Add(new NativeSpriteLine(image, statement.Alias ?? image,
-                                              statement.At, statement.ZOrder ?? 1));
+                                              statement.At, statement.ZOrder ?? 1,
+                                              statement.OnLayer ?? "master"));
                 return;
             }
 
@@ -554,12 +558,13 @@ namespace StoryAPI.Scripting
             // writes it, rather than assembled from fields.
             var showText = "show " + image +
                            (variant == null ? "" : " " + variant) +
-                           (string.IsNullOrEmpty(statement.Alias) ? "" : " as " + statement.Alias);
+                           (string.IsNullOrEmpty(statement.Alias) ? "" : " as " + statement.Alias) +
+                           (string.IsNullOrEmpty(statement.OnLayer) ? "" : " onlayer " + statement.OnLayer);
 
             var show = new Show(showText);
             show.ImageName = image;
             show.Variant = variant ?? string.Empty;
-            show.Layer = "master";
+            show.Layer = string.IsNullOrEmpty(statement.OnLayer) ? "master" : statement.OnLayer;
             show.AllowAutoFocus = true;
 
             if (statement.ZOrder.HasValue)
@@ -579,10 +584,66 @@ namespace StoryAPI.Scripting
             var hide = new Hide(string.Empty, false, false);
             hide.Name = statement.Image;
 
+            string layer = string.IsNullOrEmpty(statement.OnLayer) ? "master" : statement.OnLayer;
+            if (!TrySetImageLayer(hide, layer))
+            {
+                Warn("The installed DDLC+ Hide instruction does not expose an image layer; " +
+                     "cannot compile 'hide " + statement.Image + " onlayer " + layer + "'.");
+                return;
+            }
+
             var line = new RenpyHide();
             line.hide = hide;
-            line.HideData = "hide " + statement.Image;
+            line.HideData = "hide " + statement.Image +
+                (string.IsNullOrEmpty(statement.OnLayer) ? "" : " onlayer " + layer);
             _out.Add(line);
+        }
+
+        /// <summary>Set the optional layer on a game-owned image instruction.</summary>
+        private static bool TrySetImageLayer(object target, string layer)
+        {
+            if (target == null) return false;
+            if (string.IsNullOrEmpty(layer) || string.Equals(layer, "master",
+                StringComparison.OrdinalIgnoreCase)) return true;
+
+            const System.Reflection.BindingFlags flags =
+                System.Reflection.BindingFlags.Instance |
+                System.Reflection.BindingFlags.Public |
+                System.Reflection.BindingFlags.NonPublic;
+
+            try
+            {
+                var type = target.GetType();
+                var property = type.GetProperty("Layer", flags);
+                if (property != null)
+                {
+                    if (property.CanWrite)
+                    {
+                        property.SetValue(target, layer, null);
+                        return true;
+                    }
+
+                    var backing = type.GetField("<Layer>k__BackingField", flags);
+                    if (backing != null)
+                    {
+                        backing.SetValue(target, layer);
+                        return true;
+                    }
+                }
+
+                var field = type.GetField("Layer", flags);
+                if (field != null && field.FieldType == typeof(string))
+                {
+                    field.SetValue(target, layer);
+                    return true;
+                }
+            }
+            catch (Exception)
+            {
+                // The warning at the call site names the exact statement that was skipped.
+            }
+
+            return false;
         }
 
         private void EmitHide(HideStatement statement)

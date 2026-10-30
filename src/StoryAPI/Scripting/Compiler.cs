@@ -581,69 +581,24 @@ namespace StoryAPI.Scripting
 
         private void EmitHideCore(HideStatement statement)
         {
-            var hide = new Hide(string.Empty, false, false);
-            hide.Name = statement.Image;
-
             string layer = string.IsNullOrEmpty(statement.OnLayer) ? "master" : statement.OnLayer;
-            if (!TrySetImageLayer(hide, layer))
+
+            // The DDLC+ Hide DTO does not expose a layer member (unlike Show and Scene).
+            // For non-master layers, hide the StoryAPI-owned renderer in that exact layer
+            // instead of silently attempting a master-layer Hide or dropping the command.
+            if (!string.Equals(layer, "master", StringComparison.OrdinalIgnoreCase))
             {
-                Warn("The installed DDLC+ Hide instruction does not expose an image layer; " +
-                     "cannot compile 'hide " + statement.Image + " onlayer " + layer + "'.");
+                _out.Add(new LayeredHideLine(statement.Image, layer));
                 return;
             }
 
+            var hide = new Hide(string.Empty, false, false);
+            hide.Name = statement.Image;
+
             var line = new RenpyHide();
             line.hide = hide;
-            line.HideData = "hide " + statement.Image +
-                (string.IsNullOrEmpty(statement.OnLayer) ? "" : " onlayer " + layer);
+            line.HideData = "hide " + statement.Image;
             _out.Add(line);
-        }
-
-        /// <summary>Set the optional layer on a game-owned image instruction.</summary>
-        private static bool TrySetImageLayer(object target, string layer)
-        {
-            if (target == null) return false;
-            if (string.IsNullOrEmpty(layer) || string.Equals(layer, "master",
-                StringComparison.OrdinalIgnoreCase)) return true;
-
-            const System.Reflection.BindingFlags flags =
-                System.Reflection.BindingFlags.Instance |
-                System.Reflection.BindingFlags.Public |
-                System.Reflection.BindingFlags.NonPublic;
-
-            try
-            {
-                var type = target.GetType();
-                var property = type.GetProperty("Layer", flags);
-                if (property != null)
-                {
-                    if (property.CanWrite)
-                    {
-                        property.SetValue(target, layer, null);
-                        return true;
-                    }
-
-                    var backing = type.GetField("<Layer>k__BackingField", flags);
-                    if (backing != null)
-                    {
-                        backing.SetValue(target, layer);
-                        return true;
-                    }
-                }
-
-                var field = type.GetField("Layer", flags);
-                if (field != null && field.FieldType == typeof(string))
-                {
-                    field.SetValue(target, layer);
-                    return true;
-                }
-            }
-            catch (Exception)
-            {
-                // The warning at the call site names the exact statement that was skipped.
-            }
-
-            return false;
         }
 
         private void EmitHide(HideStatement statement)

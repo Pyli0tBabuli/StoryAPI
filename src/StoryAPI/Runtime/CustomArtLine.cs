@@ -240,6 +240,25 @@ namespace StoryAPI.Runtime
         }
     }
 
+    /// <summary>Hides a StoryAPI-managed image from one non-default display layer.</summary>
+    internal sealed class LayeredHideLine : Line, IApply
+    {
+        private readonly string _imageTag;
+        private readonly string _layer;
+
+        public LayeredHideLine(string imageTag, string layer)
+        {
+            _imageTag = imageTag;
+            _layer = string.IsNullOrEmpty(layer) ? "master" : layer;
+        }
+
+        public void Apply(IContext context)
+        {
+            Log.Info("story: executing LayeredHideLine");
+            ArtInjector.HideOwned(_imageTag, _layer);
+        }
+    }
+
     internal sealed class CustomAudioLine : Line, IApply
     {
         private readonly StoryAssets _assets;

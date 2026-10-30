@@ -352,6 +352,12 @@ namespace StoryAPI.Runtime
             return true;
         }
 
+        internal static void Forget(string name, string layer = "master")
+        {
+            if (string.IsNullOrEmpty(name)) return;
+            s_poses.Remove(ArtInjector.SlotKey(name, layer));
+        }
+
         public static void Clear()
         {
             s_poses.Clear();

@@ -695,6 +695,87 @@ namespace StoryAPI.Runtime
             }
         }
 
+        /// <summary>
+        /// Hide a tag on a non-default layer when the picture is managed by StoryAPI.
+        ///
+        /// DDLC+'s RenpyParser Hide value has no layer member, so its native Hide line
+        /// cannot express Ren'Py's onlayer property. StoryAPI owns the renderer for its
+        /// custom sprites, poses, and native sprites, and can remove that exact renderer
+        /// without touching a same-named image on another layer.
+        /// </summary>
+        internal static bool HideOwned(string imageTag, string layer)
+        {
+            if (string.IsNullOrEmpty(imageTag)) return false;
+            if (string.IsNullOrEmpty(layer)) layer = "master";
+
+            string matchKey = null;
+            SavedArt match = null;
+
+            foreach (var pair in s_sprites)
+            {
+                var recipe = pair.Value?.Recipe;
+                if (recipe == null ||
+                    !string.Equals(recipe.Layer ?? "master", layer,
+                        StringComparison.OrdinalIgnoreCase) ||
+                    !MatchesImageTag(recipe, imageTag))
+                    continue;
+
+                if (matchKey != null)
+                {
+                    Log.Warn("hide: more than one StoryAPI image on layer '" + layer +
+                             "' matches tag '" + imageTag + "'; nothing was hidden.");
+                    return false;
+                }
+
+                matchKey = pair.Key;
+                match = recipe;
+            }
+
+            if (matchKey == null || match == null)
+            {
+                Log.Warn("hide: no StoryAPI-managed image with tag '" + imageTag +
+                         "' exists on layer '" + layer + "'. This DDLC+ Hide instruction " +
+                         "cannot hide an unmanaged image on a non-master layer.");
+                return false;
+            }
+
+            SpriteHandle handle;
+            if (s_sprites.TryGetValue(matchKey, out handle) && handle != null)
+            {
+                if (match.Kind == SavedArt.Pose)
+                {
+                    DestroyHosted(match.Slot, layer);
+                    BaseSprites.Forget(match.Slot, layer);
+                }
+                else if (handle.Renderer != null && handle.Renderer.gameObject != null)
+                {
+                    handle.Renderer.gameObject.SetActive(false);
+                    SafeDestroy(handle.Renderer.gameObject);
+                }
+            }
+
+            s_sprites.Remove(matchKey);
+            Log.Info("hide: removed StoryAPI tag '" + imageTag + "' from layer '" + layer + "'");
+            return true;
+        }
+
+        private static bool MatchesImageTag(SavedArt recipe, string imageTag)
+        {
+            if (string.Equals(recipe.Slot, imageTag, StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            // StoryAPI hosts DDLC+'s character prefabs under their full pose name
+            // (e.g. "monika 1a"), while Ren'Py hide addresses the first name as tag.
+            if (recipe.Kind == SavedArt.Pose && !string.IsNullOrEmpty(recipe.Source))
+            {
+                int separator = recipe.Source.IndexOf(' ');
+                string tag = separator < 0 ? recipe.Source : recipe.Source.Substring(0, separator);
+                return string.Equals(tag, imageTag, StringComparison.OrdinalIgnoreCase);
+            }
+
+            return false;
+        }
+
         public static void ForgetAll()
         {
             s_sprites.Clear();

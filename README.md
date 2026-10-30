@@ -128,7 +128,11 @@ Image statements can select an existing Ren'Py display layer with `onlayer`:
 showing another image. When omitted, the layer remains `master`, matching Ren'Py's default.
 StoryAPI uses the layers supplied by DDLC+; this feature does not create new layers.
 Mod-owned sprites, game poses, and their layer identity are also retained in StoryAPI's
-save-state record so they can be restored to the same layer after loading.
+save-state record so they can be restored to the same layer after loading. For explicit
+non-`master` `hide ... onlayer ...`, StoryAPI removes the exact renderer when it owns
+that image. DDLC+'s native `Hide` instruction has no layer field, so hiding unrelated
+images that were not created or registered by StoryAPI on non-default layers is not
+available through that game API yet.
 
 ### Variable declarations and loop control
 

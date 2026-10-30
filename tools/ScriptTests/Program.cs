@@ -3632,7 +3632,7 @@ namespace StoryAPI.Tests
                     "settings", "_stage56_sorted_items", false, false, true,
                     sourcePath, 10, out preparation),
                 "The runtime should prepare sorted dictionary key/value pairs.");
-            ((RenpyParser.Images.IApply)preparation).Apply(context);
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
             object observed;
             Check(GameBridge.TryGetLastTestLiteral("_stage56_sorted_items", out observed) &&
                     observed is List<object> &&
@@ -3645,7 +3645,7 @@ namespace StoryAPI.Tests
                     "settings", "_stage56_sorted_items_descending", true, false, true,
                     sourcePath, 11, out preparation),
                 "The runtime should prepare descending sorted dictionary pairs.");
-            ((RenpyParser.Images.IApply)preparation).Apply(context);
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
             Check(GameBridge.TryGetLastTestLiteral("_stage56_sorted_items_descending", out observed) &&
                     observed is List<object> &&
                     ((List<object>)observed).Select(item => (string)((object[])item)[0])
@@ -3704,7 +3704,7 @@ namespace StoryAPI.Tests
                     "settings", "_stage56_enumerated_items", false, false, true,
                     sourcePath, 20, out preparation),
                 "The runtime should prepare sorted pairs for enumerate().");
-            ((RenpyParser.Images.IApply)preparation).Apply(context);
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
             object prepared;
             Check(GameBridge.TryGetLastTestLiteral("_stage56_enumerated_items", out prepared) &&
                     prepared is List<object> &&
@@ -3715,13 +3715,13 @@ namespace StoryAPI.Tests
             context.SetVariable("_stage56_enumerated_items", new SimpleExpressionEngine.DataValue(prepared));
             context.SetVariable("_stage56_index", new SimpleExpressionEngine.DataValue(0f));
             context.SetVariable("_stage56_gate", new SimpleExpressionEngine.DataValue(true));
-            RenpyParser.Line itemLine;
+            RenPyParser.Line itemLine;
             Check(VariableIndexExpressionLine.TryCreateForEachItemLine(
                     "index", "key", "value", "_stage56_enumerated_items", "_stage56_index",
                     "_stage56_gate", true, 0, "_stage56_enumerate_start",
                     sourcePath, 21, out itemLine),
                 "The runtime should create the three-target enumerate(sorted(items())) assignment line.");
-            ((RenpyParser.Images.IApply)itemLine).Apply(context);
+            ((RenPyParser.Images.IApply)itemLine).Apply(context);
             object observedIndex, observedKey, observedValue;
             Check(GameBridge.TryGetLastTestLiteral("index", out observedIndex) &&
                     Math.Abs(Convert.ToSingle(observedIndex, CultureInfo.InvariantCulture) - 10f) < 0.0001f &&
@@ -3732,7 +3732,7 @@ namespace StoryAPI.Tests
 
             context.SetVariable("_stage56_index", new SimpleExpressionEngine.DataValue(1f));
             context.SetVariable("_stage56_gate", new SimpleExpressionEngine.DataValue(true));
-            ((RenpyParser.Images.IApply)itemLine).Apply(context);
+            ((RenPyParser.Images.IApply)itemLine).Apply(context);
             Check(GameBridge.TryGetLastTestLiteral("index", out observedIndex) &&
                     Math.Abs(Convert.ToSingle(observedIndex, CultureInfo.InvariantCulture) - 11f) < 0.0001f &&
                     GameBridge.TryGetLastTestLiteral("key", out observedKey) && Equals(observedKey, "beta") &&

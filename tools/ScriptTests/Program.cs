@@ -3986,7 +3986,7 @@ namespace StoryAPI.Tests
             Check(GameBridge.TryGetLastTestLiteral("dynamic_count", out observed) &&
                     Convert.ToInt32(observed) == 3,
                 "count() should resolve a string search variable at execution time.");
-            context.SetVariable("value_name", new SimpleExpressionEngine.DataValue("medkit"));
+            context.SetVariable("value_name", new SimpleExpressionEngine.DataValue("key"));
             ((RenPyParser.Images.IApply)dynamicCountLine).Apply(context);
             Check(GameBridge.TryGetLastTestLiteral("dynamic_count", out observed) &&
                     Convert.ToInt32(observed) == 1,

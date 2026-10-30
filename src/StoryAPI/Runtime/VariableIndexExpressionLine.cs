@@ -4493,15 +4493,18 @@ namespace StoryAPI.Runtime
             if (dynamicValue == null)
                 return searchValue;
 
-            object resolvedValue;
-            if (TryGetDynamicIndexValue(dynamicValue.Name, context, out resolvedValue))
-                return resolvedValue;
-
+            // Check the engine's default DataValue representation first. DDLC+ uses
+            // default(DataValue) for Python None, and scalar extraction can otherwise
+            // mistake its inactive numeric backing field for zero.
             DataValue rawValue;
             if (context != null &&
                 context.ResolveVariable(dynamicValue.Name, out rawValue) &&
                 object.Equals(rawValue, default(DataValue)))
                 return null;
+
+            object resolvedValue;
+            if (TryGetDynamicIndexValue(dynamicValue.Name, context, out resolvedValue))
+                return resolvedValue;
 
             throw new InvalidOperationException(
                 "list search value variable '" + dynamicValue.Name +

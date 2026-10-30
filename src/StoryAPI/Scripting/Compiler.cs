@@ -829,8 +829,8 @@ namespace StoryAPI.Scripting
             {
                 prepared = VariableIndexExpressionLine.TryCreateSortedForEachPreparationLine(
                     statement.Collection, iterationCollectionName, statement.SortReverse,
-                    statement.IsSortedDictionaryValues, _textLabel ?? "unknown",
-                    statement.Line, out preparationLine);
+                    statement.IsSortedDictionaryValues, statement.IsSortedDictionaryItems,
+                    _textLabel ?? "unknown", statement.Line, out preparationLine);
             }
             else if (statement.IsZip)
             {

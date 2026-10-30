@@ -179,6 +179,12 @@ Index reads can also be combined with scalar arithmetic, comparisons, and logica
 `default can_enter = settings["count"] >= 2 and has_key`. The same restricted indexed reads are supported in runtime `if`, `elif`, and `while` conditions. Nested indexes inside a dynamic key,
 attribute access, function calls, arbitrary Python initializers,
 Python class instances, tuples, and the full Ren'Py initialization phase remain unsupported.
+List items and slices can be deleted with the restricted `del` statement:
+`$ del inventory[index]`, `$ del inventory[start:stop]`, or
+`$ del settings["count"]`. Slice bounds may be integer literals or simple variable names,
+including a positive or negative step; deletion removes the selected list indexes from right
+to left so the remaining items keep their order. Nested deletion targets, dictionary slices,
+and multiple targets in one `del` statement are not supported.
 Collection element assignment is supported for existing list indexes and dictionary keys, for
 example `$ inventory[0] = 10`, `$ settings["count"] = 5`, or
 `$ settings["meta"]["count"] = settings["count"] + 1`. The target may use literal indexes or

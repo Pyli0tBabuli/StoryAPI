@@ -29,6 +29,7 @@ namespace StoryAPI.Tests
             Run("re-evaluate indexed reads on repeated execution", TestRepeatedIndexedTemporaryReads);
             Run("indexed collection assignment", TestIndexedCollectionAssignments);
             Run("list and slice deletion", TestCollectionDeletion);
+            Run("arithmetic sequence slice deletion bounds", TestArithmeticSequenceSliceDeletionBounds);
             Run("list append and remove methods", TestListMethodMutations);
             Run("indexed collection conditions", TestIndexedCollectionConditions);
             Run("list and dictionary membership conditions", TestCollectionMembershipConditions);
@@ -1054,6 +1055,98 @@ namespace StoryAPI.Tests
                     "The del statement should parse as a Python statement.").Code ==
                     "del inventory[1:3]",
                 "The parser should preserve del statements for the compiler.");
+        }
+
+        private static void TestArithmeticSequenceSliceDeletionBounds()
+        {
+            const string sourcePath = "arithmetic-sequence-slice-deletion-test.rpy";
+            const string prefix = "_storyapi_arithmetic_slice_delete";
+            var context = new RenpyParser.DynamicIndexTestContext();
+            var numbers = new List<object> { 10f, 20f, 30f, 40f, 50f, 60f, 70f, 80f };
+            context.SetVariable("numbers", new SimpleExpressionEngine.DataValue((object)numbers));
+            context.SetVariable("slice_start", new SimpleExpressionEngine.DataValue(0f));
+            context.SetVariable("slice_stop", new SimpleExpressionEngine.DataValue(8f));
+            context.SetVariable("slice_step", new SimpleExpressionEngine.DataValue(1f));
+
+            List<RenPyParser.Line> lines;
+            Check(VariableIndexExpressionLine.TryCreateCollectionDeleteLines(
+                    "del numbers[slice_start + 1:slice_stop - 1:slice_step * 2]",
+                    prefix, sourcePath, 1, out lines),
+                "Arithmetic start, stop, and step expressions should be accepted for slice deletion.");
+            Check(lines.Count == 4 &&
+                    lines[0] is RenpyParser.RenpyOneLinePython &&
+                    lines[1] is RenpyParser.RenpyOneLinePython &&
+                    lines[2] is RenpyParser.RenpyOneLinePython &&
+                    lines[3].GetType().Name == "CollectionDeleteLine",
+                "Each arithmetic bound should be evaluated before the collection-delete instruction.");
+
+            var scalarLines = lines.Take(3)
+                .Cast<RenpyParser.RenpyOneLinePython>()
+                .Select(x => x.Code).ToArray();
+            Check(scalarLines[0] == "$ " + prefix + "_delete_key_0 = slice_start + 1" &&
+                    scalarLines[1] == "$ " + prefix + "_delete_key_1 = slice_stop - 1" &&
+                    scalarLines[2] == "$ " + prefix + "_delete_key_2 = slice_step * 2",
+                "Arithmetic slice bounds should be emitted as native scalar-evaluation instructions.");
+
+            context.SetVariable(prefix + "_delete_key_0", new SimpleExpressionEngine.DataValue(1f));
+            context.SetVariable(prefix + "_delete_key_1", new SimpleExpressionEngine.DataValue(7f));
+            context.SetVariable(prefix + "_delete_key_2", new SimpleExpressionEngine.DataValue(2f));
+            ((RenPyParser.Images.IApply)lines[3]).Apply(context);
+            Check(numbers.Count == 5 &&
+                    Convert.ToSingle(numbers[0]) == 10f &&
+                    Convert.ToSingle(numbers[1]) == 30f &&
+                    Convert.ToSingle(numbers[2]) == 50f &&
+                    Convert.ToSingle(numbers[3]) == 70f &&
+                    Convert.ToSingle(numbers[4]) == 80f,
+                "A positive arithmetic step should delete selected indexes from right to left.");
+
+            numbers = new List<object> { 1f, 2f, 3f, 4f, 5f, 6f, 7f, 8f };
+            context.SetVariable("numbers", new SimpleExpressionEngine.DataValue((object)numbers));
+            context.SetVariable(prefix + "_delete_key_0", new SimpleExpressionEngine.DataValue(7f));
+            context.SetVariable(prefix + "_delete_key_1", new SimpleExpressionEngine.DataValue(0f));
+            context.SetVariable(prefix + "_delete_key_2", new SimpleExpressionEngine.DataValue(-2f));
+            ((RenPyParser.Images.IApply)lines[3]).Apply(context);
+            Check(numbers.Count == 4 &&
+                    Convert.ToSingle(numbers[0]) == 1f &&
+                    Convert.ToSingle(numbers[1]) == 3f &&
+                    Convert.ToSingle(numbers[2]) == 5f &&
+                    Convert.ToSingle(numbers[3]) == 7f,
+                "A negative arithmetic step should delete the intended indexes without shifting errors.");
+
+            numbers = new List<object> { 1f, 2f, 3f, 4f, 5f, 6f };
+            context.SetVariable("numbers", new SimpleExpressionEngine.DataValue((object)numbers));
+            context.SetVariable("slice_stop", new SimpleExpressionEngine.DataValue(4f));
+            Check(VariableIndexExpressionLine.TryCreateCollectionDeleteLines(
+                    "del numbers[:slice_stop - 1]", prefix, sourcePath, 2, out lines),
+                "An omitted start bound should remain supported with an arithmetic stop bound.");
+            Check(lines.Count == 2 &&
+                    ((RenpyParser.RenpyOneLinePython)lines[0]).Code ==
+                        "$ " + prefix + "_delete_key_0 = slice_stop - 1",
+                "Only the present arithmetic bound should emit a scalar-evaluation instruction.");
+            context.SetVariable(prefix + "_delete_key_0", new SimpleExpressionEngine.DataValue(3f));
+            ((RenPyParser.Images.IApply)lines[1]).Apply(context);
+            Check(numbers.Count == 3 &&
+                    Convert.ToSingle(numbers[0]) == 4f &&
+                    Convert.ToSingle(numbers[2]) == 6f,
+                "An omitted start bound should preserve Python slice deletion behavior.");
+
+            numbers = new List<object> { 1f, 2f, 3f, 4f, 5f, 6f };
+            context.SetVariable("numbers", new SimpleExpressionEngine.DataValue((object)numbers));
+            Check(VariableIndexExpressionLine.TryCreateCollectionDeleteLines(
+                    "del numbers[slice_start:slice_stop:slice_step]",
+                    prefix, sourcePath, 3, out lines),
+                "Existing variable-only deletion bounds should continue to be recognized.");
+            Check(lines.Count == 1 && lines[0].GetType().Name == "CollectionDeleteLine",
+                "Variable-only bounds should not add unnecessary scalar-evaluation instructions.");
+
+            Check(!VariableIndexExpressionLine.TryCreateCollectionDeleteLines(
+                    "del numbers[get_slice_start() + 1:slice_stop]",
+                    prefix, sourcePath, 4, out lines),
+                "Function calls inside arithmetic deletion bounds should remain unsupported.");
+            Check(!VariableIndexExpressionLine.TryCreateCollectionDeleteLines(
+                    "del numbers[slice_start + 1]",
+                    prefix, sourcePath, 5, out lines),
+                "Arithmetic single-item deletion indexes should remain outside this slice-only feature.");
         }
 
         private static void TestListMethodMutations()

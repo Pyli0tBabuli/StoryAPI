@@ -3078,6 +3078,61 @@ namespace StoryAPI.Runtime
             int sourceLine, out Line line)
         {
             line = null;
+            string rootName;
+            string keyExpression;
+            if (!TryParseCollectionDeleteTarget(code, out rootName, out keyExpression))
+                return false;
+
+            if (!TryParseIndexKey(keyExpression, true, out object key))
+                return false;
+
+            line = new CollectionDeleteLine(rootName, key, sourcePath, sourceLine);
+            return true;
+        }
+
+        /// <summary>
+        /// Compiles a collection deletion statement, evaluating supported arithmetic slice
+        /// bounds with the game's scalar expression evaluator before applying the deletion.
+        /// </summary>
+        public static bool TryCreateCollectionDeleteLines(string code, string temporaryPrefix,
+            string sourcePath, int sourceLine, out List<Line> lines)
+        {
+            lines = null;
+            if (string.IsNullOrWhiteSpace(temporaryPrefix))
+                return false;
+
+            string rootName;
+            string keyExpression;
+            if (!TryParseCollectionDeleteTarget(code, out rootName, out keyExpression))
+                return false;
+
+            var dynamicBoundExpressions = new List<KeyValuePair<string, string>>();
+            string rewrittenKeyExpression;
+            if (!TryRewriteArithmeticSequenceSliceBounds(
+                    keyExpression, temporaryPrefix + "_delete", 0,
+                    dynamicBoundExpressions, out rewrittenKeyExpression))
+                rewrittenKeyExpression = keyExpression;
+
+            if (!TryParseIndexKey(rewrittenKeyExpression, true, out object key))
+                return false;
+
+            var result = new List<Line>(dynamicBoundExpressions.Count + 1);
+            foreach (KeyValuePair<string, string> expression in dynamicBoundExpressions)
+            {
+                result.Add(new RenpyOneLinePython(
+                    "$ " + expression.Key + " = " + expression.Value));
+            }
+
+            result.Add(new CollectionDeleteLine(rootName, key, sourcePath, sourceLine));
+            lines = result;
+            return true;
+        }
+
+        private static bool TryParseCollectionDeleteTarget(string code,
+            out string rootName, out string keyExpression)
+        {
+            rootName = null;
+            keyExpression = null;
             if (string.IsNullOrWhiteSpace(code)) return false;
 
             int cursor = 0;
@@ -3094,7 +3149,7 @@ namespace StoryAPI.Runtime
             if (cursor >= code.Length || !IsIdentifierStart(code[cursor])) return false;
             int nameStart = cursor++;
             while (cursor < code.Length && IsIdentifierPart(code[cursor])) cursor++;
-            string rootName = code.Substring(nameStart, cursor - nameStart);
+            rootName = code.Substring(nameStart, cursor - nameStart);
 
             SkipWhitespace(code, ref cursor);
             if (cursor >= code.Length || code[cursor] != '[') return false;
@@ -3135,15 +3190,11 @@ namespace StoryAPI.Runtime
             }
 
             if (close < 0 || inString) return false;
-            string keyExpression = code.Substring(keyStart, close - keyStart).Trim();
-            if (!TryParseIndexKey(keyExpression, true, out object key)) return false;
+            keyExpression = code.Substring(keyStart, close - keyStart).Trim();
 
             cursor = close + 1;
             SkipWhitespace(code, ref cursor);
-            if (cursor != code.Length) return false;
-
-            line = new CollectionDeleteLine(rootName, key, sourcePath, sourceLine);
-            return true;
+            return cursor == code.Length && !string.IsNullOrWhiteSpace(keyExpression);
         }
 
         private sealed class CollectionClearLine : Line, IApply

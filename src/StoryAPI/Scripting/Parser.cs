@@ -635,6 +635,7 @@ namespace StoryAPI.Scripting
                 bool isSorted = false;
                 bool sortReverse = false;
                 bool isSortedDictionaryValues = false;
+                bool isSortedDictionaryItems = false;
                 string zipSecondCollection = null;
                 bool enumerateDictionaryValues = false;
                 int enumerateStart = 0;
@@ -702,19 +703,33 @@ namespace StoryAPI.Scripting
                     else if (Current.Type == TokenType.Identifier && Current.Text == "sorted" &&
                         Ahead(1).Text == "(")
                     {
-                        if (thirdVariable != null)
-                            throw new ScriptSyntaxException(
-                                "enumerate(sorted()) accepts only index and item loop variables.", line);
                         _index += 2; // sorted(
                         if (Current.Type != TokenType.Identifier)
                             throw new ScriptSyntaxException("sorted() requires a named list or dictionary variable, optionally followed by .values().", Current.Line);
                         collection = Advance().Text;
-                        if (Current.Text == "." && Ahead(1).Text == "values" &&
+                        if (Current.Text == "." &&
+                            (Ahead(1).Text == "values" || Ahead(1).Text == "items") &&
                             Ahead(2).Text == "(" && Ahead(3).Text == ")")
                         {
-                            _index += 4; // .values()
-                            isSortedDictionaryValues = true;
+                            if (Ahead(1).Text == "values")
+                            {
+                                _index += 4; // .values()
+                                isSortedDictionaryValues = true;
+                            }
+                            else
+                            {
+                                _index += 4; // .items()
+                                isSortedDictionaryItems = true;
+                                enumerateDictionaryItems = true;
+                            }
                         }
+                        if (thirdVariable != null && !isSortedDictionaryItems)
+                            throw new ScriptSyntaxException(
+                                "Three loop variables with enumerate(sorted()) require sorted(dictionary.items()).",
+                                line);
+                        if (isSortedDictionaryItems && thirdVariable == null)
+                            throw new ScriptSyntaxException(
+                                "enumerate(sorted(dictionary.items())) requires 'for index, key, value'.", line);
                         if (Current.Text == ",")
                         {
                             _index++;
@@ -833,19 +848,36 @@ namespace StoryAPI.Scripting
                 else if (Current.Type == TokenType.Identifier && Current.Text == "sorted" &&
                     Ahead(1).Text == "(")
                 {
-                    if (valueVariable != null || thirdVariable != null)
+                    if (thirdVariable != null)
                         throw new ScriptSyntaxException(
-                            "sorted() loops accept only one loop variable.", line);
+                            "sorted() dictionary.items() loops accept exactly two loop variables.", line);
                     _index += 2; // sorted(
                     if (Current.Type != TokenType.Identifier)
                         throw new ScriptSyntaxException("sorted() requires a named list or dictionary variable, optionally followed by .values().", Current.Line);
                     collection = Advance().Text;
-                    if (Current.Text == "." && Ahead(1).Text == "values" &&
+                    if (Current.Text == "." &&
+                        (Ahead(1).Text == "values" || Ahead(1).Text == "items") &&
                         Ahead(2).Text == "(" && Ahead(3).Text == ")")
                     {
-                        _index += 4; // .values()
-                        isSortedDictionaryValues = true;
+                        if (Ahead(1).Text == "values")
+                        {
+                            _index += 4; // .values()
+                            isSortedDictionaryValues = true;
+                        }
+                        else
+                        {
+                            _index += 4; // .items()
+                            isSortedDictionaryItems = true;
+                            enumerateDictionaryItems = true;
+                        }
                     }
+                    if (isSortedDictionaryItems && valueVariable == null)
+                        throw new ScriptSyntaxException(
+                            "sorted(dictionary.items()) requires 'for key, value'.", line);
+                    if (valueVariable != null && !isSortedDictionaryItems)
+                        throw new ScriptSyntaxException(
+                            "sorted() loops accept only one loop variable unless sorted(dictionary.items()) is used.",
+                            line);
                     if (Current.Text == ",")
                     {
                         _index++;
@@ -902,7 +934,7 @@ namespace StoryAPI.Scripting
                 {
                     if (Current.Type != TokenType.Identifier)
                         throw new ScriptSyntaxException(
-                            "Expected a named list or dictionary, sorted(list_or_dictionary_or_dictionary.values()[, reverse=True]), reversed(list), or range(start, stop[, step]) after 'in'.",
+                            "Expected a named list or dictionary, sorted(list_or_dictionary_or_dictionary.values_or_items()[, reverse=True]), reversed(list), or range(start, stop[, step]) after 'in'.",
                             Current.Line);
                     collection = Advance().Text;
                 }
@@ -953,7 +985,7 @@ namespace StoryAPI.Scripting
 
                 if (Current.Type != TokenType.Colon)
                     throw new ScriptSyntaxException(
-                        "Only a named list or dictionary, sorted(list_or_dictionary_or_dictionary.values()[, reverse=True]), reversed(list), zip(list, list), enumerate(list), enumerate(sorted(list_or_dictionary_or_dictionary.values()), start), enumerate(zip(list, list)), enumerate(dictionary.values()), enumerate(dictionary.items()), dictionary.keys(), dictionary.items(), or dictionary.values() is supported after 'in'.",
+                        "Only a named list or dictionary, sorted(list_or_dictionary_or_dictionary.values_or_items()[, reverse=True]), reversed(list), zip(list, list), enumerate(list), enumerate(sorted(list_or_dictionary_or_dictionary.values_or_items()), start), enumerate(zip(list, list)), enumerate(dictionary.values()), enumerate(dictionary.items()), dictionary.keys(), dictionary.items(), or dictionary.values() is supported after 'in'.",
                         Current.Line);
 
                 ExpectColon();
@@ -968,6 +1000,7 @@ namespace StoryAPI.Scripting
                     IsSorted = isSorted,
                     SortReverse = sortReverse,
                     IsSortedDictionaryValues = isSortedDictionaryValues,
+                    IsSortedDictionaryItems = isSortedDictionaryItems,
                     IsReversed = isReversed,
                     IsEnumerate = isEnumerate,
                     EnumerateStart = enumerateStart,

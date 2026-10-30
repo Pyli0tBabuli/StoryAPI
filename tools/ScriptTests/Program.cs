@@ -63,6 +63,8 @@ namespace StoryAPI.Tests
             Run("for-enumerate-sorted-dictionary-key iteration", TestForEnumerateSortedDictionaryKeyIteration);
             Run("for-sorted-dictionary-values iteration", TestForSortedDictionaryValuesIteration);
             Run("for-enumerate-sorted-dictionary-values iteration", TestForEnumerateSortedDictionaryValuesIteration);
+            Run("for-sorted-dictionary-items iteration", TestForSortedDictionaryItemsIteration);
+            Run("for-enumerate-sorted-dictionary-items iteration", TestForEnumerateSortedDictionaryItemsIteration);
             Run("for-reversed-list iteration", TestForReversedListIteration);
             Run("for-reversed-dictionary iteration", TestForReversedDictionaryIteration);
             Run("for-reversed-dictionary values iteration", TestForReversedDictionaryValuesIteration);
@@ -3589,6 +3591,154 @@ namespace StoryAPI.Tests
                     GameBridge.TryGetLastTestLiteral("value", out observedValue) &&
                     Math.Abs(Convert.ToSingle(observedValue, CultureInfo.InvariantCulture) - 2f) < 0.0001f,
                 "The next sorted dictionary value should advance the index.");
+        }
+
+        private static void TestForSortedDictionaryItemsIteration()
+        {
+            const string sourcePath = "sorted-dictionary-items-iteration-test.rpy";
+            var statements = Parse(
+                "label sorted_dictionary_items_iteration_test:\n" +
+                "    for key, value in sorted(settings.items()):\n" +
+                "        pass\n" +
+                "    for key, value in sorted(settings.items(), reverse=True):\n" +
+                "        pass\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected sorted-dictionary-items label.");
+            var ascendingLoop = Require<ForStatement>(label.Body[0],
+                "Expected sorted dictionary-items loop.");
+            Check(ascendingLoop.IsSorted && ascendingLoop.IsSortedDictionaryItems &&
+                    ascendingLoop.IsDictionaryItems && !ascendingLoop.SortReverse &&
+                    ascendingLoop.Collection == "settings" &&
+                    ascendingLoop.Variable == "key" && ascendingLoop.ValueVariable == "value",
+                "sorted(settings.items()) should represent ascending sorted key/value iteration.");
+            var descendingLoop = Require<ForStatement>(label.Body[1],
+                "Expected descending sorted dictionary-items loop.");
+            Check(descendingLoop.IsSorted && descendingLoop.IsSortedDictionaryItems &&
+                    descendingLoop.IsDictionaryItems && descendingLoop.SortReverse,
+                "sorted(settings.items(), reverse=True) should represent descending sorted key/value iteration.");
+
+            var settings = new Dictionary<string, object>
+            {
+                { "gamma", 3f },
+                { "alpha", 1f },
+                { "beta", 2f },
+            };
+            var context = new RenpyParser.DynamicIndexTestContext();
+            context.SetVariable("settings",
+                new SimpleExpressionEngine.DataValue((object)settings));
+            RenPyParser.Line preparation;
+            Check(VariableIndexExpressionLine.TryCreateSortedForEachPreparationLine(
+                    "settings", "_stage56_sorted_items", false, false, true,
+                    sourcePath, 10, out preparation),
+                "The runtime should prepare sorted dictionary key/value pairs.");
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
+            object observed;
+            Check(GameBridge.TryGetLastTestLiteral("_stage56_sorted_items", out observed) &&
+                    observed is List<object> &&
+                    ((List<object>)observed).Select(item => (object[])item)
+                        .Select(pair => (string)pair[0] + ":" + Convert.ToInt32(pair[1], CultureInfo.InvariantCulture))
+                        .SequenceEqual(new[] { "alpha:1", "beta:2", "gamma:3" }),
+                "sorted(dictionary.items()) should order by key and keep each value paired with its key.");
+
+            Check(VariableIndexExpressionLine.TryCreateSortedForEachPreparationLine(
+                    "settings", "_stage56_sorted_items_descending", true, false, true,
+                    sourcePath, 11, out preparation),
+                "The runtime should prepare descending sorted dictionary pairs.");
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("_stage56_sorted_items_descending", out observed) &&
+                    observed is List<object> &&
+                    ((List<object>)observed).Select(item => (string)((object[])item)[0])
+                        .SequenceEqual(new[] { "gamma", "beta", "alpha" }),
+                "sorted(dictionary.items(), reverse=True) should reverse pair order by key.");
+
+            Check(settings.Count == 3 &&
+                    Convert.ToSingle(settings["alpha"], CultureInfo.InvariantCulture) == 1f &&
+                    Convert.ToSingle(settings["beta"], CultureInfo.InvariantCulture) == 2f &&
+                    Convert.ToSingle(settings["gamma"], CultureInfo.InvariantCulture) == 3f,
+                "Sorted dictionary-items iteration must not modify the source dictionary.");
+
+            ExpectSyntaxError(
+                "label sorted_dictionary_items_one_target:\n" +
+                "    for pair in sorted(settings.items()):\n" +
+                "        pass\n",
+                "requires 'for key, value'");
+            ExpectSyntaxError(
+                "label sorted_dictionary_items_three_targets:\n" +
+                "    for index, key, value in sorted(settings.items()):\n" +
+                "        pass\n",
+                "exactly two loop variables");
+        }
+
+        private static void TestForEnumerateSortedDictionaryItemsIteration()
+        {
+            const string sourcePath = "enumerate-sorted-dictionary-items-test.rpy";
+            var statements = Parse(
+                "label enumerate_sorted_dictionary_items_test:\n" +
+                "    for index, key, value in enumerate(sorted(settings.items()), start_index + 1):\n" +
+                "        pass\n" +
+                "    return\n");
+            var label = Require<LabelStatement>(statements[0],
+                "Expected enumerate(sorted(dictionary.items())) label.");
+            var loop = Require<ForStatement>(label.Body[0],
+                "Expected enumerate(sorted(dictionary.items())) loop.");
+            Check(loop.IsEnumerate && loop.IsSorted && loop.IsSortedDictionaryItems &&
+                    loop.IsDictionaryItems && loop.Collection == "settings" &&
+                    loop.Variable == "index" && loop.ValueVariable == "key" &&
+                    loop.ThirdVariable == "value" &&
+                    loop.EnumerateStartExpression == "start_index + 1",
+                "enumerate(sorted(settings.items()), start) should bind the index and sorted key/value pair.");
+
+            var settings = new Dictionary<string, object>
+            {
+                { "gamma", 3f },
+                { "alpha", 1f },
+                { "beta", 2f },
+            };
+            var context = new RenpyParser.DynamicIndexTestContext();
+            context.SetVariable("settings",
+                new SimpleExpressionEngine.DataValue((object)settings));
+            context.SetVariable("_stage56_enumerate_start", new SimpleExpressionEngine.DataValue(10f));
+            RenPyParser.Line preparation;
+            Check(VariableIndexExpressionLine.TryCreateSortedForEachPreparationLine(
+                    "settings", "_stage56_enumerated_items", false, false, true,
+                    sourcePath, 20, out preparation),
+                "The runtime should prepare sorted pairs for enumerate().");
+            ((RenPyParser.Images.IApply)preparation).Apply(context);
+            object prepared;
+            Check(GameBridge.TryGetLastTestLiteral("_stage56_enumerated_items", out prepared) &&
+                    prepared is List<object> &&
+                    ((List<object>)prepared).Select(item => (string)((object[])item)[0])
+                        .SequenceEqual(new[] { "alpha", "beta", "gamma" }),
+                "enumerate(sorted(dictionary.items())) should use sorted key/value pairs.");
+
+            context.SetVariable("_stage56_enumerated_items", new SimpleExpressionEngine.DataValue(prepared));
+            context.SetVariable("_stage56_index", new SimpleExpressionEngine.DataValue(0f));
+            context.SetVariable("_stage56_gate", new SimpleExpressionEngine.DataValue(true));
+            RenPyParser.Line itemLine;
+            Check(VariableIndexExpressionLine.TryCreateForEachItemLine(
+                    "index", "key", "value", "_stage56_enumerated_items", "_stage56_index",
+                    "_stage56_gate", true, 0, "_stage56_enumerate_start",
+                    sourcePath, 21, out itemLine),
+                "The runtime should create the three-target enumerate(sorted(items())) assignment line.");
+            ((RenPyParser.Images.IApply)itemLine).Apply(context);
+            object observedIndex, observedKey, observedValue;
+            Check(GameBridge.TryGetLastTestLiteral("index", out observedIndex) &&
+                    Math.Abs(Convert.ToSingle(observedIndex, CultureInfo.InvariantCulture) - 10f) < 0.0001f &&
+                    GameBridge.TryGetLastTestLiteral("key", out observedKey) && Equals(observedKey, "alpha") &&
+                    GameBridge.TryGetLastTestLiteral("value", out observedValue) &&
+                    Math.Abs(Convert.ToSingle(observedValue, CultureInfo.InvariantCulture) - 1f) < 0.0001f,
+                "The first sorted item should bind the dynamic index, its key, and matching value.");
+
+            context.SetVariable("_stage56_index", new SimpleExpressionEngine.DataValue(1f));
+            context.SetVariable("_stage56_gate", new SimpleExpressionEngine.DataValue(true));
+            ((RenPyParser.Images.IApply)itemLine).Apply(context);
+            Check(GameBridge.TryGetLastTestLiteral("index", out observedIndex) &&
+                    Math.Abs(Convert.ToSingle(observedIndex, CultureInfo.InvariantCulture) - 11f) < 0.0001f &&
+                    GameBridge.TryGetLastTestLiteral("key", out observedKey) && Equals(observedKey, "beta") &&
+                    GameBridge.TryGetLastTestLiteral("value", out observedValue) &&
+                    Math.Abs(Convert.ToSingle(observedValue, CultureInfo.InvariantCulture) - 2f) < 0.0001f,
+                "The next sorted item should advance the index and keep the key/value pair together.");
         }
 
         private static void TestForReversedListIteration()

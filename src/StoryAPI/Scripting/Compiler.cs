@@ -601,14 +601,47 @@ namespace StoryAPI.Scripting
 
             initial = BuildTransformState(declaration.Properties);
             segments = new List<AtlScriptSegment>();
-            foreach (var interpolation in declaration.Interpolations)
+            if (declaration.Timeline.Count > 0)
             {
-                segments.Add(new AtlScriptSegment
+                foreach (TransformTimedStatement timed in declaration.Timeline)
                 {
-                    EaseName = interpolation.EaseName,
-                    Duration = interpolation.Duration,
-                    Target = BuildTransformState(interpolation.Properties),
-                });
+                    var interpolation = timed as TransformInterpolationStatement;
+                    if (interpolation != null)
+                    {
+                        segments.Add(new AtlScriptSegment
+                        {
+                            EaseName = interpolation.EaseName,
+                            Duration = interpolation.Duration,
+                            Target = BuildTransformState(interpolation.Properties),
+                        });
+                        continue;
+                    }
+
+                    var pause = timed as TransformPauseStatement;
+                    if (pause != null)
+                    {
+                        segments.Add(new AtlScriptSegment
+                        {
+                            IsPause = true,
+                            Duration = pause.Duration,
+                            Target = new GameBridge.TransformState(),
+                        });
+                    }
+                }
+            }
+            else
+            {
+                // Compatibility for manually constructed ASTs created before Timeline
+                // was introduced.
+                foreach (var interpolation in declaration.Interpolations)
+                {
+                    segments.Add(new AtlScriptSegment
+                    {
+                        EaseName = interpolation.EaseName,
+                        Duration = interpolation.Duration,
+                        Target = BuildTransformState(interpolation.Properties),
+                    });
+                }
             }
 
             return true;

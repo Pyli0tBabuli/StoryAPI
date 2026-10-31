@@ -27,25 +27,42 @@ namespace StoryAPI.Scripting
     }
 
     /// <summary>
-    /// A reusable ATL transform declaration. This first subset contains immediate
-    /// numeric properties; time-based ATL statements are handled separately.
+    /// A reusable ATL transform declaration. Immediate properties are followed by
+    /// an ordered timeline of timed interpolation and pause statements.
     /// </summary>
     public sealed class TransformDeclarationStatement : Statement
     {
         public string Name { get; set; }
         public List<TransformPropertyStatement> Properties { get; } =
             new List<TransformPropertyStatement>();
+
+        /// <summary>
+        /// Timed statements in source order. Interpolations is retained as a
+        /// compatibility view for callers interested only in interpolation nodes.
+        /// </summary>
+        public List<TransformTimedStatement> Timeline { get; } =
+            new List<TransformTimedStatement>();
         public List<TransformInterpolationStatement> Interpolations { get; } =
             new List<TransformInterpolationStatement>();
     }
 
+    /// <summary>Base for an ATL timeline statement that consumes time.</summary>
+    public abstract class TransformTimedStatement : Statement
+    {
+        public float Duration { get; set; }
+    }
+
     /// <summary>A timed ATL interpolation and its target properties.</summary>
-    public sealed class TransformInterpolationStatement : Statement
+    public sealed class TransformInterpolationStatement : TransformTimedStatement
     {
         public string EaseName { get; set; }
-        public float Duration { get; set; }
         public List<TransformPropertyStatement> Properties { get; } =
             new List<TransformPropertyStatement>();
+    }
+
+    /// <summary>An ATL wait that preserves the current transform state.</summary>
+    public sealed class TransformPauseStatement : TransformTimedStatement
+    {
     }
 
     /// <summary>One immediate numeric property in a supported ATL transform.</summary>

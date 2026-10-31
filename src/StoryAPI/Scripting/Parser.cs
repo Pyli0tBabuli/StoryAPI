@@ -385,6 +385,7 @@ namespace StoryAPI.Scripting
             bool readAlias = false;
             bool readPosition = false;
             bool readLayer = false;
+            bool readBehind = false;
             bool readZOrder = false;
             while (true)
             {
@@ -415,6 +416,20 @@ namespace StoryAPI.Scripting
                     continue;
                 }
 
+                if (MatchIdentifier("behind"))
+                {
+                    if (readBehind)
+                        throw new ScriptSyntaxException("A show statement can only have one 'behind' property.", Current.Line);
+                    statement.Behind.Add(ReadBehindTag());
+                    while (Current.Type == TokenType.Identifier && Current.Text == ",")
+                    {
+                        Advance();
+                        statement.Behind.Add(ReadBehindTag());
+                    }
+                    readBehind = true;
+                    continue;
+                }
+
                 if (MatchIdentifier("zorder") || MatchIdentifier("z"))
                 {
                     if (readZOrder)
@@ -441,6 +456,16 @@ namespace StoryAPI.Scripting
 
             FinishLine();
             return statement;
+        }
+
+        private string ReadBehindTag()
+        {
+            // Do not consume another show property as a tag after a missing/trailing comma.
+            if (Current.Type != TokenType.Identifier ||
+                Current.Text == "," || IsShowOption(Current.Text))
+                throw new ScriptSyntaxException("Expected an image tag after 'behind'.", Current.Line);
+
+            return Advance().Text;
         }
 
         private static bool IsShowOption(string word)

@@ -88,6 +88,71 @@ namespace StoryAPI.Runtime
             return match;
         }
 
+        /// <summary>Assigns the game's native Ren'Py Show behind list.</summary>
+        internal static bool ApplyBehind(Show show, IList<string> tags)
+        {
+            if (show == null || tags == null || tags.Count == 0) return true;
+
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic;
+            Type type = show.GetType();
+            try
+            {
+                var property = type.GetProperty("Behind", flags);
+                var field = type.GetField("Behind", flags) ??
+                    type.GetField("<Behind>k__BackingField", flags);
+                Type valueType = property != null ? property.PropertyType :
+                    (field != null ? field.FieldType : null);
+                if (valueType == null)
+                {
+                    Log.Warn("show: the installed DDLC+ Show instruction does not expose a behind list");
+                    return false;
+                }
+
+                object value;
+                if (valueType == typeof(string))
+                    value = string.Join(", ", tags);
+                else if (valueType == typeof(string[]))
+                    value = new List<string>(tags).ToArray();
+                else if (valueType.IsAssignableFrom(typeof(List<string>)))
+                    value = new List<string>(tags);
+                else
+                {
+                    Log.Warn("show: unsupported DDLC+ Show.Behind type '" + valueType.FullName + "'");
+                    return false;
+                }
+
+                if (property != null && property.CanWrite)
+                    property.SetValue(show, value, null);
+                else if (field != null)
+                    field.SetValue(show, value);
+                else
+                {
+                    Log.Warn("show: DDLC+ Show.Behind is read-only");
+                    return false;
+                }
+
+                var hasProperty = type.GetProperty("HasBehind", flags);
+                var hasField = type.GetField("HasBehind", flags) ??
+                    type.GetField("<HasBehind>k__BackingField", flags);
+                if (hasProperty != null && hasProperty.CanWrite && hasProperty.PropertyType == typeof(bool))
+                    hasProperty.SetValue(show, true, null);
+                else if (hasField != null && hasField.FieldType == typeof(bool))
+                    hasField.SetValue(show, true);
+                else
+                {
+                    Log.Warn("show: the installed DDLC+ Show instruction does not expose HasBehind");
+                    return false;
+                }
+
+                return true;
+            }
+            catch (Exception e)
+            {
+                Log.Warn("show: could not assign the behind list: " + e.GetBaseException().Message);
+                return false;
+            }
+        }
+
         private static string LayerOf(Show show)
         {
             return string.IsNullOrEmpty(show?.Layer) ? "master" : show.Layer;
@@ -657,7 +722,7 @@ namespace StoryAPI.Runtime
                         }
 
                         if (CustomSpriteLine.ShowSprite(assets, saved.Source, saved.Variant,
-                                saved.Slot, saved.At, saved.ZOrder, saved.Layer) == null) return false;
+                                saved.Slot, saved.At, saved.ZOrder, saved.Layer, saved.Behind) == null) return false;
                         break;
                     }
 
@@ -682,14 +747,14 @@ namespace StoryAPI.Runtime
                         // movement that had already finished, and starting it over would
                         // make the picture jump back to where it began.
                         if (!NativeSpriteLine.ShowNative(saved.Source, saved.Slot, null,
-                                saved.ZOrder, saved.Layer)) return false;
+                                saved.ZOrder, saved.Layer, saved.Behind)) return false;
                         break;
                     }
 
                     case SavedArt.Pose:
                     {
                         if (BaseSprites.Show(saved.Source, saved.At, saved.ZOrder,
-                                saved.X, saved.Layer) == null)
+                                saved.X, saved.Layer, saved.Behind) == null)
                         {
                             return false;
                         }

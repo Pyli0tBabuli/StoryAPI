@@ -504,7 +504,7 @@ namespace StoryAPI.Tests
                 "    alpha 0.0\n" +
                 "    linear 1.0 alpha 1.0\n" +
                 "    zoom 1.0\n",
-                "must appear before interpolation");
+                "must appear before timed statements");
         }
 
         private static void TestAtlPauseStatements()

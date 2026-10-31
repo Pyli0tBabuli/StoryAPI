@@ -143,7 +143,7 @@ namespace StoryAPI.Scripting
             while (Current.Type != TokenType.Dedent && !AtEnd)
             {
                 int propertyLine = Current.Line;
-                if (Current.Type != TokenType.Identifier)
+                if (Current.Type != TokenType.Identifier && Current.Type != TokenType.Keyword)
                     throw new ScriptSyntaxException("Expected an ATL transform property.", propertyLine);
 
                 string property = Advance().Text;

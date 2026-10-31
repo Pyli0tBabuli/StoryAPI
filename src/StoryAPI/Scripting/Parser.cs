@@ -126,7 +126,7 @@ namespace StoryAPI.Scripting
 
         /// <summary>
         /// Reads a restricted ATL transform: immediate numeric properties followed by
-        /// zero or more sequential timed interpolation statements.
+        /// sequential interpolation and pause statements.
         /// </summary>
         private TransformDeclarationStatement ParseTransformDeclaration(int line)
         {

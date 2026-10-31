@@ -24,6 +24,7 @@ namespace StoryAPI.Tests
             Run("image statement layers", TestImageStatementLayers);
             Run("show behind ordering", TestShowBehind);
             Run("static ATL transform declarations", TestStaticAtlTransforms);
+            Run("ATL interpolation declarations", TestAtlInterpolationTransforms);
             Run("sprite alias and position", TestSpriteAliasAndPosition);
             Run("define/default scalar declarations", TestVariableDeclarations);
             Run("runtime scalar initializer expressions", TestRuntimeExpressionDeclarations);
@@ -428,6 +429,81 @@ namespace StoryAPI.Tests
                 "    transform not_allowed:\n" +
                 "        alpha 1\n",
                 "top level");
+        }
+
+        private static void TestAtlInterpolationTransforms()
+        {
+            var statements = Parse(
+                "transform stage74_motion:\n" +
+                "    xalign 0.0\n" +
+                "    yalign 0.5\n" +
+                "    zoom 0.8\n" +
+                "    alpha 0.25\n" +
+                "    rotate 0\n" +
+                "    linear 1.25 xalign 1.0 alpha 1.0\n" +
+                "    ease 0.5:\n" +
+                "        zoom 1.2\n" +
+                "    easein 0.25 rotate -8.0\n" +
+                "    easeout 0.75:\n" +
+                "        rotate 8.0\n" +
+                "label stage74_use:\n" +
+                "    show june at stage74_motion\n" +
+                "    return\n");
+
+            var transform = Require<TransformDeclarationStatement>(statements[0],
+                "Expected a timed ATL transform declaration.");
+            Check(transform.Properties.Count == 5,
+                "Immediate properties should remain separate from timed statements.");
+            Check(transform.Interpolations.Count == 4,
+                "All four sequential interpolation statements should be retained.");
+
+            Check(transform.Interpolations[0].EaseName == "linear" &&
+                  transform.Interpolations[0].Duration == 1.25f &&
+                  transform.Interpolations[0].Properties.Count == 2 &&
+                  transform.Interpolations[0].Properties[0].Name == "xalign" &&
+                  transform.Interpolations[0].Properties[1].Name == "alpha",
+                "Inline interpolation should parse duration and multiple target properties.");
+
+            Check(transform.Interpolations[1].EaseName == "ease" &&
+                  transform.Interpolations[1].Duration == 0.5f &&
+                  transform.Interpolations[1].Properties.Count == 1 &&
+                  transform.Interpolations[1].Properties[0].Name == "zoom",
+                "Block interpolation should parse its warper and indented properties.");
+
+            Check(transform.Interpolations[2].EaseName == "easein" &&
+                  transform.Interpolations[2].Properties[0].Value == -8f,
+                "Inline interpolation should retain negative numeric targets.");
+
+            Check(transform.Interpolations[3].EaseName == "easeout" &&
+                  transform.Interpolations[3].Properties[0].Value == 8f,
+                "Multiple interpolation blocks should preserve their order and targets.");
+
+            ExpectSyntaxError(
+                "transform negative_duration:\n" +
+                "    alpha 0.0\n" +
+                "    linear -1.0 alpha 1.0\n",
+                "non-negative");
+            ExpectSyntaxError(
+                "transform empty_interpolation:\n" +
+                "    alpha 0.0\n" +
+                "    linear 1.0\n",
+                "at least one target property");
+            ExpectSyntaxError(
+                "transform no_start_value:\n" +
+                "    alpha 0.0\n" +
+                "    linear 1.0 zoom 1.5\n",
+                "requires an earlier value");
+            ExpectSyntaxError(
+                "transform invalid_target:\n" +
+                "    alpha 0.0\n" +
+                "    ease 1.0 alpha 1.5\n",
+                "between 0 and 1");
+            ExpectSyntaxError(
+                "transform late_static_property:\n" +
+                "    alpha 0.0\n" +
+                "    linear 1.0 alpha 1.0\n" +
+                "    zoom 1.0\n",
+                "must appear before interpolation");
         }
 
         private static void TestSpriteAliasAndPosition()

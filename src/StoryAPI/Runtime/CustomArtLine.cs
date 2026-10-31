@@ -284,6 +284,31 @@ namespace StoryAPI.Runtime
         }
     }
 
+    /// <summary>Starts timed interpolation statements in a custom ATL transform.</summary>
+    internal sealed class AtlTransformLine : Line, IApply
+    {
+        private readonly string _container;
+        private readonly string _layer;
+        private readonly Game.GameBridge.TransformState _initial;
+        private readonly List<AtlScriptSegment> _segments;
+
+        public AtlTransformLine(string container, string layer,
+            Game.GameBridge.TransformState initial, IList<AtlScriptSegment> segments)
+        {
+            _container = container;
+            _layer = string.IsNullOrEmpty(layer) ? "master" : layer;
+            _initial = initial;
+            _segments = segments == null
+                ? new List<AtlScriptSegment>() : new List<AtlScriptSegment>(segments);
+        }
+
+        public void Apply(IContext context)
+        {
+            Log.Info("story: executing AtlTransformLine");
+            AtlScheduler.StartScript(_container, _layer, _initial, _segments);
+        }
+    }
+
     /// <summary>Clears one Ren'Py display layer without showing a new background.</summary>
     internal sealed class LayeredSceneClearLine : Line, IApply
     {

@@ -37,6 +37,11 @@ namespace StoryAPI.Runtime
         private static readonly Dictionary<string, SpriteHandle> s_sprites =
             new Dictionary<string, SpriteHandle>(StringComparer.OrdinalIgnoreCase);
 
+        // Keep the pre-ATL origin so absolute xoffset/yoffset values do not accumulate
+        // as each animation frame is applied.
+        private static readonly Dictionary<string, Vector3> s_transformBasePositions =
+            new Dictionary<string, Vector3>(StringComparer.OrdinalIgnoreCase);
+
         private const string SlotKeySeparator = "\u001f";
 
         /// <summary>
@@ -326,6 +331,8 @@ namespace StoryAPI.Runtime
 
             string layer = scene != null ? LayerOf(scene) : LayerOf(show);
             string slotKey = SlotKey(container, layer);
+            AtlScheduler.Cancel(container, layer);
+            s_transformBasePositions.Remove(slotKey);
             ActiveImage image = EnsureImage(container, show, scene);
             if (image == null || image.Object == null) return null;
 
@@ -387,6 +394,8 @@ namespace StoryAPI.Runtime
 
             string layer = LayerOf(show);
             string slotKey = SlotKey(container, layer);
+            AtlScheduler.Cancel(container, layer);
+            s_transformBasePositions.Remove(slotKey);
             ActiveImage image = EnsureImage(container, show, null);
             if (image == null || image.Object == null) return null;
 
@@ -476,6 +485,8 @@ namespace StoryAPI.Runtime
 
             string layer = LayerOf(show);
             string slotKey = SlotKey(container, layer);
+            AtlScheduler.Cancel(container, layer);
+            s_transformBasePositions.Remove(slotKey);
             ActiveImage image = EnsureImage(container, show, null);
             if (image == null || image.Object == null) return null;
 
@@ -805,6 +816,8 @@ namespace StoryAPI.Runtime
 
         public static void Forget(string container, string layer = "master")
         {
+            AtlScheduler.Cancel(container, layer);
+            s_transformBasePositions.Remove(SlotKey(container, layer));
             string key = ResolveSlotKey(container, layer);
             if (key != null) s_sprites.Remove(key);
 
@@ -831,6 +844,8 @@ namespace StoryAPI.Runtime
         {
             if (string.IsNullOrEmpty(imageTag)) return false;
             if (string.IsNullOrEmpty(layer)) layer = "master";
+            AtlScheduler.Cancel(imageTag, layer);
+            s_transformBasePositions.Remove(SlotKey(imageTag, layer));
 
             string matchKey = null;
             SavedArt match = null;
@@ -902,6 +917,8 @@ namespace StoryAPI.Runtime
 
         public static void ForgetAll()
         {
+            AtlScheduler.Clear();
+            s_transformBasePositions.Clear();
             s_sprites.Clear();
             foreach (var instance in new List<GameObject>(s_hosted.Values))
             {
@@ -933,7 +950,7 @@ namespace StoryAPI.Runtime
         /// Properties not present in the definition leave the current renderer state alone.
         /// </summary>
         internal static bool ApplyStaticTransform(string container, string layer,
-            StoryAPI.Game.GameBridge.TransformState state)
+            StoryAPI.Game.GameBridge.TransformState state, bool log = true)
         {
             if (string.IsNullOrEmpty(container) || state == null) return false;
 
@@ -965,7 +982,13 @@ namespace StoryAPI.Runtime
                 float zoomY = state.HasZoom ? state.ZoomY : renderer.localScale.y;
                 float widthPx = textureWidth * zoomX;
                 float heightPx = textureHeight * zoomY;
-                Vector3 position = renderer.localPosition;
+                string transformKey = SlotKey(container, layer);
+                if (!s_transformBasePositions.TryGetValue(transformKey, out var basePosition))
+                {
+                    basePosition = renderer.localPosition;
+                    s_transformBasePositions[transformKey] = basePosition;
+                }
+                Vector3 position = basePosition;
 
                 if (state.HasXAlign || state.HasXPos || state.HasXOffset)
                 {
@@ -1003,7 +1026,8 @@ namespace StoryAPI.Runtime
                     data.Alpha = Mathf.Clamp01(state.Alpha);
                 }
 
-                Log.Info("atl: applied static transform '" + container + "' on layer '" + layer + "'");
+                if (log)
+                    Log.Info("atl: applied static transform '" + container + "' on layer '" + layer + "'");
                 return true;
             }
             catch (Exception e)

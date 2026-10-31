@@ -244,6 +244,165 @@ namespace StoryAPI.Runtime
         }
     }
 
+    /// <summary>One timed stage of a user-authored ATL transform.</summary>
+    internal sealed class AtlScriptSegment
+    {
+        public GameBridge.TransformState Target { get; set; }
+        public float Duration { get; set; }
+        public string EaseName { get; set; }
+    }
+
+    /// <summary>Runs sequential ATL stages over a StoryAPI-owned image.</summary>
+    internal sealed class AtlScriptAnimation
+    {
+        private readonly List<AtlScriptSegment> _segments;
+        private GameBridge.TransformState _current;
+        private int _segmentIndex;
+        private float _elapsed;
+
+        public string Container { get; }
+        public string Layer { get; }
+        public ActiveImage Target { get; }
+        public bool Finished { get; private set; }
+
+        public AtlScriptAnimation(string container, string layer, ActiveImage target,
+            GameBridge.TransformState initial, IList<AtlScriptSegment> segments)
+        {
+            Container = container;
+            Layer = string.IsNullOrEmpty(layer) ? "master" : layer;
+            Target = target;
+            _current = Copy(initial);
+            _segments = new List<AtlScriptSegment>(segments);
+        }
+
+        public void Advance(float delta)
+        {
+            if (Finished) return;
+            if (Target == null || Target.Object == null || !ArtInjector.Has(Container, Layer))
+            {
+                Finished = true;
+                return;
+            }
+
+            float remaining = Mathf.Max(0f, delta);
+            while (_segmentIndex < _segments.Count)
+            {
+                AtlScriptSegment segment = _segments[_segmentIndex];
+                if (segment == null || segment.Target == null)
+                {
+                    _segmentIndex++;
+                    _elapsed = 0f;
+                    continue;
+                }
+
+                float duration = Mathf.Max(0f, segment.Duration);
+                if (duration <= 0f)
+                {
+                    _current = Merge(_current, segment.Target);
+                    ArtInjector.ApplyStaticTransform(Container, Layer, _current, false);
+                    _segmentIndex++;
+                    _elapsed = 0f;
+                    continue;
+                }
+
+                float step = Mathf.Min(remaining, duration - _elapsed);
+                _elapsed += step;
+                remaining -= step;
+
+                float t = Mathf.Clamp01(_elapsed / duration);
+                var frame = Copy(_current);
+                Interpolate(frame, _current, segment.Target, Warp(segment.EaseName, t));
+                ArtInjector.ApplyStaticTransform(Container, Layer, frame, false);
+
+                if (_elapsed < duration) return;
+
+                _current = Merge(_current, segment.Target);
+                _segmentIndex++;
+                _elapsed = 0f;
+
+                if (remaining <= 0f && _segmentIndex < _segments.Count)
+                {
+                    AtlScriptSegment next = _segments[_segmentIndex];
+                    if (next != null && next.Duration > 0f) return;
+                }
+            }
+
+            Finished = true;
+        }
+
+        private static float Warp(string easeName, float t)
+        {
+            switch ((easeName ?? "linear").ToLowerInvariant())
+            {
+                case "ease":
+                    return 0.5f - Mathf.Cos(Mathf.PI * t) * 0.5f;
+                case "easein":
+                    return Mathf.Cos((1f - t) * Mathf.PI * 0.5f);
+                case "easeout":
+                    return 1f - Mathf.Cos(t * Mathf.PI * 0.5f);
+                default:
+                    return t;
+            }
+        }
+
+        private static void Interpolate(GameBridge.TransformState frame,
+            GameBridge.TransformState from, GameBridge.TransformState to, float t)
+        {
+            if (to.HasXAlign) { frame.HasXAlign = true; frame.AlignX = Mathf.Lerp(from.AlignX, to.AlignX, t); }
+            if (to.HasYAlign) { frame.HasYAlign = true; frame.AlignY = Mathf.Lerp(from.AlignY, to.AlignY, t); }
+            if (to.HasXPos) { frame.HasXPos = true; frame.PosX = Mathf.Lerp(from.PosX, to.PosX, t); }
+            if (to.HasYPos) { frame.HasYPos = true; frame.PosY = Mathf.Lerp(from.PosY, to.PosY, t); }
+            if (to.HasXOffset) { frame.HasXOffset = true; frame.OffsetX = Mathf.Lerp(from.OffsetX, to.OffsetX, t); }
+            if (to.HasYOffset) { frame.HasYOffset = true; frame.OffsetY = Mathf.Lerp(from.OffsetY, to.OffsetY, t); }
+            if (to.HasZoom)
+            {
+                frame.HasZoom = true;
+                frame.ZoomX = Mathf.Lerp(from.ZoomX, to.ZoomX, t);
+                frame.ZoomY = Mathf.Lerp(from.ZoomY, to.ZoomY, t);
+            }
+            if (to.HasAlpha) { frame.HasAlpha = true; frame.Alpha = Mathf.Lerp(from.Alpha, to.Alpha, t); }
+            if (to.HasRotate) { frame.HasRotate = true; frame.Rotate = Mathf.Lerp(from.Rotate, to.Rotate, t); }
+        }
+
+        private static GameBridge.TransformState Merge(GameBridge.TransformState current,
+            GameBridge.TransformState target)
+        {
+            var result = Copy(current);
+            if (target.HasXAlign) { result.HasXAlign = true; result.AlignX = target.AlignX; }
+            if (target.HasYAlign) { result.HasYAlign = true; result.AlignY = target.AlignY; }
+            if (target.HasXPos) { result.HasXPos = true; result.PosX = target.PosX; }
+            if (target.HasYPos) { result.HasYPos = true; result.PosY = target.PosY; }
+            if (target.HasXOffset) { result.HasXOffset = true; result.OffsetX = target.OffsetX; }
+            if (target.HasYOffset) { result.HasYOffset = true; result.OffsetY = target.OffsetY; }
+            if (target.HasZoom)
+            {
+                result.HasZoom = true;
+                result.ZoomX = target.ZoomX;
+                result.ZoomY = target.ZoomY;
+            }
+            if (target.HasAlpha) { result.HasAlpha = true; result.Alpha = target.Alpha; }
+            if (target.HasRotate) { result.HasRotate = true; result.Rotate = target.Rotate; }
+            return result;
+        }
+
+        private static GameBridge.TransformState Copy(GameBridge.TransformState source)
+        {
+            source = source ?? new GameBridge.TransformState();
+            return new GameBridge.TransformState
+            {
+                HasXAlign = source.HasXAlign, AlignX = source.AlignX,
+                HasYAlign = source.HasYAlign, AlignY = source.AlignY,
+                HasXPos = source.HasXPos, PosX = source.PosX,
+                HasYPos = source.HasYPos, PosY = source.PosY,
+                HasXOffset = source.HasXOffset, OffsetX = source.OffsetX,
+                HasYOffset = source.HasYOffset, OffsetY = source.OffsetY,
+                HasZoom = source.HasZoom, ZoomX = source.ZoomX, ZoomY = source.ZoomY,
+                HasAlpha = source.HasAlpha, Alpha = source.Alpha,
+                HasRotate = source.HasRotate, Rotate = source.Rotate,
+            };
+        }
+    }
+
     /// <summary>
     /// The mod's own animation runner.
     ///
@@ -255,9 +414,11 @@ namespace StoryAPI.Runtime
     public static class AtlScheduler
     {
         private static readonly List<AtlAnimation> s_running = new List<AtlAnimation>();
+        private static readonly List<AtlScriptAnimation> s_scriptRunning =
+            new List<AtlScriptAnimation>();
 
         /// <summary>How many pictures are moving at the moment.</summary>
-        public static int RunningCount => s_running.Count;
+        public static int RunningCount => s_running.Count + s_scriptRunning.Count;
 
         /// <summary>
         /// Start a picture moving along a transform.
@@ -270,12 +431,8 @@ namespace StoryAPI.Runtime
         {
             if (target == null || renderer == null || animation == null) return false;
 
-            // Only one move per picture: showing the same picture again replaces the move
-            // that was running for it.
-            for (int i = s_running.Count - 1; i >= 0; i--)
-            {
-                if (s_running[i].Target == target) s_running.RemoveAt(i);
-            }
+            // A newer transform replaces any older animation for this image.
+            CancelTarget(target);
 
             var move = new AtlAnimation(target, renderer, textureWidth, textureHeight,
                                         animation.Start, animation.End,
@@ -293,11 +450,55 @@ namespace StoryAPI.Runtime
             return true;
         }
 
+        /// <summary>Start a user-authored ATL transform after its image has been shown.</summary>
+        internal static bool StartScript(string container, string layer,
+            GameBridge.TransformState initial, IList<AtlScriptSegment> segments)
+        {
+            if (string.IsNullOrEmpty(container) || initial == null || segments == null)
+                return false;
+
+            layer = string.IsNullOrEmpty(layer) ? "master" : layer;
+            Cancel(container, layer);
+
+            ActiveImage target = ArtInjector.ImageFor(container, layer);
+            if (target == null || !ArtInjector.Has(container, layer))
+            {
+                Log.Warn("atl: no image named '" + container + "' on layer '" + layer + "'.");
+                return false;
+            }
+
+            if (!ArtInjector.ApplyStaticTransform(container, layer, initial, false))
+                return false;
+
+            if (segments.Count == 0) return true;
+
+            var animation = new AtlScriptAnimation(container, layer, target, initial, segments);
+            animation.Advance(0f);
+            if (!animation.Finished) s_scriptRunning.Add(animation);
+            return true;
+        }
+
+        internal static void Cancel(string container, string layer = "master")
+        {
+            ActiveImage target = ArtInjector.ImageFor(container, layer);
+            if (target != null) CancelTarget(target);
+
+            string effectiveLayer = string.IsNullOrEmpty(layer) ? "master" : layer;
+            s_scriptRunning.RemoveAll(move =>
+                string.Equals(move.Container, container, StringComparison.OrdinalIgnoreCase) &&
+                string.Equals(move.Layer, effectiveLayer, StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static void CancelTarget(ActiveImage target)
+        {
+            if (target == null) return;
+            s_running.RemoveAll(move => move.Target == target);
+            s_scriptRunning.RemoveAll(move => move.Target == target);
+        }
+
         /// <summary>Step every moving picture along.</summary>
         public static void Tick(float delta)
         {
-            if (s_running.Count == 0) return;
-
             for (int i = s_running.Count - 1; i >= 0; i--)
             {
                 var move = s_running[i];
@@ -308,12 +509,24 @@ namespace StoryAPI.Runtime
                 s_running.RemoveAt(i);
                 Log.Info("atl: '" + move.Target.Name + "' finished moving");
             }
+
+            for (int i = s_scriptRunning.Count - 1; i >= 0; i--)
+            {
+                AtlScriptAnimation animation = s_scriptRunning[i];
+                animation.Advance(delta);
+                if (!animation.Finished) continue;
+
+                s_scriptRunning.RemoveAt(i);
+                Log.Info("atl: '" + animation.Container + "' finished its custom transform");
+            }
         }
 
         /// <summary>Forget every move, used when the mod is reloaded.</summary>
         public static void Clear()
         {
             s_running.Clear();
+            s_scriptRunning.Clear();
         }
     }
+}    }
 }

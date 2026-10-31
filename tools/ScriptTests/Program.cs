@@ -510,17 +510,17 @@ namespace StoryAPI.Tests
         private static void TestAtlPauseStatements()
         {
             var statements = Parse(
-                "transform stage75_pause:\\n" +
-                "    xalign 0.0\\n" +
-                "    linear 0.5 xalign 1.0\\n" +
-                "    pause 0.75\\n" +
-                "    linear 0.5 xalign 0.0\\n" +
-                "    0.25\\n" +
-                "    ease 0.5:\\n" +
-                "        xalign 0.5\\n" +
-                "label stage75_use:\\n" +
-                "    show june at stage75_pause\\n" +
-                "    return\\n");
+                "transform stage75_pause:\n" +
+                "    xalign 0.0\n" +
+                "    linear 0.5 xalign 1.0\n" +
+                "    pause 0.75\n" +
+                "    linear 0.5 xalign 0.0\n" +
+                "    0.25\n" +
+                "    ease 0.5:\n" +
+                "        xalign 0.5\n" +
+                "label stage75_use:\n" +
+                "    show june at stage75_pause\n" +
+                "    return\n");
 
             var transform = Require<TransformDeclarationStatement>(statements[0],
                 "Expected an ATL transform with pause statements.");
@@ -543,9 +543,9 @@ namespace StoryAPI.Tests
                 "Interpolation statements after a pause should preserve timeline order.");
 
             var zeroPause = Parse(
-                "transform zero_pause:\\n" +
-                "    alpha 1.0\\n" +
-                "    pause 0\\n");
+                "transform zero_pause:\n" +
+                "    alpha 1.0\n" +
+                "    pause 0\n");
             var zero = Require<TransformDeclarationStatement>(zeroPause[0],
                 "Expected a zero-duration pause transform.");
             Check(zero.Timeline.Count == 1 &&
@@ -554,30 +554,30 @@ namespace StoryAPI.Tests
                 "A zero-duration ATL pause should parse and be left to the runtime's one-frame rule.");
 
             ExpectSyntaxError(
-                "transform negative_pause:\\n" +
-                "    alpha 1.0\\n" +
-                "    pause -0.5\\n",
+                "transform negative_pause:\n" +
+                "    alpha 1.0\n" +
+                "    pause -0.5\n",
                 "non-negative");
             ExpectSyntaxError(
-                "transform negative_number_pause:\\n" +
-                "    alpha 1.0\\n" +
-                "    -0.5\\n",
+                "transform negative_number_pause:\n" +
+                "    alpha 1.0\n" +
+                "    -0.5\n",
                 "non-negative");
             ExpectSyntaxError(
-                "transform pause_missing_duration:\\n" +
-                "    alpha 1.0\\n" +
-                "    pause\\n",
-                "Expected a number");
+                "transform pause_missing_duration:\n" +
+                "    alpha 1.0\n" +
+                "    pause\n",
+                "ATL pause duration");
             ExpectSyntaxError(
-                "transform pause_expression:\\n" +
-                "    alpha 1.0\\n" +
-                "    pause duration\\n",
-                "Expected a number");
+                "transform pause_expression:\n" +
+                "    alpha 1.0\n" +
+                "    pause duration\n",
+                "ATL pause duration");
             ExpectSyntaxError(
-                "transform property_after_pause:\\n" +
-                "    alpha 1.0\\n" +
-                "    pause 0.5\\n" +
-                "    zoom 1.0\\n",
+                "transform property_after_pause:\n" +
+                "    alpha 1.0\n" +
+                "    pause 0.5\n" +
+                "    zoom 1.0\n",
                 "must appear before timed statements");
         }
 

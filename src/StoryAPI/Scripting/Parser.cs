@@ -110,6 +110,7 @@ namespace StoryAPI.Scripting
                 return ParseLabelBody(name, line);
             }
 
+            if (MatchKeyword("transform")) return ParseTransformDeclaration(line);
             if (MatchKeyword("define")) return ParseVariableDeclaration(false, line);
             if (MatchKeyword("default")) return ParseVariableDeclaration(true, line);
             if (MatchKeyword("character")) return ParseCharacter();
@@ -119,8 +120,81 @@ namespace StoryAPI.Scripting
             if (MatchKeyword("hook")) return ParseHook();
 
             throw new ScriptSyntaxException(
-                "Only 'label', 'define', 'default', 'character', 'image', 'audio', 'override' and 'hook' may " +
+                "Only 'label', 'transform', 'define', 'default', 'character', 'image', 'audio', 'override' and 'hook' may " +
                 "appear at the top level. Found '" + Describe(Current) + "'.", line);
+        }
+
+        /// <summary>
+        /// Reads the first, static subset of a Ren'Py ATL transform declaration.
+        /// Each supported property is written on its own line and has a numeric value.
+        /// </summary>
+        private TransformDeclarationStatement ParseTransformDeclaration(int line)
+        {
+            var declaration = new TransformDeclarationStatement
+            {
+                Name = ReadName("transform name"),
+                Line = line,
+            };
+            ExpectColon();
+            SkipNewlines();
+            ExpectIndent();
+            SkipNewlines();
+
+            while (Current.Type != TokenType.Dedent && !AtEnd)
+            {
+                int propertyLine = Current.Line;
+                if (Current.Type != TokenType.Identifier && Current.Type != TokenType.Keyword)
+                    throw new ScriptSyntaxException("Expected an ATL transform property.", propertyLine);
+
+                string property = Advance().Text;
+                if (!IsSupportedStaticTransformProperty(property))
+                    throw new ScriptSyntaxException("Unsupported static ATL property '" + property + "'.", propertyLine);
+
+                float value = ReadNumber();
+                if (float.IsNaN(value) || float.IsInfinity(value))
+                    throw new ScriptSyntaxException("ATL property values must be finite numbers.", propertyLine);
+
+                if ((property == "xalign" || property == "yalign" || property == "alpha") &&
+                    (value < 0f || value > 1f))
+                    throw new ScriptSyntaxException("'" + property + "' must be between 0 and 1.", propertyLine);
+
+                if (property == "zoom" && value <= 0f)
+                    throw new ScriptSyntaxException("'zoom' must be greater than zero.", propertyLine);
+
+                declaration.Properties.Add(new TransformPropertyStatement
+                {
+                    Name = property,
+                    Value = value,
+                    Line = propertyLine,
+                });
+                FinishLine();
+                SkipNewlines();
+            }
+
+            if (Current.Type == TokenType.Dedent) _index++;
+            if (declaration.Properties.Count == 0)
+                throw new ScriptSyntaxException("A transform declaration must contain at least one supported property.", line);
+
+            return declaration;
+        }
+
+        private static bool IsSupportedStaticTransformProperty(string property)
+        {
+            switch (property)
+            {
+                case "xalign":
+                case "yalign":
+                case "xpos":
+                case "ypos":
+                case "xoffset":
+                case "yoffset":
+                case "alpha":
+                case "zoom":
+                case "rotate":
+                    return true;
+                default:
+                    return false;
+            }
         }
 
         /// <summary>
@@ -216,6 +290,8 @@ namespace StoryAPI.Scripting
                     case "define":
                     case "default":
                         throw new ScriptSyntaxException("'define' and 'default' must be declared at the top level of a file.", line);
+                    case "transform":
+                        throw new ScriptSyntaxException("'transform' declarations must appear at the top level of a file.", line);
                     case "override": return ParseOverride();
                 }
             }

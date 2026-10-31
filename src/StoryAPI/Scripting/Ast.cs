@@ -26,6 +26,24 @@ namespace StoryAPI.Scripting
         public List<Statement> Body { get; } = new List<Statement>();
     }
 
+    /// <summary>
+    /// A reusable ATL transform declaration. This first subset contains immediate
+    /// numeric properties; time-based ATL statements are handled separately.
+    /// </summary>
+    public sealed class TransformDeclarationStatement : Statement
+    {
+        public string Name { get; set; }
+        public List<TransformPropertyStatement> Properties { get; } =
+            new List<TransformPropertyStatement>();
+    }
+
+    /// <summary>One immediate numeric property in a supported ATL transform.</summary>
+    public sealed class TransformPropertyStatement : Statement
+    {
+        public string Name { get; set; }
+        public float Value { get; set; }
+    }
+
     /// <summary>A character speaking. Tag empty means narration.</summary>
     public sealed class SayStatement : Statement
     {

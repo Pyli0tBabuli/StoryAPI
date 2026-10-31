@@ -23,6 +23,7 @@ namespace StoryAPI.Tests
             Run("inline image statement transitions", TestInlineImageStatementTransitions);
             Run("image statement layers", TestImageStatementLayers);
             Run("show behind ordering", TestShowBehind);
+            Run("static ATL transform declarations", TestStaticAtlTransforms);
             Run("sprite alias and position", TestSpriteAliasAndPosition);
             Run("define/default scalar declarations", TestVariableDeclarations);
             Run("runtime scalar initializer expressions", TestRuntimeExpressionDeclarations);
@@ -357,6 +358,76 @@ namespace StoryAPI.Tests
                 "label duplicate_behind:\n" +
                 "    show moon behind mary behind yuri\n",
                 "only have one 'behind'");
+        }
+
+        private static void TestStaticAtlTransforms()
+        {
+            var statements = Parse(
+                "transform stage73_bottom_right:\n" +
+                "    xalign 1.0\n" +
+                "    yalign 1.0\n" +
+                "    zoom 0.75\n" +
+                "    alpha 0.8\n" +
+                "    rotate -5\n" +
+                "transform stage73_offset:\n" +
+                "    xpos 120\n" +
+                "    yoffset -24\n" +
+                "    zoom 0.9\n" +
+                "label stage73_transform_use:\n" +
+                "    show june at stage73_bottom_right\n" +
+                "    show monika 1a at stage73_offset\n" +
+                "    return\n");
+
+            var first = Require<TransformDeclarationStatement>(statements[0],
+                "Expected first ATL transform declaration.");
+            Check(first.Name == "stage73_bottom_right" && first.Properties.Count == 5,
+                "The transform name and all five static properties should be preserved.");
+            Check(first.Properties[0].Name == "xalign" && first.Properties[0].Value == 1f &&
+                  first.Properties[1].Name == "yalign" && first.Properties[1].Value == 1f &&
+                  first.Properties[2].Name == "zoom" && first.Properties[2].Value == 0.75f &&
+                  first.Properties[3].Name == "alpha" && first.Properties[3].Value == 0.8f &&
+                  first.Properties[4].Name == "rotate" && first.Properties[4].Value == -5f,
+                "Static ATL properties should retain their names, values, and order.");
+
+            var second = Require<TransformDeclarationStatement>(statements[1],
+                "Expected second ATL transform declaration.");
+            Check(second.Properties.Count == 3 &&
+                  second.Properties[0].Name == "xpos" &&
+                  second.Properties[1].Name == "yoffset" &&
+                  second.Properties[2].Name == "zoom",
+                "Position, offset, and zoom properties should parse.");
+
+            var label = Require<LabelStatement>(statements[2],
+                "Expected a label after the ATL declarations.");
+            var show = Require<ShowStatement>(label.Body[0],
+                "Expected show using the first transform name.");
+            Check(show.At == "stage73_bottom_right",
+                "The show at-clause should retain a user-defined transform name.");
+            var pose = Require<ShowStatement>(label.Body[1],
+                "Expected show using the second transform name.");
+            Check(pose.At == "stage73_offset",
+                "The pose at-clause should retain a user-defined transform name.");
+
+            ExpectSyntaxError(
+                "transform empty_transform:\n",
+                "indented block");
+            ExpectSyntaxError(
+                "transform unknown_property:\n" +
+                "    blur 0.5\n",
+                "Unsupported static ATL property");
+            ExpectSyntaxError(
+                "transform invalid_alpha:\n" +
+                "    alpha 1.5\n",
+                "between 0 and 1");
+            ExpectSyntaxError(
+                "transform invalid_zoom:\n" +
+                "    zoom 0\n",
+                "greater than zero");
+            ExpectSyntaxError(
+                "label nested_transform:\n" +
+                "    transform not_allowed:\n" +
+                "        alpha 1\n",
+                "top level");
         }
 
         private static void TestSpriteAliasAndPosition()

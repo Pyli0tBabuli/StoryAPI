@@ -32,6 +32,8 @@ namespace StoryAPI.Runtime
         private readonly List<OverrideStatement> _overrides = new List<OverrideStatement>();
         private readonly List<CharacterStatement> _characters = new List<CharacterStatement>();
         private readonly List<VariableDeclarationStatement> _variables = new List<VariableDeclarationStatement>();
+        private readonly Dictionary<string, TransformDeclarationStatement> _transforms =
+            new Dictionary<string, TransformDeclarationStatement>(StringComparer.OrdinalIgnoreCase);
         private readonly Dictionary<VariableDeclarationStatement, VariableInitializationState> _variableInitializationStates =
             new Dictionary<VariableDeclarationStatement, VariableInitializationState>();
         private bool _variableInitLinesInjected;
@@ -55,6 +57,7 @@ namespace StoryAPI.Runtime
             _overrides.Clear();
             _characters.Clear();
             _variables.Clear();
+            _transforms.Clear();
             _variableInitializationStates.Clear();
             _variableInitLinesInjected = false;
             _images.Clear();
@@ -118,7 +121,7 @@ namespace StoryAPI.Runtime
             // Pass two: compile labels.
             foreach (var label in _labelStatements)
             {
-                var compiler = new Compiler(Assets);
+                var compiler = new Compiler(Assets, _transforms);
                 var result = compiler.Compile(label);
 
                 foreach (string warning in result.Warnings) Warnings.Add(Relative(label.SourcePath) + ": " + warning);
@@ -132,7 +135,7 @@ namespace StoryAPI.Runtime
             // has, so they are kept under the name of the block they take over.
             foreach (var hook in _hookStatements)
             {
-                var compiler = new Compiler(Assets);
+                var compiler = new Compiler(Assets, _transforms);
                 var result = compiler.CompileHook(hook);
 
                 foreach (string warning in result.Warnings) Warnings.Add(Relative(hook.SourcePath) + ": " + warning);
@@ -170,6 +173,13 @@ namespace StoryAPI.Runtime
                 case VariableDeclarationStatement variable:
                     variable.SourcePath = _currentFile;
                     _variables.Add(variable);
+                    break;
+                case TransformDeclarationStatement transform:
+                    if (_transforms.ContainsKey(transform.Name))
+                        LoadErrors.Add(Relative(_currentFile) + ": duplicate transform declaration '" +
+                            transform.Name + "'.");
+                    else
+                        _transforms.Add(transform.Name, transform);
                     break;
                 case OverrideStatement replace: _overrides.Add(replace); break;
                 case GroupStatement group:

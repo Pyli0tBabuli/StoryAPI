@@ -135,6 +135,31 @@ the named tags on the same layer. The property can be combined with `as`, `at`,
 `onlayer`, `zorder`, and an inline `with` transition. StoryAPI retains the behind
 tags in its save record so the same ordering is restored after loading.
 
+### Static ATL transform declarations
+
+Stage 73 adds reusable top-level ATL `transform` declarations that can be referenced
+from `show ... at <name>`. The initial supported subset is immediate numeric
+properties, one per line: `xalign`, `yalign`, `xpos`, `ypos`, `xoffset`,
+`yoffset`, `alpha`, `zoom`, and `rotate`.
+
+```renpy
+transform stage_position:
+    xalign 1.0
+    yalign 1.0
+    zoom 0.75
+    alpha 0.8
+    rotate -5
+
+label example:
+    show monika 1a at stage_position
+```
+
+A custom transform is applied to StoryAPI-managed custom sprites, native game sprites,
+and DDLC+ character poses. Properties not specified in a transform leave the current
+state unchanged. Interpolation statements (`linear`, `ease`, `easein`, `easeout`),
+pauses, parallel/repeat blocks, and parameterized transforms are not part of this first
+subset.
+
 ### Variable declarations and loop control
 
 StoryAPI supports a limited subset of Ren'Py variable declarations and loop statements:

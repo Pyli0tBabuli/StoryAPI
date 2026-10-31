@@ -267,10 +267,10 @@ namespace StoryAPI.Runtime
     {
         private readonly string _container;
         private readonly string _layer;
-        private readonly StoryAPI.Game.GameBridge.TransformState _state;
+        private readonly StoryAPI.StoryAPI.Game.GameBridge.TransformState _state;
 
         public StaticTransformLine(string container, string layer,
-            StoryAPI.Game.GameBridge.TransformState state)
+            StoryAPI.StoryAPI.Game.GameBridge.TransformState state)
         {
             _container = container;
             _layer = string.IsNullOrEmpty(layer) ? "master" : layer;
@@ -289,11 +289,11 @@ namespace StoryAPI.Runtime
     {
         private readonly string _container;
         private readonly string _layer;
-        private readonly Game.GameBridge.TransformState _initial;
+        private readonly StoryAPI.Game.GameBridge.TransformState _initial;
         private readonly List<AtlScriptSegment> _segments;
 
         public AtlTransformLine(string container, string layer,
-            Game.GameBridge.TransformState initial, IList<AtlScriptSegment> segments)
+            StoryAPI.Game.GameBridge.TransformState initial, IList<AtlScriptSegment> segments)
         {
             _container = container;
             _layer = string.IsNullOrEmpty(layer) ? "master" : layer;

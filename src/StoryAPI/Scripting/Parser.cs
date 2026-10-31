@@ -142,27 +142,48 @@ namespace StoryAPI.Scripting
             ExpectIndent();
             SkipNewlines();
 
-            bool sawInterpolation = false;
+            bool sawTimedStatement = false;
             while (Current.Type != TokenType.Dedent && !AtEnd)
             {
                 int statementLine = Current.Line;
-                if (Current.Type != TokenType.Identifier && Current.Type != TokenType.Keyword)
-                    throw new ScriptSyntaxException(
-                        "Expected an ATL transform property or interpolation.", statementLine);
 
-                string statementName = Current.Text;
-                if (IsAtlInterpolationName(statementName))
+                // Ren'Py's ATL Number Statement is a pause. The keyword is optional,
+                // so both "pause 0.5" and "0.5" enter the same AST/runtime path.
+                if (Current.Type == TokenType.Number)
                 {
-                    Advance();
-                    declaration.Interpolations.Add(ParseTransformInterpolation(
-                        statementName, statementLine, initializedProperties));
-                    sawInterpolation = true;
+                    declaration.Timeline.Add(ParseTransformPause(statementLine));
+                    sawTimedStatement = true;
                     continue;
                 }
 
-                if (sawInterpolation)
+                if (Current.Type != TokenType.Identifier && Current.Type != TokenType.Keyword)
                     throw new ScriptSyntaxException(
-                        "Immediate ATL properties must appear before interpolation statements.",
+                        "Expected an ATL transform property, interpolation, or pause.",
+                        statementLine);
+
+                string statementName = Current.Text;
+                if (Current.Type == TokenType.Keyword && statementName == "pause")
+                {
+                    Advance();
+                    declaration.Timeline.Add(ParseTransformPause(statementLine));
+                    sawTimedStatement = true;
+                    continue;
+                }
+
+                if (IsAtlInterpolationName(statementName))
+                {
+                    Advance();
+                    TransformInterpolationStatement interpolation =
+                        ParseTransformInterpolation(statementName, statementLine, initializedProperties);
+                    declaration.Interpolations.Add(interpolation);
+                    declaration.Timeline.Add(interpolation);
+                    sawTimedStatement = true;
+                    continue;
+                }
+
+                if (sawTimedStatement)
+                    throw new ScriptSyntaxException(
+                        "Immediate ATL properties must appear before timed statements.",
                         statementLine);
 
                 TransformPropertyStatement property = ReadTransformProperty(statementLine);
@@ -173,12 +194,33 @@ namespace StoryAPI.Scripting
             }
 
             if (Current.Type == TokenType.Dedent) _index++;
-            if (declaration.Properties.Count == 0 && declaration.Interpolations.Count == 0)
+            if (declaration.Properties.Count == 0 && declaration.Timeline.Count == 0)
                 throw new ScriptSyntaxException(
-                    "A transform declaration must contain at least one supported property or interpolation.",
+                    "A transform declaration must contain at least one supported property or timed statement.",
                     line);
 
             return declaration;
+        }
+
+        private TransformPauseStatement ParseTransformPause(int line)
+        {
+            if (Current.Type != TokenType.Number)
+                throw new ScriptSyntaxException(
+                    "Expected an ATL pause duration in seconds.", Current.Line);
+
+            float duration = ReadNumber();
+            if (float.IsNaN(duration) || float.IsInfinity(duration) || duration < 0f)
+                throw new ScriptSyntaxException(
+                    "ATL pause duration must be a finite non-negative number.", line);
+
+            FinishLine();
+            SkipNewlines();
+
+            return new TransformPauseStatement
+            {
+                Duration = duration,
+                Line = line,
+            };
         }
 
         private TransformInterpolationStatement ParseTransformInterpolation(

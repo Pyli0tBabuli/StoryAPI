@@ -125,8 +125,8 @@ namespace StoryAPI.Scripting
         }
 
         /// <summary>
-        /// Reads the first, static subset of a Ren'Py ATL transform declaration.
-        /// Each supported property is written on its own line and has a numeric value.
+        /// Reads a restricted ATL transform: immediate numeric properties followed by
+        /// zero or more sequential timed interpolation statements.
         /// </summary>
         private TransformDeclarationStatement ParseTransformDeclaration(int line)
         {
@@ -135,47 +135,166 @@ namespace StoryAPI.Scripting
                 Name = ReadName("transform name"),
                 Line = line,
             };
+            var initializedProperties = new HashSet<string>(StringComparer.Ordinal);
+
             ExpectColon();
             SkipNewlines();
             ExpectIndent();
             SkipNewlines();
 
+            bool sawInterpolation = false;
             while (Current.Type != TokenType.Dedent && !AtEnd)
             {
-                int propertyLine = Current.Line;
+                int statementLine = Current.Line;
                 if (Current.Type != TokenType.Identifier && Current.Type != TokenType.Keyword)
-                    throw new ScriptSyntaxException("Expected an ATL transform property.", propertyLine);
+                    throw new ScriptSyntaxException(
+                        "Expected an ATL transform property or interpolation.", statementLine);
 
-                string property = Advance().Text;
-                if (!IsSupportedStaticTransformProperty(property))
-                    throw new ScriptSyntaxException("Unsupported static ATL property '" + property + "'.", propertyLine);
-
-                float value = ReadNumber();
-                if (float.IsNaN(value) || float.IsInfinity(value))
-                    throw new ScriptSyntaxException("ATL property values must be finite numbers.", propertyLine);
-
-                if ((property == "xalign" || property == "yalign" || property == "alpha") &&
-                    (value < 0f || value > 1f))
-                    throw new ScriptSyntaxException("'" + property + "' must be between 0 and 1.", propertyLine);
-
-                if (property == "zoom" && value <= 0f)
-                    throw new ScriptSyntaxException("'zoom' must be greater than zero.", propertyLine);
-
-                declaration.Properties.Add(new TransformPropertyStatement
+                string statementName = Current.Text;
+                if (IsAtlInterpolationName(statementName))
                 {
-                    Name = property,
-                    Value = value,
-                    Line = propertyLine,
-                });
+                    Advance();
+                    declaration.Interpolations.Add(ParseTransformInterpolation(
+                        statementName, statementLine, initializedProperties));
+                    sawInterpolation = true;
+                    continue;
+                }
+
+                if (sawInterpolation)
+                    throw new ScriptSyntaxException(
+                        "Immediate ATL properties must appear before interpolation statements.",
+                        statementLine);
+
+                TransformPropertyStatement property = ReadTransformProperty(statementLine);
+                declaration.Properties.Add(property);
+                initializedProperties.Add(property.Name);
                 FinishLine();
                 SkipNewlines();
             }
 
             if (Current.Type == TokenType.Dedent) _index++;
-            if (declaration.Properties.Count == 0)
-                throw new ScriptSyntaxException("A transform declaration must contain at least one supported property.", line);
+            if (declaration.Properties.Count == 0 && declaration.Interpolations.Count == 0)
+                throw new ScriptSyntaxException(
+                    "A transform declaration must contain at least one supported property or interpolation.",
+                    line);
 
             return declaration;
+        }
+
+        private TransformInterpolationStatement ParseTransformInterpolation(
+            string easeName, int line, HashSet<string> initializedProperties)
+        {
+            if (Current.Type != TokenType.Number)
+                throw new ScriptSyntaxException(
+                    "Expected an interpolation duration in seconds.", Current.Line);
+
+            float duration = ReadNumber();
+            if (float.IsNaN(duration) || float.IsInfinity(duration) || duration < 0f)
+                throw new ScriptSyntaxException(
+                    "ATL interpolation duration must be a finite non-negative number.", line);
+
+            var interpolation = new TransformInterpolationStatement
+            {
+                EaseName = easeName,
+                Duration = duration,
+                Line = line,
+            };
+            var seenProperties = new HashSet<string>(StringComparer.Ordinal);
+
+            if (Current.Type == TokenType.Colon)
+            {
+                ExpectColon();
+                SkipNewlines();
+                ExpectIndent();
+                SkipNewlines();
+
+                while (Current.Type != TokenType.Dedent && !AtEnd)
+                {
+                    TransformPropertyStatement property = ReadTransformProperty(Current.Line);
+                    ValidateInterpolationProperty(property, initializedProperties, seenProperties);
+                    interpolation.Properties.Add(property);
+                    initializedProperties.Add(property.Name);
+                    FinishLine();
+                    SkipNewlines();
+                }
+
+                if (Current.Type == TokenType.Dedent) _index++;
+                SkipNewlines();
+            }
+            else
+            {
+                while (Current.Type != TokenType.Newline &&
+                       Current.Type != TokenType.EndOfFile &&
+                       Current.Type != TokenType.Dedent)
+                {
+                    TransformPropertyStatement property = ReadTransformProperty(Current.Line);
+                    ValidateInterpolationProperty(property, initializedProperties, seenProperties);
+                    interpolation.Properties.Add(property);
+                    initializedProperties.Add(property.Name);
+                }
+
+                FinishLine();
+                SkipNewlines();
+            }
+
+            if (interpolation.Properties.Count == 0)
+                throw new ScriptSyntaxException(
+                    "An ATL interpolation must contain at least one target property.", line);
+
+            return interpolation;
+        }
+
+        private static void ValidateInterpolationProperty(
+            TransformPropertyStatement property,
+            HashSet<string> initializedProperties,
+            HashSet<string> seenProperties)
+        {
+            if (!seenProperties.Add(property.Name))
+                throw new ScriptSyntaxException(
+                    "An ATL interpolation may set each property only once.", property.Line);
+
+            if (!initializedProperties.Contains(property.Name))
+                throw new ScriptSyntaxException(
+                    "ATL interpolation of '" + property.Name +
+                    "' requires an earlier value for that property in the same transform.",
+                    property.Line);
+        }
+
+        private TransformPropertyStatement ReadTransformProperty(int line)
+        {
+            if (Current.Type != TokenType.Identifier && Current.Type != TokenType.Keyword)
+                throw new ScriptSyntaxException("Expected an ATL transform property.", line);
+
+            string property = Advance().Text;
+            if (!IsSupportedStaticTransformProperty(property))
+                throw new ScriptSyntaxException(
+                    "Unsupported static ATL property '" + property + "'.", line);
+
+            float value = ReadNumber();
+            if (float.IsNaN(value) || float.IsInfinity(value))
+                throw new ScriptSyntaxException(
+                    "ATL property values must be finite numbers.", line);
+
+            if ((property == "xalign" || property == "yalign" || property == "alpha") &&
+                (value < 0f || value > 1f))
+                throw new ScriptSyntaxException(
+                    "'" + property + "' must be between 0 and 1.", line);
+
+            if (property == "zoom" && value <= 0f)
+                throw new ScriptSyntaxException("'zoom' must be greater than zero.", line);
+
+            return new TransformPropertyStatement
+            {
+                Name = property,
+                Value = value,
+                Line = line,
+            };
+        }
+
+        private static bool IsAtlInterpolationName(string name)
+        {
+            return name == "linear" || name == "ease" ||
+                   name == "easein" || name == "easeout";
         }
 
         private static bool IsSupportedStaticTransformProperty(string property)

@@ -135,30 +135,44 @@ the named tags on the same layer. The property can be combined with `as`, `at`,
 `onlayer`, `zorder`, and an inline `with` transition. StoryAPI retains the behind
 tags in its save record so the same ordering is restored after loading.
 
-### Static ATL transform declarations
+### ATL transforms and timed interpolation
 
-Stage 73 adds reusable top-level ATL `transform` declarations that can be referenced
-from `show ... at <name>`. The initial supported subset is immediate numeric
-properties, one per line: `xalign`, `yalign`, `xpos`, `ypos`, `xoffset`,
-`yoffset`, `alpha`, `zoom`, and `rotate`.
+Stages 73–74 add reusable top-level ATL `transform` declarations that can be referenced
+from `show ... at <name>`. Supported numeric properties are `xalign`, `yalign`,
+`xpos`, `ypos`, `xoffset`, `yoffset`, `alpha`, `zoom`, and `rotate`.
+Immediate properties are written one per line before any timed interpolation.
 
 ```renpy
 transform stage_position:
-    xalign 1.0
-    yalign 1.0
+    xalign 0.0
+    yalign 0.5
     zoom 0.75
     alpha 0.8
-    rotate -5
+    rotate 0
+
+    linear 1.0 xalign 1.0
+    ease 0.5:
+        zoom 1.0
+        alpha 1.0
+    easein 0.25 rotate -5
+    easeout 0.25:
+        rotate 0
 
 label example:
     show monika 1a at stage_position
+    pause 2.0
 ```
 
-A custom transform is applied to StoryAPI-managed custom sprites, native game sprites,
-and DDLC+ character poses. Properties not specified in a transform leave the current
-state unchanged. Interpolation statements (`linear`, `ease`, `easein`, `easeout`),
-pauses, parallel/repeat blocks, and parameterized transforms are not part of this first
-subset.
+Supported warpers are `linear`, `ease`, `easein`, and `easeout`. Interpolations
+run sequentially in seconds and accept inline target properties or an indented property
+block. Every animated property must have an earlier numeric value in the same transform,
+so its starting value is explicit. Animation runs alongside the label rather than pausing
+it; use `pause` when the scene should wait for motion to finish.
+
+Custom transforms are applied to StoryAPI-managed custom sprites, native game sprites,
+and DDLC+ character poses. Properties not specified by a transform leave the current
+state unchanged. Dynamic expressions, `pause` inside ATL, `repeat`, `parallel`,
+parameterized transforms, custom warpers, and other ATL statements are not yet supported.
 
 ### Variable declarations and loop control
 

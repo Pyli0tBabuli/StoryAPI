@@ -526,8 +526,10 @@ namespace StoryAPI.Scripting
         {
             string image = statement.Image;
             string variant = statement.Variant;
-            GameBridge.TransformState staticTransform;
-            bool hasStaticTransform = TryBuildStaticTransform(statement.At, out staticTransform);
+            GameBridge.TransformState initialTransform;
+            List<AtlScriptSegment> segments;
+            bool hasCustomTransform = TryBuildAtlTransform(
+                statement.At, out initialTransform, out segments);
             string layer = statement.OnLayer ?? "master";
 
             if (_assets.IsCustomImage(variant == null ? image : image + " " + variant))
@@ -535,46 +537,34 @@ namespace StoryAPI.Scripting
                 _out.Add(new CustomSpriteLine(_assets, image, variant, statement.Alias,
                                              statement.At, statement.ZOrder ?? 1,
                                              layer, statement.Behind));
-                if (hasStaticTransform)
-                    _out.Add(new StaticTransformLine(statement.Alias ?? image, layer, staticTransform));
+                if (hasCustomTransform)
+                    EmitAtlTransformLine(statement.Alias ?? image, layer, initialTransform, segments);
                 return;
             }
 
-            // In DDLC+, character poses such as "monika 1a" are generated prefabs,
-            // not ordinary named Sprite assets. When a named transform follows "at",
-            // do not route these through NativeSpriteLine("monika", ...): that asks
-            // the game for a single sprite called "monika" and fails. Hand the complete
-            // pose name to the prefab renderer instead.
             if (!string.IsNullOrEmpty(variant))
             {
                 string poseName = image + " " + variant;
                 if (BaseSprites.IsPose(poseName))
                 {
-                    _out.Add(new PoseLine(poseName, hasStaticTransform ? "center" : statement.At,
+                    _out.Add(new PoseLine(poseName, hasCustomTransform ? "center" : statement.At,
                         statement.ZOrder ?? 1, layer, statement.Behind));
-                    if (hasStaticTransform)
-                        _out.Add(new StaticTransformLine(poseName, layer, staticTransform));
+                    if (hasCustomTransform)
+                        EmitAtlTransformLine(poseName, layer, initialTransform, segments);
                     return;
                 }
             }
 
-            // A named transform on art the game owns is read and applied by the mod,
-            // because the game's own animation runner does not run in a mod label. Plain
-            // position words are left to the game as before.
             if (!string.IsNullOrEmpty(statement.At) && !IsPosition(statement.At))
             {
                 _out.Add(new NativeSpriteLine(image, statement.Alias ?? image,
-                                              hasStaticTransform ? null : statement.At,
+                                              hasCustomTransform ? null : statement.At,
                                               statement.ZOrder ?? 1, layer, statement.Behind));
-                if (hasStaticTransform)
-                    _out.Add(new StaticTransformLine(statement.Alias ?? image, layer, staticTransform));
+                if (hasCustomTransform)
+                    EmitAtlTransformLine(statement.Alias ?? image, layer, initialTransform, segments);
                 return;
             }
 
-            // The game takes the whole command as text, and that text is the only place
-            // the slot name can appear: the properties that would hold it are read-only.
-            // So the command is written out in full, the way the game's own compiler
-            // writes it, rather than assembled from fields.
             var showText = "show " + image +
                            (variant == null ? "" : " " + variant) +
                            (string.IsNullOrEmpty(statement.Alias) ? "" : " as " + statement.Alias) +
@@ -600,15 +590,35 @@ namespace StoryAPI.Scripting
             _out.Add(line);
         }
 
-        private bool TryBuildStaticTransform(string name, out GameBridge.TransformState state)
+        private bool TryBuildAtlTransform(string name,
+            out GameBridge.TransformState initial, out List<AtlScriptSegment> segments)
         {
-            state = null;
+            initial = null;
+            segments = null;
             if (string.IsNullOrEmpty(name) || _transforms == null ||
                 !_transforms.TryGetValue(name, out var declaration))
                 return false;
 
-            state = new GameBridge.TransformState();
-            foreach (var property in declaration.Properties)
+            initial = BuildTransformState(declaration.Properties);
+            segments = new List<AtlScriptSegment>();
+            foreach (var interpolation in declaration.Interpolations)
+            {
+                segments.Add(new AtlScriptSegment
+                {
+                    EaseName = interpolation.EaseName,
+                    Duration = interpolation.Duration,
+                    Target = BuildTransformState(interpolation.Properties),
+                });
+            }
+
+            return true;
+        }
+
+        private static GameBridge.TransformState BuildTransformState(
+            IEnumerable<TransformPropertyStatement> properties)
+        {
+            var state = new GameBridge.TransformState();
+            foreach (var property in properties)
             {
                 float value = property.Value;
                 switch (property.Name)
@@ -625,8 +635,16 @@ namespace StoryAPI.Scripting
                     case "rotate": state.HasRotate = true; state.Rotate = value; break;
                 }
             }
+            return state;
+        }
 
-            return true;
+        private void EmitAtlTransformLine(string container, string layer,
+            GameBridge.TransformState initial, List<AtlScriptSegment> segments)
+        {
+            if (segments != null && segments.Count > 0)
+                _out.Add(new AtlTransformLine(container, layer, initial, segments));
+            else
+                _out.Add(new StaticTransformLine(container, layer, initial));
         }
 
         private void EmitHideCore(HideStatement statement)

@@ -35,6 +35,17 @@ namespace StoryAPI.Scripting
         public string Name { get; set; }
         public List<TransformPropertyStatement> Properties { get; } =
             new List<TransformPropertyStatement>();
+        public List<TransformInterpolationStatement> Interpolations { get; } =
+            new List<TransformInterpolationStatement>();
+    }
+
+    /// <summary>A timed ATL interpolation and its target properties.</summary>
+    public sealed class TransformInterpolationStatement : Statement
+    {
+        public string EaseName { get; set; }
+        public float Duration { get; set; }
+        public List<TransformPropertyStatement> Properties { get; } =
+            new List<TransformPropertyStatement>();
     }
 
     /// <summary>One immediate numeric property in a supported ATL transform.</summary>

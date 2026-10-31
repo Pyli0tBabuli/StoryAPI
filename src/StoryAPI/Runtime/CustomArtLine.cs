@@ -218,7 +218,7 @@ namespace StoryAPI.Runtime
         internal static bool ShowNative(string image, string slot, string transform, int zOrder,
             string layer = "master", IList<string> behind = null)
         {
-            if (!StoryAPI.Game.GameBridge.TryLoadNativeSprite(image, out var sprite) || sprite == null)
+            if (!global::StoryAPI.Game.GameBridge.TryLoadNativeSprite(image, out var sprite) || sprite == null)
             {
                 Log.Warn("show: the game has no picture called '" + image + "'");
                 return false;
@@ -267,10 +267,10 @@ namespace StoryAPI.Runtime
     {
         private readonly string _container;
         private readonly string _layer;
-        private readonly StoryAPI.Game.GameBridge.TransformState _state;
+        private readonly global::StoryAPI.Game.GameBridge.TransformState _state;
 
         public StaticTransformLine(string container, string layer,
-            StoryAPI.Game.GameBridge.TransformState state)
+            global::StoryAPI.Game.GameBridge.TransformState state)
         {
             _container = container;
             _layer = string.IsNullOrEmpty(layer) ? "master" : layer;
@@ -281,6 +281,31 @@ namespace StoryAPI.Runtime
         {
             Log.Info("story: executing StaticTransformLine");
             ArtInjector.ApplyStaticTransform(_container, _layer, _state);
+        }
+    }
+
+    /// <summary>Starts timed interpolation statements in a custom ATL transform.</summary>
+    internal sealed class AtlTransformLine : Line, IApply
+    {
+        private readonly string _container;
+        private readonly string _layer;
+        private readonly global::StoryAPI.Game.GameBridge.TransformState _initial;
+        private readonly List<AtlScriptSegment> _segments;
+
+        public AtlTransformLine(string container, string layer,
+            global::StoryAPI.Game.GameBridge.TransformState initial, IList<AtlScriptSegment> segments)
+        {
+            _container = container;
+            _layer = string.IsNullOrEmpty(layer) ? "master" : layer;
+            _initial = initial;
+            _segments = segments == null
+                ? new List<AtlScriptSegment>() : new List<AtlScriptSegment>(segments);
+        }
+
+        public void Apply(IContext context)
+        {
+            Log.Info("story: executing AtlTransformLine");
+            AtlScheduler.StartScript(_container, _layer, _initial, _segments);
         }
     }
 

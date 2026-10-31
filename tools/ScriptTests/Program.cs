@@ -25,6 +25,7 @@ namespace StoryAPI.Tests
             Run("show behind ordering", TestShowBehind);
             Run("static ATL transform declarations", TestStaticAtlTransforms);
             Run("ATL interpolation declarations", TestAtlInterpolationTransforms);
+            Run("ATL pause statements", TestAtlPauseStatements);
             Run("sprite alias and position", TestSpriteAliasAndPosition);
             Run("define/default scalar declarations", TestVariableDeclarations);
             Run("runtime scalar initializer expressions", TestRuntimeExpressionDeclarations);
@@ -504,6 +505,80 @@ namespace StoryAPI.Tests
                 "    linear 1.0 alpha 1.0\n" +
                 "    zoom 1.0\n",
                 "must appear before interpolation");
+        }
+
+        private static void TestAtlPauseStatements()
+        {
+            var statements = Parse(
+                "transform stage75_pause:\\n" +
+                "    xalign 0.0\\n" +
+                "    linear 0.5 xalign 1.0\\n" +
+                "    pause 0.75\\n" +
+                "    linear 0.5 xalign 0.0\\n" +
+                "    0.25\\n" +
+                "    ease 0.5:\\n" +
+                "        xalign 0.5\\n" +
+                "label stage75_use:\\n" +
+                "    show june at stage75_pause\\n" +
+                "    return\\n");
+
+            var transform = Require<TransformDeclarationStatement>(statements[0],
+                "Expected an ATL transform with pause statements.");
+            Check(transform.Timeline.Count == 5,
+                "The ordered timeline should retain interpolations and both pause forms.");
+            Check(transform.Interpolations.Count == 3,
+                "The compatibility interpolation list should omit pause-only statements.");
+
+            var firstPause = transform.Timeline[1] as TransformPauseStatement;
+            Check(firstPause != null && firstPause.Duration == 0.75f,
+                "The explicit pause statement should retain its duration and position.");
+            var secondPause = transform.Timeline[3] as TransformPauseStatement;
+            Check(secondPause != null && secondPause.Duration == 0.25f,
+                "A bare numeric ATL statement should parse as a pause.");
+
+            var finalInterpolation = transform.Timeline[4] as TransformInterpolationStatement;
+            Check(finalInterpolation != null && finalInterpolation.EaseName == "ease" &&
+                  finalInterpolation.Properties.Count == 1 &&
+                  finalInterpolation.Properties[0].Value == 0.5f,
+                "Interpolation statements after a pause should preserve timeline order.");
+
+            var zeroPause = Parse(
+                "transform zero_pause:\\n" +
+                "    alpha 1.0\\n" +
+                "    pause 0\\n");
+            var zero = Require<TransformDeclarationStatement>(zeroPause[0],
+                "Expected a zero-duration pause transform.");
+            Check(zero.Timeline.Count == 1 &&
+                  zero.Timeline[0] is TransformPauseStatement &&
+                  zero.Timeline[0].Duration == 0f,
+                "A zero-duration ATL pause should parse and be left to the runtime's one-frame rule.");
+
+            ExpectSyntaxError(
+                "transform negative_pause:\\n" +
+                "    alpha 1.0\\n" +
+                "    pause -0.5\\n",
+                "non-negative");
+            ExpectSyntaxError(
+                "transform negative_number_pause:\\n" +
+                "    alpha 1.0\\n" +
+                "    -0.5\\n",
+                "non-negative");
+            ExpectSyntaxError(
+                "transform pause_missing_duration:\\n" +
+                "    alpha 1.0\\n" +
+                "    pause\\n",
+                "Expected a number");
+            ExpectSyntaxError(
+                "transform pause_expression:\\n" +
+                "    alpha 1.0\\n" +
+                "    pause duration\\n",
+                "Expected a number");
+            ExpectSyntaxError(
+                "transform property_after_pause:\\n" +
+                "    alpha 1.0\\n" +
+                "    pause 0.5\\n" +
+                "    zoom 1.0\\n",
+                "must appear before timed statements");
         }
 
         private static void TestSpriteAliasAndPosition()

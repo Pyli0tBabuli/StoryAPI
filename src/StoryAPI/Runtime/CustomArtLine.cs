@@ -267,10 +267,10 @@ namespace StoryAPI.Runtime
     {
         private readonly string _container;
         private readonly string _layer;
-        private readonly global::global::StoryAPI.Game.GameBridge.TransformState _state;
+        private readonly global::StoryAPI.Game.GameBridge.TransformState _state;
 
         public StaticTransformLine(string container, string layer,
-            global::global::StoryAPI.Game.GameBridge.TransformState state)
+            global::StoryAPI.Game.GameBridge.TransformState state)
         {
             _container = container;
             _layer = string.IsNullOrEmpty(layer) ? "master" : layer;

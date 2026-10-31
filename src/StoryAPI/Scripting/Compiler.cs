@@ -53,6 +53,7 @@ namespace StoryAPI.Scripting
         private static readonly Regex InterpolationPattern = new Regex(@"\[(\w+)\]", RegexOptions.Compiled);
 
         private readonly StoryAssets _assets;
+        private readonly IDictionary<string, TransformDeclarationStatement> _transforms;
         private readonly CompileResult _result = new CompileResult();
         private readonly List<Line> _out = new List<Line>();
         private readonly HashSet<string> _speakers = new HashSet<string>(StringComparer.Ordinal);
@@ -68,9 +69,12 @@ namespace StoryAPI.Scripting
         private string _textLabel;
         private int _nextTextId = 1;
 
-        public Compiler(StoryAssets assets)
+        public Compiler(StoryAssets assets,
+            IDictionary<string, TransformDeclarationStatement> transforms = null)
         {
             _assets = assets ?? new StoryAssets();
+            _transforms = transforms ??
+                new Dictionary<string, TransformDeclarationStatement>(StringComparer.OrdinalIgnoreCase);
         }
 
         /// <summary>Speaker tags seen while compiling, so they can be registered once.</summary>
@@ -522,12 +526,17 @@ namespace StoryAPI.Scripting
         {
             string image = statement.Image;
             string variant = statement.Variant;
+            GameBridge.TransformState staticTransform;
+            bool hasStaticTransform = TryBuildStaticTransform(statement.At, out staticTransform);
+            string layer = statement.OnLayer ?? "master";
 
             if (_assets.IsCustomImage(variant == null ? image : image + " " + variant))
             {
                 _out.Add(new CustomSpriteLine(_assets, image, variant, statement.Alias,
                                              statement.At, statement.ZOrder ?? 1,
-                                             statement.OnLayer ?? "master", statement.Behind));
+                                             layer, statement.Behind));
+                if (hasStaticTransform)
+                    _out.Add(new StaticTransformLine(statement.Alias ?? image, layer, staticTransform));
                 return;
             }
 
@@ -541,8 +550,10 @@ namespace StoryAPI.Scripting
                 string poseName = image + " " + variant;
                 if (BaseSprites.IsPose(poseName))
                 {
-                    _out.Add(new PoseLine(poseName, statement.At, statement.ZOrder ?? 1,
-                        statement.OnLayer ?? "master", statement.Behind));
+                    _out.Add(new PoseLine(poseName, hasStaticTransform ? null : statement.At,
+                        statement.ZOrder ?? 1, layer, statement.Behind));
+                    if (hasStaticTransform)
+                        _out.Add(new StaticTransformLine(poseName, layer, staticTransform));
                     return;
                 }
             }
@@ -553,8 +564,10 @@ namespace StoryAPI.Scripting
             if (!string.IsNullOrEmpty(statement.At) && !IsPosition(statement.At))
             {
                 _out.Add(new NativeSpriteLine(image, statement.Alias ?? image,
-                                              statement.At, statement.ZOrder ?? 1,
-                                              statement.OnLayer ?? "master", statement.Behind));
+                                              hasStaticTransform ? null : statement.At,
+                                              statement.ZOrder ?? 1, layer, statement.Behind));
+                if (hasStaticTransform)
+                    _out.Add(new StaticTransformLine(statement.Alias ?? image, layer, staticTransform));
                 return;
             }
 
@@ -585,6 +598,35 @@ namespace StoryAPI.Scripting
             line.show = show;
             line.ShowData = showText;
             _out.Add(line);
+        }
+
+        private bool TryBuildStaticTransform(string name, out GameBridge.TransformState state)
+        {
+            state = null;
+            if (string.IsNullOrEmpty(name) || _transforms == null ||
+                !_transforms.TryGetValue(name, out var declaration))
+                return false;
+
+            state = new GameBridge.TransformState();
+            foreach (var property in declaration.Properties)
+            {
+                float value = property.Value;
+                switch (property.Name)
+                {
+                    case "xalign": state.HasXAlign = true; state.AlignX = value; break;
+                    case "yalign": state.HasYAlign = true; state.AlignY = value; break;
+                    case "xpos": state.HasXPos = true; state.PosX = value; break;
+                    case "ypos": state.HasYPos = true; state.PosY = value; break;
+                    case "xoffset": state.HasXOffset = true; state.OffsetX = value; break;
+                    case "yoffset": state.HasYOffset = true; state.OffsetY = value; break;
+                    case "alpha": state.HasAlpha = true; state.Alpha = value; break;
+                    case "zoom":
+                        state.HasZoom = true; state.ZoomX = value; state.ZoomY = value; break;
+                    case "rotate": state.HasRotate = true; state.Rotate = value; break;
+                }
+            }
+
+            return true;
         }
 
         private void EmitHideCore(HideStatement statement)

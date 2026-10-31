@@ -59,7 +59,7 @@ namespace StoryAPI.Scripting
     {
         private static readonly HashSet<string> Keywords = new HashSet<string>(StringComparer.Ordinal)
         {
-            "label", "scene", "show", "hide", "with", "play", "stop", "queue",
+            "label", "scene", "show", "hide", "with", "play", "stop", "queue", "transform",
             "jump", "call", "return", "menu", "if", "elif", "else", "otherwise",
             "while", "for", "in", "break", "continue", "python", "define", "default",
             "character", "image", "audio", "override",

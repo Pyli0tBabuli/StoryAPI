@@ -262,6 +262,28 @@ namespace StoryAPI.Runtime
         }
     }
 
+    /// <summary>Applies a user-defined static ATL transform to an image already shown.</summary>
+    internal sealed class StaticTransformLine : Line, IApply
+    {
+        private readonly string _container;
+        private readonly string _layer;
+        private readonly StoryAPI.Game.GameBridge.TransformState _state;
+
+        public StaticTransformLine(string container, string layer,
+            StoryAPI.Game.GameBridge.TransformState state)
+        {
+            _container = container;
+            _layer = string.IsNullOrEmpty(layer) ? "master" : layer;
+            _state = state;
+        }
+
+        public void Apply(IContext context)
+        {
+            Log.Info("story: executing StaticTransformLine");
+            ArtInjector.ApplyStaticTransform(_container, _layer, _state);
+        }
+    }
+
     /// <summary>Clears one Ren'Py display layer without showing a new background.</summary>
     internal sealed class LayeredSceneClearLine : Line, IApply
     {

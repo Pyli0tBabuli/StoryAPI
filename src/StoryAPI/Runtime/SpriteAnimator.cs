@@ -928,6 +928,92 @@ namespace StoryAPI.Runtime
             return key != null && s_sprites.TryGetValue(key, out var h) ? h.Image : null;
         }
 
+        /// <summary>
+        /// Applies the supported immediate properties from a user-defined ATL transform.
+        /// Properties not present in the definition leave the current renderer state alone.
+        /// </summary>
+        internal static bool ApplyStaticTransform(string container, string layer,
+            StoryAPI.Game.GameBridge.TransformState state)
+        {
+            if (string.IsNullOrEmpty(container) || state == null) return false;
+
+            Transform renderer = RendererFor(container, layer);
+            ActiveImage image = ImageFor(container, layer);
+            if (renderer == null || image == null) return false;
+
+            try
+            {
+                int textureWidth = 1;
+                int textureHeight = 1;
+                var spriteRenderers = renderer.GetComponentsInChildren<SpriteRenderer>(true);
+                foreach (var spriteRenderer in spriteRenderers)
+                {
+                    if (spriteRenderer == null || spriteRenderer.sprite == null) continue;
+                    int candidateWidth = Mathf.Max(1,
+                        Mathf.RoundToInt(spriteRenderer.sprite.rect.width));
+                    int candidateHeight = Mathf.Max(1,
+                        Mathf.RoundToInt(spriteRenderer.sprite.rect.height));
+                    if (candidateWidth * (long)candidateHeight >
+                        textureWidth * (long)textureHeight)
+                    {
+                        textureWidth = candidateWidth;
+                        textureHeight = candidateHeight;
+                    }
+                }
+
+                float zoomX = state.HasZoom ? state.ZoomX : renderer.localScale.x;
+                float zoomY = state.HasZoom ? state.ZoomY : renderer.localScale.y;
+                float widthPx = textureWidth * zoomX;
+                float heightPx = textureHeight * zoomY;
+                Vector3 position = renderer.localPosition;
+
+                if (state.HasXAlign || state.HasXPos || state.HasXOffset)
+                {
+                    float left = position.x + ScreenWidth * 0.5f - widthPx * 0.5f;
+                    if (state.HasXAlign) left = state.AlignX * (ScreenWidth - widthPx);
+                    else if (state.HasXPos) left = state.PosX;
+                    if (state.HasXOffset) left += state.OffsetX;
+                    position.x = left + widthPx * 0.5f - ScreenWidth * 0.5f;
+                }
+
+                if (state.HasYAlign || state.HasYPos || state.HasYOffset)
+                {
+                    float top = -position.y + ScreenHeight * 0.5f - heightPx * 0.5f;
+                    if (state.HasYAlign) top = state.AlignY * (ScreenHeight - heightPx);
+                    else if (state.HasYPos) top = state.PosY;
+                    if (state.HasYOffset) top += state.OffsetY;
+                    position.y = -(top + heightPx * 0.5f - ScreenHeight * 0.5f);
+                }
+
+                if (state.HasXAlign || state.HasXPos || state.HasXOffset ||
+                    state.HasYAlign || state.HasYPos || state.HasYOffset)
+                    renderer.localPosition = position;
+
+                if (state.HasZoom)
+                    renderer.localScale = new Vector3(state.ZoomX, state.ZoomY, 1f);
+
+                if (state.HasRotate)
+                    renderer.localRotation = Quaternion.Euler(0f, 0f, -state.Rotate);
+
+                if (state.HasAlpha)
+                {
+                    var data = image.Transform.Transform;
+                    data.HasAlpha = true;
+                    data.FixedAlpha = 1f;
+                    data.Alpha = Mathf.Clamp01(state.Alpha);
+                }
+
+                Log.Info("atl: applied static transform '" + container + "' on layer '" + layer + "'");
+                return true;
+            }
+            catch (Exception e)
+            {
+                Log.Warn("atl: could not apply static transform '" + container + "': " +
+                    e.GetBaseException().Message);
+                return false;
+            }
+        }
+
         // ------------------------------------------------------------- the pose
 
         /// <summary>Move a sprite, in the game's normalised screen coordinates.</summary>

@@ -550,7 +550,7 @@ namespace StoryAPI.Scripting
                 string poseName = image + " " + variant;
                 if (BaseSprites.IsPose(poseName))
                 {
-                    _out.Add(new PoseLine(poseName, hasStaticTransform ? null : statement.At,
+                    _out.Add(new PoseLine(poseName, hasStaticTransform ? "center" : statement.At,
                         statement.ZOrder ?? 1, layer, statement.Behind));
                     if (hasStaticTransform)
                         _out.Add(new StaticTransformLine(poseName, layer, staticTransform));

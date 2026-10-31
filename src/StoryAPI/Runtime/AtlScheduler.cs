@@ -528,5 +528,4 @@ namespace StoryAPI.Runtime
             s_scriptRunning.Clear();
         }
     }
-}    }
 }

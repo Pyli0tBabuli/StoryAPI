@@ -139,7 +139,8 @@ tags in its save record so the same ordering is restored after loading.
 
 Stages 73–74 add reusable top-level ATL `transform` declarations that can be referenced
 from `show ... at <name>`. Supported numeric properties are `xalign`, `yalign`,
-`xpos`, `ypos`, `xanchor`, `yanchor`, `xoffset`, `yoffset`, `alpha`,
+`xpos`, `ypos`, `xanchor`, `yanchor`, `xcenter`, `ycenter`,
+`xoffset`, `yoffset`, `alpha`,
 `zoom`, `xzoom`, `yzoom`, and `rotate`. `zoom` scales both axes uniformly;
 `xzoom` and `yzoom` scale each axis independently. Negative axis zoom flips the
 sprite horizontally or vertically, and zero collapses it along that axis.

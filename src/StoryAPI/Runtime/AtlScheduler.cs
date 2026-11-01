@@ -565,9 +565,10 @@ namespace StoryAPI.Runtime
         {
             width = 1f;
             height = 1f;
-            if (Target == null || Target.Object == null) return;
+            Transform renderer = ArtInjector.RendererFor(Container, Layer);
+            if (renderer == null) return;
 
-            var renderers = Target.Object.GetComponentsInChildren<SpriteRenderer>(true);
+            var renderers = renderer.GetComponentsInChildren<SpriteRenderer>(true);
             foreach (var spriteRenderer in renderers)
             {
                 if (spriteRenderer == null || spriteRenderer.sprite == null) continue;

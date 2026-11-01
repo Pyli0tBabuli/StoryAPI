@@ -717,6 +717,10 @@ namespace StoryAPI.Scripting
                         state.HasRotatePad = true;
                         state.RotatePad = property.BooleanValue;
                         break;
+                    case "transform_anchor":
+                        state.HasTransformAnchor = true;
+                        state.TransformAnchor = property.BooleanValue;
+                        break;
                 }
             }
             return state;

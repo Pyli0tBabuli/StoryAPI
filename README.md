@@ -163,10 +163,16 @@ label example:
     pause 2.0
 ```
 
-Supported warpers are `linear`, `ease`, `easein`, and `easeout`. Interpolations
-run sequentially in seconds and accept inline target properties or an indented property
-block. Every animated property must have an earlier numeric value in the same transform,
-so its starting value is explicit.
+Supported warpers include `linear`, `ease`, `easein`, and `easeout`, plus
+Ren'Py's 27 built-in Penner variants: `ease_`, `easein_`, and `easeout_` combined
+with `back`, `bounce`, `circ`, `cubic`, `elastic`, `expo`, `quad`, `quart`,
+or `quint`. For example, `ease_back`, `easein_quad`, and `easeout_bounce`.
+The `easein_` and `easeout_` naming follows Ren'Py's convention, which is opposite
+the similarly named standard Penner directions. Back, elastic, and bounce curves may
+overshoot their target; StoryAPI preserves that motion with unclamped interpolation.
+Interpolations run sequentially in seconds and accept inline target properties or an
+indented property block. Every animated property must have an earlier numeric value in
+the same transform, so its starting value is explicit.
 
 ATL timelines also support pauses between interpolations. Both `pause 0.5` and the
 Ren'Py number-statement form `0.5` hold the current transform state for half a second.

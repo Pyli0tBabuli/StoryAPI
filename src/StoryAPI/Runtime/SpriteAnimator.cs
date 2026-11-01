@@ -993,7 +993,8 @@ namespace StoryAPI.Runtime
                 }
                 Vector3 position = basePosition;
 
-                if (state.HasXAlign || state.HasXPos || state.HasXOffset || state.HasXAnchor)
+                if (state.HasXAlign || state.HasXPos || state.HasXOffset || state.HasXAnchor ||
+                    state.HasSubpixel)
                 {
                     float left = position.x + ScreenWidth * 0.5f - widthPx * 0.5f;
                     float anchorPixels = state.HasXAnchor
@@ -1010,10 +1011,12 @@ namespace StoryAPI.Runtime
                     else if (state.HasXAnchor) left -= anchorPixels;
 
                     if (state.HasXOffset) left += state.OffsetX;
+                    if (!state.Subpixel) left = Mathf.Round(left);
                     position.x = left + widthPx * 0.5f - ScreenWidth * 0.5f;
                 }
 
-                if (state.HasYAlign || state.HasYPos || state.HasYOffset || state.HasYAnchor)
+                if (state.HasYAlign || state.HasYPos || state.HasYOffset || state.HasYAnchor ||
+                    state.HasSubpixel)
                 {
                     float top = -position.y + ScreenHeight * 0.5f - heightPx * 0.5f;
                     float anchorPixels = state.HasYAnchor
@@ -1030,11 +1033,13 @@ namespace StoryAPI.Runtime
                     else if (state.HasYAnchor) top -= anchorPixels;
 
                     if (state.HasYOffset) top += state.OffsetY;
+                    if (!state.Subpixel) top = Mathf.Round(top);
                     position.y = -(top + heightPx * 0.5f - ScreenHeight * 0.5f);
                 }
 
                 if (state.HasXAlign || state.HasXPos || state.HasXOffset || state.HasXAnchor ||
-                    state.HasYAlign || state.HasYPos || state.HasYOffset || state.HasYAnchor)
+                    state.HasYAlign || state.HasYPos || state.HasYOffset || state.HasYAnchor ||
+                    state.HasSubpixel)
                     renderer.localPosition = position;
 
                 if (hasZoomX || hasZoomY)

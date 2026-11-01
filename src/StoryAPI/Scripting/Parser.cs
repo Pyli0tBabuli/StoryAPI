@@ -444,30 +444,59 @@ namespace StoryAPI.Scripting
                 throw new ScriptSyntaxException(
                     "Unsupported static ATL property '" + property + "'.", line);
 
-            float value = ReadNumber();
-            if (float.IsNaN(value) || float.IsInfinity(value))
-                throw new ScriptSyntaxException(
-                    "ATL property values must be finite numbers.", line);
+            float value = 0f;
+            bool valueIsBoolean = false;
+            bool booleanValue = false;
+            bool valueIsRelative = false;
 
-            if ((property == "xalign" || property == "yalign" || property == "alpha") &&
-                (value < 0f || value > 1f))
-                throw new ScriptSyntaxException(
-                    "'" + property + "' must be between 0 and 1.", line);
+            if (property == "subpixel")
+            {
+                if (Current.Type != TokenType.Identifier &&
+                    Current.Type != TokenType.Keyword)
+                    throw new ScriptSyntaxException(
+                        "'subpixel' expects the boolean value True or False.", Current.Line);
 
-            if (property == "zoom" && value <= 0f)
-                throw new ScriptSyntaxException("'zoom' must be greater than zero.", line);
+                string booleanText = Advance().Text;
+                if (booleanText == "True")
+                    booleanValue = true;
+                else if (booleanText == "False")
+                    booleanValue = false;
+                else
+                    throw new ScriptSyntaxException(
+                        "'subpixel' expects the boolean value True or False.", line);
 
-            // Ren'Py position values use integers as pixels and floats as fractions
-            // of the containing area (for xpos) or displayable (for anchors).
-            Token valueToken = _tokens[_index - 1];
-            bool valueIsRelative = valueToken.Text.IndexOf('.') >= 0 ||
-                valueToken.Text.IndexOf('e') >= 0 ||
-                valueToken.Text.IndexOf('E') >= 0;
+                valueIsBoolean = true;
+                value = booleanValue ? 1f : 0f;
+            }
+            else
+            {
+                value = ReadNumber();
+                if (float.IsNaN(value) || float.IsInfinity(value))
+                    throw new ScriptSyntaxException(
+                        "ATL property values must be finite numbers.", line);
+
+                if ((property == "xalign" || property == "yalign" || property == "alpha") &&
+                    (value < 0f || value > 1f))
+                    throw new ScriptSyntaxException(
+                        "'" + property + "' must be between 0 and 1.", line);
+
+                if (property == "zoom" && value <= 0f)
+                    throw new ScriptSyntaxException("'zoom' must be greater than zero.", line);
+
+                // Ren'Py position values use integers as pixels and floats as fractions
+                // of the containing area (for xpos) or displayable (for anchors).
+                Token valueToken = _tokens[_index - 1];
+                valueIsRelative = valueToken.Text.IndexOf('.') >= 0 ||
+                    valueToken.Text.IndexOf('e') >= 0 ||
+                    valueToken.Text.IndexOf('E') >= 0;
+            }
 
             return new TransformPropertyStatement
             {
                 Name = property,
                 Value = value,
+                ValueIsBoolean = valueIsBoolean,
+                BooleanValue = booleanValue,
                 ValueIsRelative = valueIsRelative,
                 Line = line,
             };
@@ -525,6 +554,7 @@ namespace StoryAPI.Scripting
                 case "xcenter":
                 case "ycenter":
                 case "rotate":
+                case "subpixel":
                     return true;
                 default:
                     return false;

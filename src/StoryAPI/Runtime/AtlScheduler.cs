@@ -71,7 +71,7 @@ namespace StoryAPI.Runtime
                 Finished = true;
             }
 
-            Apply(Lerp(Start, End, EaseShape(t)));
+            Apply(Lerp(Start, End, EaseShape(t), Finished));
         }
 
         /// <summary>
@@ -131,6 +131,15 @@ namespace StoryAPI.Runtime
 
             if (state.HasXOffset) left += state.OffsetX;
             if (state.HasYOffset) top += state.OffsetY;
+
+            // Ren'Py defaults to pixel-aligned placement. Subpixel mode keeps the
+            // fractional top-left position, allowing the renderer to blend edge pixels
+            // during movement.
+            if (!state.Subpixel)
+            {
+                left = Mathf.Round(left);
+                top = Mathf.Round(top);
+            }
 
             if (hasZoomX || hasZoomY)
                 Renderer.localScale = new Vector3(zoomX, zoomY, 1f);
@@ -200,7 +209,7 @@ namespace StoryAPI.Runtime
         /// is how a transform that only moves a picture leaves its size alone.
         /// </summary>
         public GameBridge.TransformState Lerp(GameBridge.TransformState from,
-            GameBridge.TransformState to, float t)
+            GameBridge.TransformState to, float t, bool complete = false)
         {
             var result = new GameBridge.TransformState();
 
@@ -282,6 +291,14 @@ namespace StoryAPI.Runtime
                 result.HasAlpha = true;
                 result.Alpha = Ease(a.HasAlpha ? a.Alpha : b.Alpha,
                                     b.HasAlpha ? b.Alpha : a.Alpha, t);
+            }
+
+            if (a.HasSubpixel || b.HasSubpixel)
+            {
+                result.HasSubpixel = true;
+                bool startSubpixel = a.HasSubpixel && a.Subpixel;
+                bool endSubpixel = b.HasSubpixel ? b.Subpixel : startSubpixel;
+                result.Subpixel = complete ? endSubpixel : startSubpixel;
             }
 
             if (a.HasRotate || b.HasRotate)
@@ -765,6 +782,11 @@ namespace StoryAPI.Runtime
             }
             if (target.HasAlpha) { result.HasAlpha = true; result.Alpha = target.Alpha; }
             if (target.HasRotate) { result.HasRotate = true; result.Rotate = target.Rotate; }
+            if (target.HasSubpixel)
+            {
+                result.HasSubpixel = true;
+                result.Subpixel = target.Subpixel;
+            }
             return result;
         }
 
@@ -790,6 +812,7 @@ namespace StoryAPI.Runtime
                 ZoomX = source.ZoomX, ZoomY = source.ZoomY,
                 HasAlpha = source.HasAlpha, Alpha = source.Alpha,
                 HasRotate = source.HasRotate, Rotate = source.Rotate,
+                HasSubpixel = source.HasSubpixel, Subpixel = source.Subpixel,
             };
         }
     }

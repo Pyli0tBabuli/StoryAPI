@@ -708,6 +708,10 @@ namespace StoryAPI.Scripting
                     case "xzoom": state.HasXZoom = true; state.ZoomX = value; break;
                     case "yzoom": state.HasYZoom = true; state.ZoomY = value; break;
                     case "rotate": state.HasRotate = true; state.Rotate = value; break;
+                    case "subpixel":
+                        state.HasSubpixel = true;
+                        state.Subpixel = property.BooleanValue;
+                        break;
                 }
             }
             return state;

@@ -2528,6 +2528,10 @@ namespace StoryAPI.Game
             public bool HasRotate { get; set; }
             public float Rotate { get; set; }
 
+            /// <summary>Whether fractional screen-pixel placement is enabled.</summary>
+            public bool HasSubpixel { get; set; }
+            public bool Subpixel { get; set; }
+
             /// <summary>A nudge in pixels, along or across.</summary>
             public bool HasXOffset { get; set; }
             public float OffsetX { get; set; }
@@ -2652,6 +2656,18 @@ namespace StoryAPI.Game
             {
                 string word = words[i];
                 string value = words[i + 1];
+
+                if (word == "subpixel")
+                {
+                    bool subpixel;
+                    if (bool.TryParse(value, out subpixel))
+                    {
+                        state.HasSubpixel = true;
+                        state.Subpixel = subpixel;
+                        any = true;
+                    }
+                    continue;
+                }
 
                 float number;
                 if (!TryEvaluateNumber(value, out number)) continue;

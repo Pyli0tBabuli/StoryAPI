@@ -138,10 +138,9 @@ tags in its save record so the same ordering is restored after loading.
 ### ATL transforms and timed interpolation
 
 Stages 73–74 add reusable top-level ATL `transform` declarations that can be referenced
-from `show ... at <name>`. Supported numeric properties are `xalign`, `yalign`,
-`xpos`, `ypos`, `xanchor`, `yanchor`, `xcenter`, `ycenter`,
-`xoffset`, `yoffset`, `alpha`,
-`zoom`, `xzoom`, `yzoom`, and `rotate`. `zoom` scales both axes uniformly;
+from `show ... at <name>`. Supported properties are `xalign`, `yalign`, `xpos`,
+`ypos`, `xanchor`, `yanchor`, `xcenter`, `ycenter`, `xoffset`, `yoffset`,
+`alpha`, `zoom`, `xzoom`, `yzoom`, `rotate`, and boolean `subpixel`. `zoom` scales both axes uniformly;
 `xzoom` and `yzoom` scale each axis independently. Negative axis zoom flips the
 sprite horizontally or vertically, and zero collapses it along that axis.
 `xanchor` and `yanchor` select the pivot point inside the sprite: integer literals
@@ -182,8 +181,27 @@ The `easein_` and `easeout_` naming follows Ren'Py's convention, which is opposi
 the similarly named standard Penner directions. Back, elastic, and bounce curves may
 overshoot their target; StoryAPI preserves that motion with unclamped interpolation.
 Interpolations run sequentially in seconds and accept inline target properties or an
-indented property block. Every animated property must have an earlier numeric value in
-the same transform, so its starting value is explicit.
+indented property block. Every animated property must have an earlier value in the
+same transform, so its starting value is explicit. Boolean `subpixel` targets are
+discrete: a timed change takes effect when that interpolation finishes.
+
+`subpixel True` keeps fractional screen-pixel placement, allowing smoother movement
+with blended edge pixels. `subpixel False` (the default) rounds the sprite's top-left
+position to whole reference-resolution pixels. For example:
+
+```renpy
+transform pixel_smooth_motion:
+    subpixel True
+    xpos 0.251
+    ypos 0.5
+    linear 1.0 xpos 0.749
+
+transform pixel_aligned_motion:
+    subpixel False
+    xpos 0.251
+    ypos 0.5
+    linear 1.0 xpos 0.749
+```
 
 ATL timelines also support pauses between interpolations. Both `pause 0.5` and the
 Ren'Py number-statement form `0.5` hold the current transform state for half a second.

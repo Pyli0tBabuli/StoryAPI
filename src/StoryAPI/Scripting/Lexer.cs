@@ -64,7 +64,7 @@ namespace StoryAPI.Scripting
             "while", "for", "in", "break", "continue", "python", "define", "default",
             "character", "image", "audio", "override",
             "pause", "move", "zoom", "fade", "turn", "pose", "layer", "hook",
-            "and", "or", "not", "True", "False", "None", "pass",
+            "and", "or", "not", "True", "False", "None", "pass", "repeat",
         };
 
         private readonly string _text;

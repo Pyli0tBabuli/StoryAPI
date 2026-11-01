@@ -298,7 +298,7 @@ namespace StoryAPI.Runtime
                 result.HasSubpixel = true;
                 bool startSubpixel = a.HasSubpixel && a.Subpixel;
                 bool endSubpixel = b.HasSubpixel ? b.Subpixel : startSubpixel;
-                result.Subpixel = t >= 1f ? endSubpixel : startSubpixel;
+                result.Subpixel = complete ? endSubpixel : startSubpixel;
             }
 
             if (a.HasRotate || b.HasRotate)

@@ -291,21 +291,24 @@ namespace StoryAPI.Runtime
         private readonly string _layer;
         private readonly global::StoryAPI.Game.GameBridge.TransformState _initial;
         private readonly List<AtlScriptSegment> _segments;
+        private readonly int _repeatCount;
 
         public AtlTransformLine(string container, string layer,
-            global::StoryAPI.Game.GameBridge.TransformState initial, IList<AtlScriptSegment> segments)
+            global::StoryAPI.Game.GameBridge.TransformState initial,
+            IList<AtlScriptSegment> segments, int repeatCount)
         {
             _container = container;
             _layer = string.IsNullOrEmpty(layer) ? "master" : layer;
             _initial = initial;
             _segments = segments == null
                 ? new List<AtlScriptSegment>() : new List<AtlScriptSegment>(segments);
+            _repeatCount = repeatCount;
         }
 
         public void Apply(IContext context)
         {
             Log.Info("story: executing AtlTransformLine");
-            AtlScheduler.StartScript(_container, _layer, _initial, _segments);
+            AtlScheduler.StartScript(_container, _layer, _initial, _segments, _repeatCount);
         }
     }
 

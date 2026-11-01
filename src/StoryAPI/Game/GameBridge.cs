@@ -2657,6 +2657,18 @@ namespace StoryAPI.Game
                 string word = words[i];
                 string value = words[i + 1];
 
+                if (word == "subpixel")
+                {
+                    bool subpixel;
+                    if (bool.TryParse(value, out subpixel))
+                    {
+                        state.HasSubpixel = true;
+                        state.Subpixel = subpixel;
+                        any = true;
+                    }
+                    continue;
+                }
+
                 float number;
                 if (!TryEvaluateNumber(value, out number)) continue;
 

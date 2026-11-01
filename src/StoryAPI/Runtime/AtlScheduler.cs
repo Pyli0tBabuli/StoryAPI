@@ -747,13 +747,14 @@ namespace StoryAPI.Runtime
         {
             // Back, elastic, and bounce warpers intentionally overshoot [0, 1].
             // Unclamped interpolation preserves those values instead of clipping them.
+            GameBridge.TransformState targetState = Merge(from, to);
             bool startTransformAnchor = from.HasTransformAnchor && from.TransformAnchor;
-            bool endTransformAnchor = to.HasTransformAnchor
-                ? to.TransformAnchor : startTransformAnchor;
+            bool endTransformAnchor = targetState.HasTransformAnchor &&
+                targetState.TransformAnchor;
             float fromAnchorX, fromAnchorY, toAnchorX, toAnchorY;
             ResolveAnchorPixels(from, displayableWidth, displayableHeight,
                 startTransformAnchor, out fromAnchorX, out fromAnchorY);
-            ResolveAnchorPixels(to, displayableWidth, displayableHeight,
+            ResolveAnchorPixels(targetState, displayableWidth, displayableHeight,
                 startTransformAnchor, out toAnchorX, out toAnchorY);
             if (to.HasXAlign || to.HasXPos)
             {
@@ -780,7 +781,7 @@ namespace StoryAPI.Runtime
                 if (complete && endTransformAnchor != startTransformAnchor)
                 {
                     float targetAnchorX, targetAnchorY;
-                    ResolveAnchorPixels(to, displayableWidth, displayableHeight,
+                    ResolveAnchorPixels(targetState, displayableWidth, displayableHeight,
                         endTransformAnchor, out targetAnchorX, out targetAnchorY);
                     frame.AnchorX = targetAnchorX;
                 }
@@ -793,7 +794,7 @@ namespace StoryAPI.Runtime
                 if (complete && endTransformAnchor != startTransformAnchor)
                 {
                     float targetAnchorX, targetAnchorY;
-                    ResolveAnchorPixels(to, displayableWidth, displayableHeight,
+                    ResolveAnchorPixels(targetState, displayableWidth, displayableHeight,
                         endTransformAnchor, out targetAnchorX, out targetAnchorY);
                     frame.AnchorY = targetAnchorY;
                 }

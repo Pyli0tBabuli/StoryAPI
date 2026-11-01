@@ -140,7 +140,7 @@ tags in its save record so the same ordering is restored after loading.
 Stages 73–74 add reusable top-level ATL `transform` declarations that can be referenced
 from `show ... at <name>`. Supported properties are `xalign`, `yalign`, `xpos`,
 `ypos`, `xanchor`, `yanchor`, `xcenter`, `ycenter`, `xoffset`, `yoffset`,
-`alpha`, `zoom`, `xzoom`, `yzoom`, `rotate`, positive numeric `fps`, boolean `rotate_pad`, and boolean `subpixel`. `zoom` scales both axes uniformly;
+`alpha`, `zoom`, `xzoom`, `yzoom`, `rotate`, `fps` (a positive number or `None`), boolean `rotate_pad`, and boolean `subpixel`. `zoom` scales both axes uniformly;
 `xzoom` and `yzoom` scale each axis independently. Negative axis zoom flips the
 sprite horizontally or vertically, and zero collapses it along that axis.
 `xanchor` and `yanchor` select the pivot point inside the sprite: integer literals
@@ -208,10 +208,10 @@ transform pixel_aligned_motion:
     linear 1.0 xpos 0.749
 ```
 
-The positive numeric property `fps 4` quantizes transform time to four frames per
-second. Interpolations and pauses advance on that frame grid, producing intentionally
-stepped motion. `fps` is set before the timeline and cannot be changed by a timed
-interpolation. Omitting it keeps normal frame-by-frame timing.
+`fps 4` quantizes transform time to four frames per second. Interpolations and pauses
+advance on that frame grid, producing intentionally stepped motion. `fps None` disables
+quantization, as does omitting the property. `fps` is set before the timeline and cannot
+be changed by a timed interpolation.
 
 ATL timelines also support pauses between interpolations. Both `pause 0.5` and the
 Ren'Py number-statement form `0.5` hold the current transform state for half a second.

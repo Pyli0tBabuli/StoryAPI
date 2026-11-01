@@ -31,6 +31,7 @@ namespace StoryAPI.Tests
             Run("ATL independent axis zoom", TestAtlAxisZoomProperties);
             Run("ATL anchor properties", TestAtlAnchorProperties);
             Run("ATL center properties", TestAtlCenterProperties);
+            Run("ATL subpixel positioning", TestAtlSubpixelProperties);
             Run("sprite alias and position", TestSpriteAliasAndPosition);
             Run("define/default scalar declarations", TestVariableDeclarations);
             Run("runtime scalar initializer expressions", TestRuntimeExpressionDeclarations);

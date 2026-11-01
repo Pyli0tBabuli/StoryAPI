@@ -978,10 +978,13 @@ namespace StoryAPI.Runtime
                     }
                 }
 
-                float zoomX = state.HasZoom ? state.ZoomX : renderer.localScale.x;
-                float zoomY = state.HasZoom ? state.ZoomY : renderer.localScale.y;
-                float widthPx = textureWidth * zoomX;
-                float heightPx = textureHeight * zoomY;
+                bool hasZoomX = state.HasZoom || state.HasXZoom;
+                bool hasZoomY = state.HasZoom || state.HasYZoom;
+                float zoomX = hasZoomX ? state.ZoomX : renderer.localScale.x;
+                float zoomY = hasZoomY ? state.ZoomY : renderer.localScale.y;
+                // A negative axis zoom flips the sprite; its layout bounds stay positive.
+                float widthPx = textureWidth * Mathf.Abs(zoomX);
+                float heightPx = textureHeight * Mathf.Abs(zoomY);
                 string transformKey = SlotKey(container, layer);
                 if (!s_transformBasePositions.TryGetValue(transformKey, out var basePosition))
                 {
@@ -1012,8 +1015,8 @@ namespace StoryAPI.Runtime
                     state.HasYAlign || state.HasYPos || state.HasYOffset)
                     renderer.localPosition = position;
 
-                if (state.HasZoom)
-                    renderer.localScale = new Vector3(state.ZoomX, state.ZoomY, 1f);
+                if (hasZoomX || hasZoomY)
+                    renderer.localScale = new Vector3(zoomX, zoomY, 1f);
 
                 if (state.HasRotate)
                     renderer.localRotation = Quaternion.Euler(0f, 0f, -state.Rotate);

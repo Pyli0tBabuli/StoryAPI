@@ -973,6 +973,10 @@ namespace StoryAPI.Tests
                 "    linear 1.0 xpos 1.0\n" +
                 "transform default_frame_rate:\n" +
                 "    xpos 0.0\n" +
+                "    linear 1.0 xpos 1.0\n" +
+                "transform unlimited_frame_rate:\n" +
+                "    fps None\n" +
+                "    xpos 0.0\n" +
                 "    linear 1.0 xpos 1.0\n");
 
             var low = Require<TransformDeclarationStatement>(statements[0],
@@ -996,6 +1000,14 @@ namespace StoryAPI.Tests
                   defaultRate.Properties[0].Name == "xpos" &&
                   defaultRate.Interpolations.Count == 1,
                 "Omitting fps should preserve normal frame-by-frame timing.");
+
+            var unlimited = Require<TransformDeclarationStatement>(statements[3],
+                "Expected an ATL transform with fps explicitly disabled.");
+            Check(unlimited.Properties.Count == 2 &&
+                  unlimited.Properties[0].Name == "fps" &&
+                  unlimited.Properties[0].Value == 0f &&
+                  unlimited.Interpolations.Count == 1,
+                "fps None should preserve normal frame-by-frame timing.");
 
             ExpectSyntaxError(
                 "transform zero_fps:\n" +

@@ -71,7 +71,7 @@ namespace StoryAPI.Runtime
                 Finished = true;
             }
 
-            Apply(Lerp(Start, End, EaseShape(t)));
+            Apply(Lerp(Start, End, EaseShape(t), Finished));
         }
 
         /// <summary>

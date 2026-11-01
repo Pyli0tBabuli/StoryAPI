@@ -26,6 +26,7 @@ namespace StoryAPI.Tests
             Run("static ATL transform declarations", TestStaticAtlTransforms);
             Run("ATL interpolation declarations", TestAtlInterpolationTransforms);
             Run("ATL pause statements", TestAtlPauseStatements);
+            Run("ATL repeat statements", TestAtlRepeatStatements);
             Run("sprite alias and position", TestSpriteAliasAndPosition);
             Run("define/default scalar declarations", TestVariableDeclarations);
             Run("runtime scalar initializer expressions", TestRuntimeExpressionDeclarations);
@@ -579,6 +580,74 @@ namespace StoryAPI.Tests
                 "    pause 0.5\n" +
                 "    zoom 1.0\n",
                 "must appear before timed statements");
+        }
+
+        private static void TestAtlRepeatStatements()
+        {
+            var statements = Parse(
+                "transform repeat_forever:\n" +
+                "    xalign 0.0\n" +
+                "    linear 0.25 xalign 1.0\n" +
+                "    pause 0.1\n" +
+                "    linear 0.25 xalign 0.0\n" +
+                "    repeat\n" +
+                "transform repeat_twice:\n" +
+                "    xalign 0.0\n" +
+                "    linear 0.25 xalign 1.0\n" +
+                "    linear 0.25 xalign 0.0\n" +
+                "    repeat 2\n" +
+                "transform repeat_once:\n" +
+                "    alpha 1.0\n" +
+                "    linear 0.1 alpha 0.5\n" +
+                "    repeat 1\n");
+
+            var forever = Require<TransformDeclarationStatement>(statements[0],
+                "Expected an ATL transform with an unbounded repeat.");
+            Check(forever.HasRepeat && !forever.RepeatCount.HasValue &&
+                  forever.Timeline.Count == 3,
+                "A bare repeat should restart the complete timeline indefinitely.");
+
+            var twice = Require<TransformDeclarationStatement>(statements[1],
+                "Expected an ATL transform with a finite repeat.");
+            Check(twice.HasRepeat && twice.RepeatCount == 2 &&
+                  twice.Timeline.Count == 2,
+                "repeat 2 should preserve the total execution count.");
+
+            var once = Require<TransformDeclarationStatement>(statements[2],
+                "Expected repeat 1 to parse.");
+            Check(once.HasRepeat && once.RepeatCount == 1,
+                "repeat 1 should mean one total execution without a second cycle.");
+
+            ExpectSyntaxError(
+                "transform repeat_fraction:\n" +
+                "    alpha 1.0\n" +
+                "    pause 0.1\n" +
+                "    repeat 2.5\n",
+                "positive integer");
+            ExpectSyntaxError(
+                "transform repeat_zero:\n" +
+                "    alpha 1.0\n" +
+                "    pause 0.1\n" +
+                "    repeat 0\n",
+                "positive integer");
+            ExpectSyntaxError(
+                "transform repeat_dynamic:\n" +
+                "    alpha 1.0\n" +
+                "    pause 0.1\n" +
+                "    repeat cycles\n",
+                "positive integer");
+            ExpectSyntaxError(
+                "transform repeat_without_timeline:\n" +
+                "    alpha 1.0\n" +
+                "    repeat\n",
+                "preceding timed statement");
+            ExpectSyntaxError(
+                "transform repeat_not_last:\n" +
+                "    alpha 1.0\n" +
+                "    pause 0.1\n" +
+                "    repeat 2\n" +
+                "    linear 0.1 alpha 0.5\n",
+                "final statement");
         }
 
         private static void TestSpriteAliasAndPosition()

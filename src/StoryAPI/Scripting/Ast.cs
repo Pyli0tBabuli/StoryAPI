@@ -44,6 +44,12 @@ namespace StoryAPI.Scripting
             new List<TransformTimedStatement>();
         public List<TransformInterpolationStatement> Interpolations { get; } =
             new List<TransformInterpolationStatement>();
+
+        /// <summary>Whether the ATL timeline restarts after its final statement.</summary>
+        public bool HasRepeat { get; set; }
+
+        /// <summary>Total number of executions; null means repeat indefinitely.</summary>
+        public int? RepeatCount { get; set; }
     }
 
     /// <summary>Base for an ATL timeline statement that consumes time.</summary>

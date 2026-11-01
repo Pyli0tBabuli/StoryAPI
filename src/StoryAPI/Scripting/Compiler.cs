@@ -528,8 +528,9 @@ namespace StoryAPI.Scripting
             string variant = statement.Variant;
             GameBridge.TransformState initialTransform;
             List<AtlScriptSegment> segments;
+            int repeatCount;
             bool hasCustomTransform = TryBuildAtlTransform(
-                statement.At, out initialTransform, out segments);
+                statement.At, out initialTransform, out segments, out repeatCount);
             string layer = statement.OnLayer ?? "master";
 
             if (_assets.IsCustomImage(variant == null ? image : image + " " + variant))
@@ -538,7 +539,7 @@ namespace StoryAPI.Scripting
                                              statement.At, statement.ZOrder ?? 1,
                                              layer, statement.Behind));
                 if (hasCustomTransform)
-                    EmitAtlTransformLine(statement.Alias ?? image, layer, initialTransform, segments);
+                    EmitAtlTransformLine(statement.Alias ?? image, layer, initialTransform, segments, repeatCount);
                 return;
             }
 
@@ -550,7 +551,7 @@ namespace StoryAPI.Scripting
                     _out.Add(new PoseLine(poseName, hasCustomTransform ? "center" : statement.At,
                         statement.ZOrder ?? 1, layer, statement.Behind));
                     if (hasCustomTransform)
-                        EmitAtlTransformLine(poseName, layer, initialTransform, segments);
+                        EmitAtlTransformLine(poseName, layer, initialTransform, segments, repeatCount);
                     return;
                 }
             }
@@ -561,7 +562,7 @@ namespace StoryAPI.Scripting
                                               hasCustomTransform ? null : statement.At,
                                               statement.ZOrder ?? 1, layer, statement.Behind));
                 if (hasCustomTransform)
-                    EmitAtlTransformLine(statement.Alias ?? image, layer, initialTransform, segments);
+                    EmitAtlTransformLine(statement.Alias ?? image, layer, initialTransform, segments, repeatCount);
                 return;
             }
 
@@ -591,10 +592,12 @@ namespace StoryAPI.Scripting
         }
 
         private bool TryBuildAtlTransform(string name,
-            out GameBridge.TransformState initial, out List<AtlScriptSegment> segments)
+            out GameBridge.TransformState initial, out List<AtlScriptSegment> segments,
+            out int repeatCount)
         {
             initial = null;
             segments = null;
+            repeatCount = 0;
             if (string.IsNullOrEmpty(name) || _transforms == null ||
                 !_transforms.TryGetValue(name, out var declaration))
                 return false;
@@ -644,6 +647,10 @@ namespace StoryAPI.Scripting
                 }
             }
 
+            if (declaration.HasRepeat)
+                repeatCount = declaration.RepeatCount.HasValue
+                    ? declaration.RepeatCount.Value : -1;
+
             return true;
         }
 
@@ -672,10 +679,10 @@ namespace StoryAPI.Scripting
         }
 
         private void EmitAtlTransformLine(string container, string layer,
-            GameBridge.TransformState initial, List<AtlScriptSegment> segments)
+            GameBridge.TransformState initial, List<AtlScriptSegment> segments, int repeatCount)
         {
             if (segments != null && segments.Count > 0)
-                _out.Add(new AtlTransformLine(container, layer, initial, segments));
+                _out.Add(new AtlTransformLine(container, layer, initial, segments, repeatCount));
             else
                 _out.Add(new StaticTransformLine(container, layer, initial));
         }

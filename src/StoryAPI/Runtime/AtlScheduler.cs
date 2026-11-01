@@ -713,10 +713,23 @@ namespace StoryAPI.Runtime
         }
 
         private static void ResolveAnchorPixels(GameBridge.TransformState state,
-            float displayableWidth, float displayableHeight,
+            float displayableWidth, float displayableHeight, bool childCoordinates,
             out float anchorX, out float anchorY)
         {
             state = state ?? new GameBridge.TransformState();
+            if (childCoordinates)
+            {
+                // While transform_anchor is active on the current frame, the anchor
+                // value is expressed in the source child's coordinate system.
+                anchorX = state.HasXAnchor
+                    ? (state.XAnchorIsRelative ? state.AnchorX * displayableWidth : state.AnchorX)
+                    : (state.HasXAlign ? state.AlignX * displayableWidth : 0f);
+                anchorY = state.HasYAnchor
+                    ? (state.YAnchorIsRelative ? state.AnchorY * displayableHeight : state.AnchorY)
+                    : (state.HasYAlign ? state.AlignY * displayableHeight : 0f);
+                return;
+            }
+
             float zoomX = state.HasZoom || state.HasXZoom ? state.ZoomX : 1f;
             float zoomY = state.HasZoom || state.HasYZoom ? state.ZoomY : 1f;
             float rotation = state.HasRotate ? state.Rotate : 0f;
@@ -734,11 +747,14 @@ namespace StoryAPI.Runtime
         {
             // Back, elastic, and bounce warpers intentionally overshoot [0, 1].
             // Unclamped interpolation preserves those values instead of clipping them.
+            bool startTransformAnchor = from.HasTransformAnchor && from.TransformAnchor;
+            bool endTransformAnchor = to.HasTransformAnchor
+                ? to.TransformAnchor : startTransformAnchor;
             float fromAnchorX, fromAnchorY, toAnchorX, toAnchorY;
             ResolveAnchorPixels(from, displayableWidth, displayableHeight,
-                out fromAnchorX, out fromAnchorY);
+                startTransformAnchor, out fromAnchorX, out fromAnchorY);
             ResolveAnchorPixels(to, displayableWidth, displayableHeight,
-                out toAnchorX, out toAnchorY);
+                startTransformAnchor, out toAnchorX, out toAnchorY);
             if (to.HasXAlign || to.HasXPos)
             {
                 frame.HasXAlign = false;
@@ -761,12 +777,22 @@ namespace StoryAPI.Runtime
             {
                 frame.HasXAnchor = true;
                 frame.AnchorX = Mathf.LerpUnclamped(fromAnchorX, toAnchorX, t);
+                if (complete && endTransformAnchor != startTransformAnchor)
+                {
+                    ResolveAnchorPixels(to, displayableWidth, displayableHeight,
+                        endTransformAnchor, out frame.AnchorX, out var ignoredY);
+                }
                 frame.XAnchorIsRelative = false;
             }
             if (to.HasYAnchor)
             {
                 frame.HasYAnchor = true;
                 frame.AnchorY = Mathf.LerpUnclamped(fromAnchorY, toAnchorY, t);
+                if (complete && endTransformAnchor != startTransformAnchor)
+                {
+                    ResolveAnchorPixels(to, displayableWidth, displayableHeight,
+                        endTransformAnchor, out var ignoredX, out frame.AnchorY);
+                }
                 frame.YAnchorIsRelative = false;
             }
             if (to.HasXOffset) { frame.HasXOffset = true; frame.OffsetX = Mathf.LerpUnclamped(from.OffsetX, to.OffsetX, t); }

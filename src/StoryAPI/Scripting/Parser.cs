@@ -231,7 +231,7 @@ namespace StoryAPI.Scripting
 
                 TransformPropertyStatement property = ReadTransformProperty(statementLine);
                 declaration.Properties.Add(property);
-                initializedProperties.Add(property.Name);
+                MarkTransformProperty(initializedProperties, property.Name);
                 FinishLine();
                 SkipNewlines();
             }
@@ -334,15 +334,41 @@ namespace StoryAPI.Scripting
             HashSet<string> initializedProperties,
             HashSet<string> seenProperties)
         {
-            if (!seenProperties.Add(property.Name))
+            if (HasTransformPropertyValue(seenProperties, property.Name))
                 throw new ScriptSyntaxException(
                     "An ATL interpolation may set each property only once.", property.Line);
 
-            if (!initializedProperties.Contains(property.Name))
+            if (!HasTransformPropertyValue(initializedProperties, property.Name))
                 throw new ScriptSyntaxException(
                     "ATL interpolation of '" + property.Name +
                     "' requires an earlier value for that property in the same transform.",
                     property.Line);
+
+            MarkTransformProperty(seenProperties, property.Name);
+            MarkTransformProperty(initializedProperties, property.Name);
+        }
+
+        private static bool HasTransformPropertyValue(
+            HashSet<string> properties, string name)
+        {
+            if (name == "zoom")
+                return properties.Contains("zoom") ||
+                    (properties.Contains("xzoom") && properties.Contains("yzoom"));
+            if (name == "xzoom")
+                return properties.Contains("zoom") || properties.Contains("xzoom");
+            if (name == "yzoom")
+                return properties.Contains("zoom") || properties.Contains("yzoom");
+            return properties.Contains(name);
+        }
+
+        private static void MarkTransformProperty(HashSet<string> properties, string name)
+        {
+            properties.Add(name);
+            if (name == "zoom")
+            {
+                properties.Add("xzoom");
+                properties.Add("yzoom");
+            }
         }
 
         private TransformPropertyStatement ReadTransformProperty(int line)
@@ -421,6 +447,8 @@ namespace StoryAPI.Scripting
                 case "yoffset":
                 case "alpha":
                 case "zoom":
+                case "xzoom":
+                case "yzoom":
                 case "rotate":
                     return true;
                 default:

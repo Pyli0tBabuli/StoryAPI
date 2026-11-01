@@ -659,8 +659,8 @@ namespace StoryAPI.Tests
                 "expo", "quad", "quart", "quint",
             };
             string[] prefixes = { "ease_", "easein_", "easeout_" };
-            string source = "transform penner_warpers:\\n" +
-                            "    alpha 1.0\\n";
+            string source = "transform penner_warpers:\n" +
+                            "    alpha 1.0\n";
             var expected = new List<string>();
 
             foreach (string prefix in prefixes)
@@ -669,7 +669,7 @@ namespace StoryAPI.Tests
                 {
                     string name = prefix + family;
                     expected.Add(name);
-                    source += "    " + name + " 0.1 alpha 0.5\\n";
+                    source += "    " + name + " 0.1 alpha 0.5\n";
                 }
             }
 
@@ -687,9 +687,9 @@ namespace StoryAPI.Tests
             }
 
             ExpectSyntaxError(
-                "transform unsupported_warper:\\n" +
-                "    alpha 1.0\\n" +
-                "    easein_sine 0.1 alpha 0.5\\n",
+                "transform unsupported_warper:\n" +
+                "    alpha 1.0\n" +
+                "    easein_sine 0.1 alpha 0.5\n",
                 "Unsupported static ATL property");
         }
 

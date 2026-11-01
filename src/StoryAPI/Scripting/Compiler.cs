@@ -712,6 +712,10 @@ namespace StoryAPI.Scripting
                         state.HasSubpixel = true;
                         state.Subpixel = property.BooleanValue;
                         break;
+                    case "rotate_pad":
+                        state.HasRotatePad = true;
+                        state.RotatePad = property.BooleanValue;
+                        break;
                 }
             }
             return state;

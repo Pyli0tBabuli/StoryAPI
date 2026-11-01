@@ -449,12 +449,12 @@ namespace StoryAPI.Scripting
             bool booleanValue = false;
             bool valueIsRelative = false;
 
-            if (property == "subpixel")
+            if (property == "subpixel" || property == "rotate_pad")
             {
                 if (Current.Type != TokenType.Identifier &&
                     Current.Type != TokenType.Keyword)
                     throw new ScriptSyntaxException(
-                        "'subpixel' expects the boolean value True or False.", Current.Line);
+                        "'" + property + "' expects the boolean value True or False.", Current.Line);
 
                 string booleanText = Advance().Text;
                 if (booleanText == "True")
@@ -463,7 +463,7 @@ namespace StoryAPI.Scripting
                     booleanValue = false;
                 else
                     throw new ScriptSyntaxException(
-                        "'subpixel' expects the boolean value True or False.", line);
+                        "'" + property + "' expects the boolean value True or False.", line);
 
                 valueIsBoolean = true;
                 value = booleanValue ? 1f : 0f;
@@ -555,6 +555,7 @@ namespace StoryAPI.Scripting
                 case "ycenter":
                 case "rotate":
                 case "subpixel":
+                case "rotate_pad":
                     return true;
                 default:
                     return false;

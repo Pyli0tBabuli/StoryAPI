@@ -2503,7 +2503,12 @@ namespace StoryAPI.Game
             public bool HasYPos { get; set; }
             public float PosY { get; set; }
 
+            /// <summary>Uniform zoom, retained for game transforms that set both axes together.</summary>
             public bool HasZoom { get; set; }
+
+            /// <summary>Independent horizontal and vertical zoom factors.</summary>
+            public bool HasXZoom { get; set; }
+            public bool HasYZoom { get; set; }
             public float ZoomX { get; set; } = 1f;
             public float ZoomY { get; set; } = 1f;
 
@@ -2653,11 +2658,12 @@ namespace StoryAPI.Game
                         state.HasYPos = true; state.PosY = number; any = true; break;
                     case "zoom":
                         state.HasZoom = true;
+                        state.HasXZoom = false; state.HasYZoom = false;
                         state.ZoomX = number; state.ZoomY = number; any = true; break;
                     case "xzoom":
-                        state.HasZoom = true; state.ZoomX = number; any = true; break;
+                        state.HasXZoom = true; state.ZoomX = number; any = true; break;
                     case "yzoom":
-                        state.HasZoom = true; state.ZoomY = number; any = true; break;
+                        state.HasYZoom = true; state.ZoomY = number; any = true; break;
                     case "alpha":
                         state.HasAlpha = true; state.Alpha = number; any = true; break;
                     case "rotate":

@@ -139,14 +139,19 @@ tags in its save record so the same ordering is restored after loading.
 
 Stages 73–74 add reusable top-level ATL `transform` declarations that can be referenced
 from `show ... at <name>`. Supported numeric properties are `xalign`, `yalign`,
-`xpos`, `ypos`, `xoffset`, `yoffset`, `alpha`, `zoom`, and `rotate`.
-Immediate properties are written one per line before any timed interpolation.
+`xpos`, `ypos`, `xoffset`, `yoffset`, `alpha`, `zoom`, `xzoom`, `yzoom`,
+and `rotate`. `zoom` scales both axes uniformly; `xzoom` and `yzoom` scale each
+axis independently. Negative axis zoom flips the sprite horizontally or vertically,
+and zero collapses it along that axis. Immediate properties are written one per line
+before any timed interpolation.
 
 ```renpy
 transform stage_position:
     xalign 0.0
     yalign 0.5
     zoom 0.75
+    xzoom 0.9
+    yzoom 1.1
     alpha 0.8
     rotate 0
 
@@ -190,6 +195,10 @@ transform wait_then_return:
 
 Animation runs alongside the label rather than pausing it; use a normal script-level
 `pause` when the dialogue flow should wait for the entire ATL timeline to finish.
+
+The `xzoom` and `yzoom` properties can also be animated independently. For example,
+`linear 0.5 xzoom -1.0` flips the image horizontally over half a second, while
+`ease 0.5 yzoom 1.5` stretches it vertically without changing its horizontal scale.
 
 ATL timelines also support Ren'Py's terminal `repeat` statement. A bare `repeat`
 restarts the complete transform timeline indefinitely, while `repeat 2` runs it twice

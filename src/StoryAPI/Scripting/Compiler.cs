@@ -671,7 +671,10 @@ namespace StoryAPI.Scripting
                     case "yoffset": state.HasYOffset = true; state.OffsetY = value; break;
                     case "alpha": state.HasAlpha = true; state.Alpha = value; break;
                     case "zoom":
-                        state.HasZoom = true; state.ZoomX = value; state.ZoomY = value; break;
+                        state.HasXZoom = true; state.HasYZoom = true;
+                        state.ZoomX = value; state.ZoomY = value; break;
+                    case "xzoom": state.HasXZoom = true; state.ZoomX = value; break;
+                    case "yzoom": state.HasYZoom = true; state.ZoomY = value; break;
                     case "rotate": state.HasRotate = true; state.Rotate = value; break;
                 }
             }

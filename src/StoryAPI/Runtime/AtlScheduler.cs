@@ -84,11 +84,15 @@ namespace StoryAPI.Runtime
         {
             if (Renderer == null || state == null) return;
 
-            float zoomX = state.HasZoom ? state.ZoomX : 1f;
-            float zoomY = state.HasZoom ? state.ZoomY : 1f;
+            bool hasZoomX = state.HasZoom || state.HasXZoom;
+            bool hasZoomY = state.HasZoom || state.HasYZoom;
+            float zoomX = hasZoomX ? state.ZoomX : Renderer.localScale.x;
+            float zoomY = hasZoomY ? state.ZoomY : Renderer.localScale.y;
 
-            float width = TextureWidth * zoomX;
-            float height = TextureHeight * zoomY;
+            // Negative xzoom/yzoom flips the image, but does not make its layout
+            // bounds negative.
+            float width = TextureWidth * Mathf.Abs(zoomX);
+            float height = TextureHeight * Mathf.Abs(zoomY);
 
             float left, top;
             if (state.HasXAlign)
@@ -123,7 +127,8 @@ namespace StoryAPI.Runtime
             if (state.HasXOffset) left += state.OffsetX;
             if (state.HasYOffset) top += state.OffsetY;
 
-            Renderer.localScale = new Vector3(zoomX, zoomY, 1f);
+            if (hasZoomX || hasZoomY)
+                Renderer.localScale = new Vector3(zoomX, zoomY, 1f);
             Renderer.localPosition = new Vector3(
                 left + width * 0.5f - ArtInjector.ScreenWidth * 0.5f,
                 -(top + height * 0.5f - ArtInjector.ScreenHeight * 0.5f),
@@ -184,13 +189,22 @@ namespace StoryAPI.Runtime
                                    b.HasYPos ? b.PosY : a.PosY, t);
             }
 
-            if (a.HasZoom || b.HasZoom)
+            bool aHasZoomX = a.HasZoom || a.HasXZoom;
+            bool bHasZoomX = b.HasZoom || b.HasXZoom;
+            if (aHasZoomX || bHasZoomX)
             {
-                result.HasZoom = true;
-                result.ZoomX = Ease(a.HasZoom ? a.ZoomX : b.ZoomX,
-                                    b.HasZoom ? b.ZoomX : a.ZoomX, t);
-                result.ZoomY = Ease(a.HasZoom ? a.ZoomY : b.ZoomY,
-                                    b.HasZoom ? b.ZoomY : a.ZoomY, t);
+                result.HasXZoom = true;
+                result.ZoomX = Ease(aHasZoomX ? a.ZoomX : b.ZoomX,
+                                    bHasZoomX ? b.ZoomX : a.ZoomX, t);
+            }
+
+            bool aHasZoomY = a.HasZoom || a.HasYZoom;
+            bool bHasZoomY = b.HasZoom || b.HasYZoom;
+            if (aHasZoomY || bHasZoomY)
+            {
+                result.HasYZoom = true;
+                result.ZoomY = Ease(aHasZoomY ? a.ZoomY : b.ZoomY,
+                                    bHasZoomY ? b.ZoomY : a.ZoomY, t);
             }
 
             if (a.HasAlpha || b.HasAlpha)
@@ -487,10 +501,14 @@ namespace StoryAPI.Runtime
             if (to.HasYPos) { frame.HasYPos = true; frame.PosY = Mathf.LerpUnclamped(from.PosY, to.PosY, t); }
             if (to.HasXOffset) { frame.HasXOffset = true; frame.OffsetX = Mathf.LerpUnclamped(from.OffsetX, to.OffsetX, t); }
             if (to.HasYOffset) { frame.HasYOffset = true; frame.OffsetY = Mathf.LerpUnclamped(from.OffsetY, to.OffsetY, t); }
-            if (to.HasZoom)
+            if (to.HasZoom || to.HasXZoom)
             {
-                frame.HasZoom = true;
+                frame.HasXZoom = true;
                 frame.ZoomX = Mathf.LerpUnclamped(from.ZoomX, to.ZoomX, t);
+            }
+            if (to.HasZoom || to.HasYZoom)
+            {
+                frame.HasYZoom = true;
                 frame.ZoomY = Mathf.LerpUnclamped(from.ZoomY, to.ZoomY, t);
             }
             if (to.HasAlpha) { frame.HasAlpha = true; frame.Alpha = Mathf.LerpUnclamped(from.Alpha, to.Alpha, t); }
@@ -507,10 +525,14 @@ namespace StoryAPI.Runtime
             if (target.HasYPos) { result.HasYPos = true; result.PosY = target.PosY; }
             if (target.HasXOffset) { result.HasXOffset = true; result.OffsetX = target.OffsetX; }
             if (target.HasYOffset) { result.HasYOffset = true; result.OffsetY = target.OffsetY; }
-            if (target.HasZoom)
+            if (target.HasZoom || target.HasXZoom)
             {
-                result.HasZoom = true;
+                result.HasXZoom = true;
                 result.ZoomX = target.ZoomX;
+            }
+            if (target.HasZoom || target.HasYZoom)
+            {
+                result.HasYZoom = true;
                 result.ZoomY = target.ZoomY;
             }
             if (target.HasAlpha) { result.HasAlpha = true; result.Alpha = target.Alpha; }
@@ -529,7 +551,9 @@ namespace StoryAPI.Runtime
                 HasYPos = source.HasYPos, PosY = source.PosY,
                 HasXOffset = source.HasXOffset, OffsetX = source.OffsetX,
                 HasYOffset = source.HasYOffset, OffsetY = source.OffsetY,
-                HasZoom = source.HasZoom, ZoomX = source.ZoomX, ZoomY = source.ZoomY,
+                HasZoom = source.HasZoom,
+                HasXZoom = source.HasXZoom, HasYZoom = source.HasYZoom,
+                ZoomX = source.ZoomX, ZoomY = source.ZoomY,
                 HasAlpha = source.HasAlpha, Alpha = source.Alpha,
                 HasRotate = source.HasRotate, Rotate = source.Rotate,
             };

@@ -816,6 +816,11 @@ namespace StoryAPI.Tests
                 "    xalign 0.5\n" +
                 "    linear 0.25 xalign 0.8 xanchor 0.2\n",
                 "only once");
+            ExpectSyntaxError(
+                "transform anchor_align_conflict:\n" +
+                "    xanchor 0.5\n" +
+                "    linear 0.25 xanchor 0.8 xalign 0.2\n",
+                "only once");
         }
 
         private static void TestSpriteAliasAndPosition()

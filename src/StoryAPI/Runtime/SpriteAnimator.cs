@@ -1086,8 +1086,7 @@ namespace StoryAPI.Runtime
                     out anchorPixelsX, out anchorPixelsY);
 
                 if (state.HasXAlign || state.HasXPos || state.HasXOffset || state.HasXAnchor ||
-                    state.HasSubpixel || state.HasRotate || state.HasRotatePad ||
-                    state.HasTransformAnchor)
+                    state.HasSubpixel || state.HasRotate || state.HasRotatePad)
                 {
                     float left = position.x + ScreenWidth * 0.5f - widthPx * 0.5f;
                     float anchorPixels = anchorPixelsX;

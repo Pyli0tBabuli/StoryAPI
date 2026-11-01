@@ -946,6 +946,34 @@ namespace StoryAPI.Runtime
         }
 
         /// <summary>
+        /// Gets the dimensions of the displayable after Ren'Py-style rotation padding.
+        /// With rotate_pad enabled, the layout remains the diagonal square of the source.
+        /// Otherwise, it is the smallest axis-aligned rectangle containing the rotated image.
+        /// </summary>
+        internal static void GetDisplayableDimensions(float width, float height,
+            bool hasRotation, float degrees, bool rotatePad,
+            out float displayWidth, out float displayHeight)
+        {
+            displayWidth = width;
+            displayHeight = height;
+            if (!hasRotation) return;
+
+            if (rotatePad)
+            {
+                float diagonal = Mathf.Sqrt(width * width + height * height);
+                displayWidth = diagonal;
+                displayHeight = diagonal;
+                return;
+            }
+
+            float radians = degrees * Mathf.Deg2Rad;
+            float cosine = Mathf.Abs(Mathf.Cos(radians));
+            float sine = Mathf.Abs(Mathf.Sin(radians));
+            displayWidth = width * cosine + height * sine;
+            displayHeight = width * sine + height * cosine;
+        }
+
+        /// <summary>
         /// Applies the supported immediate properties from a user-defined ATL transform.
         /// Properties not present in the definition leave the current renderer state alone.
         /// </summary>
@@ -985,6 +1013,11 @@ namespace StoryAPI.Runtime
                 // A negative axis zoom flips the sprite; its layout bounds stay positive.
                 float widthPx = textureWidth * Mathf.Abs(zoomX);
                 float heightPx = textureHeight * Mathf.Abs(zoomY);
+                float rotationDegrees = state.HasRotate ? state.Rotate : -renderer.localEulerAngles.z;
+                bool hasRotation = state.HasRotate ||
+                    Mathf.Abs(Mathf.DeltaAngle(0f, rotationDegrees)) > 0.001f;
+                GetDisplayableDimensions(widthPx, heightPx, hasRotation,
+                    rotationDegrees, state.RotatePad, out widthPx, out heightPx);
                 string transformKey = SlotKey(container, layer);
                 if (!s_transformBasePositions.TryGetValue(transformKey, out var basePosition))
                 {
@@ -994,7 +1027,7 @@ namespace StoryAPI.Runtime
                 Vector3 position = basePosition;
 
                 if (state.HasXAlign || state.HasXPos || state.HasXOffset || state.HasXAnchor ||
-                    state.HasSubpixel)
+                    state.HasSubpixel || state.HasRotate || state.HasRotatePad)
                 {
                     float left = position.x + ScreenWidth * 0.5f - widthPx * 0.5f;
                     float anchorPixels = state.HasXAnchor
@@ -1016,7 +1049,7 @@ namespace StoryAPI.Runtime
                 }
 
                 if (state.HasYAlign || state.HasYPos || state.HasYOffset || state.HasYAnchor ||
-                    state.HasSubpixel)
+                    state.HasSubpixel || state.HasRotate || state.HasRotatePad)
                 {
                     float top = -position.y + ScreenHeight * 0.5f - heightPx * 0.5f;
                     float anchorPixels = state.HasYAnchor
@@ -1039,7 +1072,7 @@ namespace StoryAPI.Runtime
 
                 if (state.HasXAlign || state.HasXPos || state.HasXOffset || state.HasXAnchor ||
                     state.HasYAlign || state.HasYPos || state.HasYOffset || state.HasYAnchor ||
-                    state.HasSubpixel)
+                    state.HasSubpixel || state.HasRotate || state.HasRotatePad)
                     renderer.localPosition = position;
 
                 if (hasZoomX || hasZoomY)

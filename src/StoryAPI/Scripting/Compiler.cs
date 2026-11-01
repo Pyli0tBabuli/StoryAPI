@@ -562,7 +562,7 @@ namespace StoryAPI.Scripting
                                               hasCustomTransform ? null : statement.At,
                                               statement.ZOrder ?? 1, layer, statement.Behind));
                 if (hasCustomTransform)
-                    EmitAtlTransformLine(statement.Alias ?? image, layer, initialTransform, segments);
+                    EmitAtlTransformLine(statement.Alias ?? image, layer, initialTransform, segments, repeatCount);
                 return;
             }
 

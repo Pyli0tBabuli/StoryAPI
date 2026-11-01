@@ -209,6 +209,12 @@ The anchor can be animated independently as well. For example, `linear 0.5 xanch
 moves the horizontal pivot from the left edge to the right edge of the sprite while the
 chosen screen position stays fixed.
 
+Ren'Py's `xcenter` and `ycenter` shortcuts are also supported. Each positions the
+center of the sprite on the requested coordinate: `xcenter 0.5` is equivalent to
+`xpos 0.5` with `xanchor 0.5`. Integer position values are pixels, while floating-point
+values are fractions of the screen; animated positions interpolate in screen pixels even
+when their endpoints use different units.
+
 ATL timelines also support Ren'Py's terminal `repeat` statement. A bare `repeat`
 restarts the complete transform timeline indefinitely, while `repeat 2` runs it twice
 in total and then stops. `repeat 1` performs one run without restarting. Repeat resets

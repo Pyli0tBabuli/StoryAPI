@@ -185,11 +185,18 @@ transform wait_then_return:
 Animation runs alongside the label rather than pausing it; use a normal script-level
 `pause` when the dialogue flow should wait for the entire ATL timeline to finish.
 
+ATL timelines also support Ren'Py's terminal `repeat` statement. A bare `repeat`
+restarts the complete transform timeline indefinitely, while `repeat 2` runs it twice
+in total and then stops. `repeat 1` performs one run without restarting. Repeat resets
+the timeline to its original transform properties at the start of each cycle and must
+be the final statement in the transform declaration. The optional count is currently
+limited to a positive integer literal.
+
 Custom transforms are applied to StoryAPI-managed custom sprites, native game sprites,
 and DDLC+ character poses. Properties not specified by a transform leave the current
-state unchanged. Dynamic expressions (including duration expressions), `repeat`,
-`block`, `parallel`, parameterized transforms, custom warpers, and other ATL
-statements are not yet supported.
+state unchanged. Dynamic expressions (including duration expressions), `block`,
+`parallel`, parameterized transforms, custom warpers, and other ATL statements are
+not yet supported.
 
 ### Variable declarations and loop control
 

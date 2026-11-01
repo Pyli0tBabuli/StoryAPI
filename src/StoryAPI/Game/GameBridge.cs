@@ -2503,6 +2503,14 @@ namespace StoryAPI.Game
             public bool HasYPos { get; set; }
             public float PosY { get; set; }
 
+            /// <summary>Anchor point inside the displayable, in pixels or relative fractions.</summary>
+            public bool HasXAnchor { get; set; }
+            public bool HasYAnchor { get; set; }
+            public float AnchorX { get; set; }
+            public float AnchorY { get; set; }
+            public bool XAnchorIsRelative { get; set; }
+            public bool YAnchorIsRelative { get; set; }
+
             /// <summary>Uniform zoom, retained for game transforms that set both axes together.</summary>
             public bool HasZoom { get; set; }
 
@@ -2649,13 +2657,27 @@ namespace StoryAPI.Game
                 switch (word)
                 {
                     case "xalign":
-                        state.HasXAlign = true; state.AlignX = number; any = true; break;
+                        state.HasXAlign = true; state.AlignX = number;
+                        state.HasXAnchor = true; state.AnchorX = number;
+                        state.XAnchorIsRelative = true; any = true; break;
                     case "yalign":
-                        state.HasYAlign = true; state.AlignY = number; any = true; break;
+                        state.HasYAlign = true; state.AlignY = number;
+                        state.HasYAnchor = true; state.AnchorY = number;
+                        state.YAnchorIsRelative = true; any = true; break;
                     case "xpos":
                         state.HasXPos = true; state.PosX = number; any = true; break;
                     case "ypos":
                         state.HasYPos = true; state.PosY = number; any = true; break;
+                    case "xanchor":
+                        state.HasXAnchor = true; state.AnchorX = number;
+                        state.XAnchorIsRelative = value.IndexOf('.') >= 0 ||
+                            value.IndexOf('e') >= 0 || value.IndexOf('E') >= 0;
+                        any = true; break;
+                    case "yanchor":
+                        state.HasYAnchor = true; state.AnchorY = number;
+                        state.YAnchorIsRelative = value.IndexOf('.') >= 0 ||
+                            value.IndexOf('e') >= 0 || value.IndexOf('E') >= 0;
+                        any = true; break;
                     case "zoom":
                         state.HasZoom = true;
                         state.HasXZoom = false; state.HasYZoom = false;

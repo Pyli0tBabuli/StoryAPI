@@ -663,10 +663,22 @@ namespace StoryAPI.Scripting
                 float value = property.Value;
                 switch (property.Name)
                 {
-                    case "xalign": state.HasXAlign = true; state.AlignX = value; break;
-                    case "yalign": state.HasYAlign = true; state.AlignY = value; break;
                     case "xpos": state.HasXPos = true; state.PosX = value; break;
                     case "ypos": state.HasYPos = true; state.PosY = value; break;
+                    case "xanchor":
+                        state.HasXAnchor = true; state.AnchorX = value;
+                        state.XAnchorIsRelative = property.ValueIsRelative; break;
+                    case "yanchor":
+                        state.HasYAnchor = true; state.AnchorY = value;
+                        state.YAnchorIsRelative = property.ValueIsRelative; break;
+                    case "xalign":
+                        state.HasXAlign = true; state.AlignX = value;
+                        state.HasXAnchor = true; state.AnchorX = value;
+                        state.XAnchorIsRelative = true; break;
+                    case "yalign":
+                        state.HasYAlign = true; state.AlignY = value;
+                        state.HasYAnchor = true; state.AnchorY = value;
+                        state.YAnchorIsRelative = true; break;
                     case "xoffset": state.HasXOffset = true; state.OffsetX = value; break;
                     case "yoffset": state.HasYOffset = true; state.OffsetY = value; break;
                     case "alpha": state.HasAlpha = true; state.Alpha = value; break;

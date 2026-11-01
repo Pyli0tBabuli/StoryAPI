@@ -139,11 +139,16 @@ tags in its save record so the same ordering is restored after loading.
 
 Stages 73–74 add reusable top-level ATL `transform` declarations that can be referenced
 from `show ... at <name>`. Supported numeric properties are `xalign`, `yalign`,
-`xpos`, `ypos`, `xoffset`, `yoffset`, `alpha`, `zoom`, `xzoom`, `yzoom`,
-and `rotate`. `zoom` scales both axes uniformly; `xzoom` and `yzoom` scale each
-axis independently. Negative axis zoom flips the sprite horizontally or vertically,
-and zero collapses it along that axis. Immediate properties are written one per line
-before any timed interpolation.
+`xpos`, `ypos`, `xanchor`, `yanchor`, `xoffset`, `yoffset`, `alpha`,
+`zoom`, `xzoom`, `yzoom`, and `rotate`. `zoom` scales both axes uniformly;
+`xzoom` and `yzoom` scale each axis independently. Negative axis zoom flips the
+sprite horizontally or vertically, and zero collapses it along that axis.
+`xanchor` and `yanchor` select the pivot point inside the sprite: integer literals
+are absolute pixels, while floating-point literals are fractions of the sprite size
+(for example, `xanchor 32` or `xanchor 0.5`). `xalign` and `yalign` set both the
+corresponding screen position and anchor to the same fraction; a later explicit anchor
+property can override the pivot while keeping the aligned position. Immediate properties
+are written one per line before any timed interpolation.
 
 ```renpy
 transform stage_position:
@@ -199,6 +204,10 @@ Animation runs alongside the label rather than pausing it; use a normal script-l
 The `xzoom` and `yzoom` properties can also be animated independently. For example,
 `linear 0.5 xzoom -1.0` flips the image horizontally over half a second, while
 `ease 0.5 yzoom 1.5` stretches it vertically without changing its horizontal scale.
+
+The anchor can be animated independently as well. For example, `linear 0.5 xanchor 1.0`
+moves the horizontal pivot from the left edge to the right edge of the sprite while the
+chosen screen position stays fixed.
 
 ATL timelines also support Ren'Py's terminal `repeat` statement. A bare `repeat`
 restarts the complete transform timeline indefinitely, while `repeat 2` runs it twice

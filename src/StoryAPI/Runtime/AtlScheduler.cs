@@ -105,7 +105,9 @@ namespace StoryAPI.Runtime
             }
             else if (state.HasXPos)
             {
-                left = state.PosX - anchorX;
+                float positionX = state.XPosIsRelative
+                    ? state.PosX * ArtInjector.ScreenWidth : state.PosX;
+                left = positionX - anchorX;
             }
             else
             {
@@ -118,7 +120,9 @@ namespace StoryAPI.Runtime
             }
             else if (state.HasYPos)
             {
-                top = state.PosY - anchorY;
+                float positionY = state.YPosIsRelative
+                    ? state.PosY * ArtInjector.ScreenHeight : state.PosY;
+                top = positionY - anchorY;
             }
             else
             {
@@ -205,30 +209,28 @@ namespace StoryAPI.Runtime
             var a = from ?? new GameBridge.TransformState();
             var b = to ?? new GameBridge.TransformState();
 
-            if (a.HasXAlign || b.HasXAlign)
+            bool aHasXPosition = a.HasXAlign || a.HasXPos;
+            bool bHasXPosition = b.HasXAlign || b.HasXPos;
+            if (aHasXPosition || bHasXPosition)
             {
-                result.HasXAlign = true;
-                result.AlignX = Ease(a.HasXAlign ? a.AlignX : b.AlignX,
-                                     b.HasXAlign ? b.AlignX : a.AlignX, t);
-            }
-            if (a.HasYAlign || b.HasYAlign)
-            {
-                result.HasYAlign = true;
-                result.AlignY = Ease(a.HasYAlign ? a.AlignY : b.AlignY,
-                                     b.HasYAlign ? b.AlignY : a.AlignY, t);
+                var startX = aHasXPosition ? a : b;
+                var endX = bHasXPosition ? b : a;
+                result.HasXPos = true;
+                result.PosX = Ease(ResolvePositionPixels(startX, true),
+                                   ResolvePositionPixels(endX, true), t);
+                result.XPosIsRelative = false;
             }
 
-            if (a.HasXPos || b.HasXPos)
+            bool aHasYPosition = a.HasYAlign || a.HasYPos;
+            bool bHasYPosition = b.HasYAlign || b.HasYPos;
+            if (aHasYPosition || bHasYPosition)
             {
-                result.HasXPos = true;
-                result.PosX = Ease(a.HasXPos ? a.PosX : b.PosX,
-                                   b.HasXPos ? b.PosX : a.PosX, t);
-            }
-            if (a.HasYPos || b.HasYPos)
-            {
+                var startY = aHasYPosition ? a : b;
+                var endY = bHasYPosition ? b : a;
                 result.HasYPos = true;
-                result.PosY = Ease(a.HasYPos ? a.PosY : b.PosY,
-                                   b.HasYPos ? b.PosY : a.PosY, t);
+                result.PosY = Ease(ResolvePositionPixels(startY, false),
+                                   ResolvePositionPixels(endY, false), t);
+                result.YPosIsRelative = false;
             }
 
             bool aHasAnchorX = a.HasXAnchor || a.HasXAlign;
@@ -303,6 +305,29 @@ namespace StoryAPI.Runtime
             }
 
             return result;
+        }
+
+        private static float ResolvePositionPixels(GameBridge.TransformState state,
+            bool horizontal)
+        {
+            if (state == null) return 0f;
+            if (horizontal)
+            {
+                if (state.HasXPos)
+                    return state.XPosIsRelative
+                        ? state.PosX * ArtInjector.ScreenWidth : state.PosX;
+                if (state.HasXAlign)
+                    return state.AlignX * ArtInjector.ScreenWidth;
+            }
+            else
+            {
+                if (state.HasYPos)
+                    return state.YPosIsRelative
+                        ? state.PosY * ArtInjector.ScreenHeight : state.PosY;
+                if (state.HasYAlign)
+                    return state.AlignY * ArtInjector.ScreenHeight;
+            }
+            return 0f;
         }
 
         /// <summary>Move from one value to another as the move goes on.</summary>
@@ -582,6 +607,29 @@ namespace StoryAPI.Runtime
             }
         }
 
+        private static float ResolvePositionPixels(GameBridge.TransformState state,
+            bool horizontal)
+        {
+            if (state == null) return 0f;
+            if (horizontal)
+            {
+                if (state.HasXPos)
+                    return state.XPosIsRelative
+                        ? state.PosX * ArtInjector.ScreenWidth : state.PosX;
+                if (state.HasXAlign)
+                    return state.AlignX * ArtInjector.ScreenWidth;
+            }
+            else
+            {
+                if (state.HasYPos)
+                    return state.YPosIsRelative
+                        ? state.PosY * ArtInjector.ScreenHeight : state.PosY;
+                if (state.HasYAlign)
+                    return state.AlignY * ArtInjector.ScreenHeight;
+            }
+            return 0f;
+        }
+
         private static float EffectiveZoom(GameBridge.TransformState state, bool horizontal)
         {
             if (state == null) return 1f;
@@ -615,15 +663,23 @@ namespace StoryAPI.Runtime
         {
             // Back, elastic, and bounce warpers intentionally overshoot [0, 1].
             // Unclamped interpolation preserves those values instead of clipping them.
-            if (to.HasXAlign)
+            if (to.HasXAlign || to.HasXPos)
             {
-                frame.HasXAlign = true;
-                frame.AlignX = Mathf.LerpUnclamped(from.AlignX, to.AlignX, t);
+                frame.HasXAlign = false;
+                frame.HasXPos = true;
+                frame.PosX = Mathf.LerpUnclamped(
+                    ResolvePositionPixels(from, true),
+                    ResolvePositionPixels(to, true), t);
+                frame.XPosIsRelative = false;
             }
-            if (to.HasYAlign)
+            if (to.HasYAlign || to.HasYPos)
             {
-                frame.HasYAlign = true;
-                frame.AlignY = Mathf.LerpUnclamped(from.AlignY, to.AlignY, t);
+                frame.HasYAlign = false;
+                frame.HasYPos = true;
+                frame.PosY = Mathf.LerpUnclamped(
+                    ResolvePositionPixels(from, false),
+                    ResolvePositionPixels(to, false), t);
+                frame.YPosIsRelative = false;
             }
             if (to.HasXAnchor)
             {
@@ -641,8 +697,6 @@ namespace StoryAPI.Runtime
                     ResolveAnchorPixels(to, false, displayableHeight * EffectiveZoom(to, false)), t);
                 frame.YAnchorIsRelative = false;
             }
-            if (to.HasXPos) { frame.HasXPos = true; frame.PosX = Mathf.LerpUnclamped(from.PosX, to.PosX, t); }
-            if (to.HasYPos) { frame.HasYPos = true; frame.PosY = Mathf.LerpUnclamped(from.PosY, to.PosY, t); }
             if (to.HasXOffset) { frame.HasXOffset = true; frame.OffsetX = Mathf.LerpUnclamped(from.OffsetX, to.OffsetX, t); }
             if (to.HasYOffset) { frame.HasYOffset = true; frame.OffsetY = Mathf.LerpUnclamped(from.OffsetY, to.OffsetY, t); }
             if (to.HasZoom || to.HasXZoom)
@@ -663,10 +717,28 @@ namespace StoryAPI.Runtime
             GameBridge.TransformState target)
         {
             var result = Copy(current);
-            if (target.HasXAlign) { result.HasXAlign = true; result.AlignX = target.AlignX; }
-            if (target.HasYAlign) { result.HasYAlign = true; result.AlignY = target.AlignY; }
-            if (target.HasXPos) { result.HasXPos = true; result.PosX = target.PosX; }
-            if (target.HasYPos) { result.HasYPos = true; result.PosY = target.PosY; }
+            if (target.HasXAlign)
+            {
+                result.HasXAlign = true; result.AlignX = target.AlignX;
+                result.HasXPos = false;
+            }
+            if (target.HasYAlign)
+            {
+                result.HasYAlign = true; result.AlignY = target.AlignY;
+                result.HasYPos = false;
+            }
+            if (target.HasXPos)
+            {
+                result.HasXPos = true; result.PosX = target.PosX;
+                result.XPosIsRelative = target.XPosIsRelative;
+                result.HasXAlign = false;
+            }
+            if (target.HasYPos)
+            {
+                result.HasYPos = true; result.PosY = target.PosY;
+                result.YPosIsRelative = target.YPosIsRelative;
+                result.HasYAlign = false;
+            }
             if (target.HasXOffset) { result.HasXOffset = true; result.OffsetX = target.OffsetX; }
             if (target.HasYOffset) { result.HasYOffset = true; result.OffsetY = target.OffsetY; }
             if (target.HasXAnchor)
@@ -704,7 +776,9 @@ namespace StoryAPI.Runtime
                 HasXAlign = source.HasXAlign, AlignX = source.AlignX,
                 HasYAlign = source.HasYAlign, AlignY = source.AlignY,
                 HasXPos = source.HasXPos, PosX = source.PosX,
+                XPosIsRelative = source.XPosIsRelative,
                 HasYPos = source.HasYPos, PosY = source.PosY,
+                YPosIsRelative = source.YPosIsRelative,
                 HasXAnchor = source.HasXAnchor, AnchorX = source.AnchorX,
                 HasYAnchor = source.HasYAnchor, AnchorY = source.AnchorY,
                 XAnchorIsRelative = source.XAnchorIsRelative,

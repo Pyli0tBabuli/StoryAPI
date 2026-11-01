@@ -71,11 +71,15 @@ namespace StoryAPI.Scripting
     {
     }
 
-    /// <summary>One immediate numeric property in a supported ATL transform.</summary>
+    /// <summary>One immediate property in a supported ATL transform.</summary>
     public sealed class TransformPropertyStatement : Statement
     {
         public string Name { get; set; }
         public float Value { get; set; }
+
+        /// <summary>True when the property's literal value is a boolean.</summary>
+        public bool ValueIsBoolean { get; set; }
+        public bool BooleanValue { get; set; }
 
         /// <summary>
         /// Position-valued anchor properties use floating point literals as fractions

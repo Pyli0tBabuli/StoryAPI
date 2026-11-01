@@ -33,6 +33,7 @@ namespace StoryAPI.Tests
             Run("ATL center properties", TestAtlCenterProperties);
             Run("ATL subpixel positioning", TestAtlSubpixelProperties);
             Run("ATL rotate padding", TestAtlRotatePadProperties);
+            Run("ATL fps timing", TestAtlFpsProperty);
             Run("sprite alias and position", TestSpriteAliasAndPosition);
             Run("define/default scalar declarations", TestVariableDeclarations);
             Run("runtime scalar initializer expressions", TestRuntimeExpressionDeclarations);
@@ -957,6 +958,62 @@ namespace StoryAPI.Tests
                 "    rotate_pad True\n" +
                 "    linear 0.5 rotate_pad False rotate_pad True\n",
                 "only once");
+        }
+
+        private static void TestAtlFpsProperty()
+        {
+            var statements = Parse(
+                "transform low_frame_rate:\n" +
+                "    fps 4\n" +
+                "    xpos 0.0\n" +
+                "    linear 1.0 xpos 1.0\n" +
+                "transform fractional_frame_rate:\n" +
+                "    fps 12.5\n" +
+                "    xpos 0.0\n" +
+                "    linear 1.0 xpos 1.0\n" +
+                "transform default_frame_rate:\n" +
+                "    xpos 0.0\n" +
+                "    linear 1.0 xpos 1.0\n");
+
+            var low = Require<TransformDeclarationStatement>(statements[0],
+                "Expected an ATL transform with a low frame rate.");
+            Check(low.Properties.Count == 2 &&
+                  low.Properties[0].Name == "fps" &&
+                  low.Properties[0].Value == 4f &&
+                  low.Properties[1].Name == "xpos" &&
+                  low.Interpolations.Count == 1,
+                "fps should be preserved as a positive numeric initial property.");
+
+            var fractional = Require<TransformDeclarationStatement>(statements[1],
+                "Expected an ATL transform with a fractional frame rate.");
+            Check(fractional.Properties[0].Name == "fps" &&
+                  fractional.Properties[0].Value == 12.5f,
+                "fps should accept finite positive fractional values.");
+
+            var defaultRate = Require<TransformDeclarationStatement>(statements[2],
+                "Expected an ATL transform with the default frame rate.");
+            Check(defaultRate.Properties.Count == 1 &&
+                  defaultRate.Properties[0].Name == "xpos" &&
+                  defaultRate.Interpolations.Count == 1,
+                "Omitting fps should preserve normal frame-by-frame timing.");
+
+            ExpectSyntaxError(
+                "transform zero_fps:\n" +
+                "    fps 0\n",
+                "greater than zero");
+            ExpectSyntaxError(
+                "transform negative_fps:\n" +
+                "    fps -2\n",
+                "greater than zero");
+            ExpectSyntaxError(
+                "transform animated_fps:\n" +
+                "    fps 4\n" +
+                "    linear 1.0 fps 12\n",
+                "cannot be animated");
+            ExpectSyntaxError(
+                "transform fps_only_in_interpolation:\n" +
+                "    linear 1.0 fps 12\n",
+                "cannot be animated");
         }
 
         private static void TestAtlSubpixelProperties()

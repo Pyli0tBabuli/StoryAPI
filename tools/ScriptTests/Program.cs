@@ -897,6 +897,67 @@ namespace StoryAPI.Tests
                 "only once");
         }
 
+        private static void TestAtlSubpixelProperties()
+        {
+            var statements = Parse(
+                "transform subpixel_enabled:\n" +
+                "    subpixel True\n" +
+                "    xpos 0.25\n" +
+                "    linear 0.5 xpos 0.75\n" +
+                "transform subpixel_disabled:\n" +
+                "    subpixel False\n" +
+                "    xpos 0.25\n" +
+                "    linear 0.5 subpixel True\n" +
+                "transform subpixel_implicit_default:\n" +
+                "    xpos 0.25\n" +
+                "    linear 0.5 xpos 0.75\n");
+
+            var enabled = Require<TransformDeclarationStatement>(statements[0],
+                "Expected an ATL transform with subpixel positioning enabled.");
+            Check(enabled.Properties.Count == 2 &&
+                  enabled.Properties[0].Name == "subpixel" &&
+                  enabled.Properties[0].ValueIsBoolean &&
+                  enabled.Properties[0].BooleanValue &&
+                  enabled.Properties[1].Name == "xpos",
+                "subpixel True should be retained as a boolean transform property.");
+            Check(enabled.Interpolations.Count == 1 &&
+                  enabled.Interpolations[0].Properties[0].Name == "xpos",
+                "Numeric position interpolation should remain available alongside subpixel.");
+
+            var disabled = Require<TransformDeclarationStatement>(statements[1],
+                "Expected an ATL transform with subpixel positioning disabled.");
+            Check(disabled.Properties[0].Name == "subpixel" &&
+                  disabled.Properties[0].ValueIsBoolean &&
+                  !disabled.Properties[0].BooleanValue,
+                "subpixel False should be retained as a boolean transform property.");
+            Check(disabled.Interpolations.Count == 1 &&
+                  disabled.Interpolations[0].Properties[0].Name == "subpixel" &&
+                  disabled.Interpolations[0].Properties[0].ValueIsBoolean &&
+                  disabled.Interpolations[0].Properties[0].BooleanValue,
+                "A boolean target should be accepted in timed ATL interpolation.");
+
+            var implicitDefault = Require<TransformDeclarationStatement>(statements[2],
+                "Expected transforms without subpixel to remain valid.");
+            Check(implicitDefault.Properties.Count == 1 &&
+                  implicitDefault.Properties[0].Name == "xpos" &&
+                  implicitDefault.Interpolations.Count == 1,
+                "Omitting subpixel should preserve the documented default and other ATL properties.");
+
+            ExpectSyntaxError(
+                "transform invalid_subpixel_number:\n" +
+                "    subpixel 1\n",
+                "True or False");
+            ExpectSyntaxError(
+                "transform invalid_subpixel_lowercase:\n" +
+                "    subpixel true\n",
+                "True or False");
+            ExpectSyntaxError(
+                "transform duplicate_subpixel_target:\n" +
+                "    subpixel False\n" +
+                "    linear 0.5 subpixel True subpixel False\n",
+                "only once");
+        }
+
         private static void TestSpriteAliasAndPosition()
         {
             var statements = Parse(

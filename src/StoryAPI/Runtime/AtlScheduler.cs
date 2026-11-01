@@ -94,34 +94,35 @@ namespace StoryAPI.Runtime
             float width = TextureWidth * Mathf.Abs(zoomX);
             float height = TextureHeight * Mathf.Abs(zoomY);
 
+            float anchorX = ResolveAnchorPixels(state, true, width);
+            float anchorY = ResolveAnchorPixels(state, false, height);
             float left, top;
             if (state.HasXAlign)
             {
-                // Alignment places the picture inside the room that is left over, not
-                // from the edge of the screen: at 0 its corner is at the screen's corner,
-                // at 0.5 it is centred, at 1 its far edge reaches the screen's edge.
-                left = state.AlignX * (ArtInjector.ScreenWidth - width);
+                // xalign sets xpos and xanchor to the same fraction unless an
+                // explicit xanchor overrides it.
+                left = state.AlignX * ArtInjector.ScreenWidth - anchorX;
             }
             else if (state.HasXPos)
             {
-                left = state.PosX;
+                left = state.PosX - anchorX;
             }
             else
             {
-                left = ArtInjector.ScreenWidth * 0.5f - width * 0.5f;
+                left = ArtInjector.ScreenWidth * 0.5f - width * 0.5f - anchorX;
             }
 
             if (state.HasYAlign)
             {
-                top = state.AlignY * (ArtInjector.ScreenHeight - height);
+                top = state.AlignY * ArtInjector.ScreenHeight - anchorY;
             }
             else if (state.HasYPos)
             {
-                top = state.PosY;
+                top = state.PosY - anchorY;
             }
             else
             {
-                top = ArtInjector.ScreenHeight * 0.5f - height * 0.5f;
+                top = ArtInjector.ScreenHeight * 0.5f - height * 0.5f - anchorY;
             }
 
             if (state.HasXOffset) left += state.OffsetX;
@@ -144,6 +145,25 @@ namespace StoryAPI.Runtime
                     renderer.color = colour;
                 }
             }
+        }
+
+        private static float ResolveAnchorPixels(GameBridge.TransformState state,
+            bool horizontal, float displayableSize)
+        {
+            if (state == null) return 0f;
+
+            if (horizontal)
+            {
+                if (state.HasXAnchor)
+                    return state.XAnchorIsRelative
+                        ? state.AnchorX * displayableSize : state.AnchorX;
+                return state.HasXAlign ? state.AlignX * displayableSize : 0f;
+            }
+
+            if (state.HasYAnchor)
+                return state.YAnchorIsRelative
+                    ? state.AnchorY * displayableSize : state.AnchorY;
+            return state.HasYAlign ? state.AlignY * displayableSize : 0f;
         }
 
         /// <summary>
@@ -187,6 +207,28 @@ namespace StoryAPI.Runtime
                 result.HasYPos = true;
                 result.PosY = Ease(a.HasYPos ? a.PosY : b.PosY,
                                    b.HasYPos ? b.PosY : a.PosY, t);
+            }
+
+            bool aHasAnchorX = a.HasXAnchor || a.HasXAlign;
+            bool bHasAnchorX = b.HasXAnchor || b.HasXAlign;
+            if (aHasAnchorX || bHasAnchorX)
+            {
+                result.HasXAnchor = true;
+                result.AnchorX = Ease(
+                    ResolveAnchorPixels(aHasAnchorX ? a : b, true, TextureWidth),
+                    ResolveAnchorPixels(bHasAnchorX ? b : a, true, TextureWidth), t);
+                result.XAnchorIsRelative = false;
+            }
+
+            bool aHasAnchorY = a.HasYAnchor || a.HasYAlign;
+            bool bHasAnchorY = b.HasYAnchor || b.HasYAlign;
+            if (aHasAnchorY || bHasAnchorY)
+            {
+                result.HasYAnchor = true;
+                result.AnchorY = Ease(
+                    ResolveAnchorPixels(aHasAnchorY ? a : b, false, TextureHeight),
+                    ResolveAnchorPixels(bHasAnchorY ? b : a, false, TextureHeight), t);
+                result.YAnchorIsRelative = false;
             }
 
             bool aHasZoomX = a.HasZoom || a.HasXZoom;
@@ -379,7 +421,10 @@ namespace StoryAPI.Runtime
                 {
                     float t = Mathf.Clamp01(_elapsed / duration);
                     var frame = Copy(_current);
-                    Interpolate(frame, _current, segment.Target, Warp(segment.EaseName, t));
+                    float targetWidth, targetHeight;
+                    GetTargetDimensions(out targetWidth, out targetHeight);
+                    Interpolate(frame, _current, segment.Target,
+                        Warp(segment.EaseName, t), targetWidth, targetHeight);
                     ArtInjector.ApplyStaticTransform(Container, Layer, frame, false);
                 }
 
@@ -490,13 +535,77 @@ namespace StoryAPI.Runtime
                 Mathf.Pow(-0.125f / period, 2f));
         }
 
+        private void GetTargetDimensions(out float width, out float height)
+        {
+            width = 1f;
+            height = 1f;
+            if (Target == null || Target.Object == null) return;
+
+            var renderers = Target.Object.GetComponentsInChildren<SpriteRenderer>(true);
+            foreach (var spriteRenderer in renderers)
+            {
+                if (spriteRenderer == null || spriteRenderer.sprite == null) continue;
+                float candidateWidth = Mathf.Max(1f, spriteRenderer.sprite.rect.width);
+                float candidateHeight = Mathf.Max(1f, spriteRenderer.sprite.rect.height);
+                if (candidateWidth * candidateHeight > width * height)
+                {
+                    width = candidateWidth;
+                    height = candidateHeight;
+                }
+            }
+        }
+
+        private static float ResolveAnchorPixels(GameBridge.TransformState state,
+            bool horizontal, float displayableSize)
+        {
+            if (state == null) return 0f;
+
+            if (horizontal)
+            {
+                if (state.HasXAnchor)
+                    return state.XAnchorIsRelative
+                        ? state.AnchorX * displayableSize : state.AnchorX;
+                return state.HasXAlign ? state.AlignX * displayableSize : 0f;
+            }
+
+            if (state.HasYAnchor)
+                return state.YAnchorIsRelative
+                    ? state.AnchorY * displayableSize : state.AnchorY;
+            return state.HasYAlign ? state.AlignY * displayableSize : 0f;
+        }
+
         private static void Interpolate(GameBridge.TransformState frame,
-            GameBridge.TransformState from, GameBridge.TransformState to, float t)
+            GameBridge.TransformState from, GameBridge.TransformState to, float t,
+            float displayableWidth, float displayableHeight)
         {
             // Back, elastic, and bounce warpers intentionally overshoot [0, 1].
             // Unclamped interpolation preserves those values instead of clipping them.
-            if (to.HasXAlign) { frame.HasXAlign = true; frame.AlignX = Mathf.LerpUnclamped(from.AlignX, to.AlignX, t); }
-            if (to.HasYAlign) { frame.HasYAlign = true; frame.AlignY = Mathf.LerpUnclamped(from.AlignY, to.AlignY, t); }
+            if (to.HasXAlign)
+            {
+                frame.HasXAlign = true;
+                frame.AlignX = Mathf.LerpUnclamped(from.AlignX, to.AlignX, t);
+            }
+            if (to.HasYAlign)
+            {
+                frame.HasYAlign = true;
+                frame.AlignY = Mathf.LerpUnclamped(from.AlignY, to.AlignY, t);
+            }
+            if (to.HasXAnchor)
+            {
+                frame.HasXAnchor = true;
+                frame.AnchorX = Mathf.LerpUnclamped(
+                    ResolveAnchorPixels(from, true, displayableWidth),
+                    ResolveAnchorPixels(to, true, displayableWidth), t);
+                frame.XAnchorIsRelative = false;
+            }
+            if (to.HasYAnchor)
+            {
+                frame.HasYAnchor = true;
+                frame.AnchorY = Mathf.LerpUnclamped(
+                    ResolveAnchorPixels(from, false, displayableHeight),
+                    ResolveAnchorPixels(to, false, displayableHeight), t);
+                frame.YAnchorIsRelative = false;
+            }
             if (to.HasXPos) { frame.HasXPos = true; frame.PosX = Mathf.LerpUnclamped(from.PosX, to.PosX, t); }
             if (to.HasYPos) { frame.HasYPos = true; frame.PosY = Mathf.LerpUnclamped(from.PosY, to.PosY, t); }
             if (to.HasXOffset) { frame.HasXOffset = true; frame.OffsetX = Mathf.LerpUnclamped(from.OffsetX, to.OffsetX, t); }
@@ -525,6 +634,18 @@ namespace StoryAPI.Runtime
             if (target.HasYPos) { result.HasYPos = true; result.PosY = target.PosY; }
             if (target.HasXOffset) { result.HasXOffset = true; result.OffsetX = target.OffsetX; }
             if (target.HasYOffset) { result.HasYOffset = true; result.OffsetY = target.OffsetY; }
+            if (target.HasXAnchor)
+            {
+                result.HasXAnchor = true;
+                result.AnchorX = target.AnchorX;
+                result.XAnchorIsRelative = target.XAnchorIsRelative;
+            }
+            if (target.HasYAnchor)
+            {
+                result.HasYAnchor = true;
+                result.AnchorY = target.AnchorY;
+                result.YAnchorIsRelative = target.YAnchorIsRelative;
+            }
             if (target.HasZoom || target.HasXZoom)
             {
                 result.HasXZoom = true;
@@ -549,6 +670,10 @@ namespace StoryAPI.Runtime
                 HasYAlign = source.HasYAlign, AlignY = source.AlignY,
                 HasXPos = source.HasXPos, PosX = source.PosX,
                 HasYPos = source.HasYPos, PosY = source.PosY,
+                HasXAnchor = source.HasXAnchor, AnchorX = source.AnchorX,
+                HasYAnchor = source.HasYAnchor, AnchorY = source.AnchorY,
+                XAnchorIsRelative = source.XAnchorIsRelative,
+                YAnchorIsRelative = source.YAnchorIsRelative,
                 HasXOffset = source.HasXOffset, OffsetX = source.OffsetX,
                 HasYOffset = source.HasYOffset, OffsetY = source.OffsetY,
                 HasZoom = source.HasZoom,

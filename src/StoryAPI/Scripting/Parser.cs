@@ -158,7 +158,7 @@ namespace StoryAPI.Scripting
 
                 if (Current.Type != TokenType.Identifier && Current.Type != TokenType.Keyword)
                     throw new ScriptSyntaxException(
-                        "Expected an ATL transform property, interpolation, or pause.",
+                        "Expected an ATL transform property, interpolation, pause, or repeat.",
                         statementLine);
 
                 string statementName = Current.Text;
@@ -168,6 +168,49 @@ namespace StoryAPI.Scripting
                     declaration.Timeline.Add(ParseTransformPause(statementLine));
                     sawTimedStatement = true;
                     continue;
+                }
+
+                if (Current.Type == TokenType.Keyword && statementName == "repeat")
+                {
+                    Advance();
+                    int? repeatCount = null;
+                    if (Current.Type == TokenType.Number)
+                    {
+                        float countValue = ReadNumber();
+                        if (float.IsNaN(countValue) || float.IsInfinity(countValue) ||
+                            countValue < 1f || countValue > int.MaxValue ||
+                            countValue != (int)countValue)
+                            throw new ScriptSyntaxException(
+                                "ATL repeat count must be a positive integer literal.",
+                                statementLine);
+
+                        repeatCount = (int)countValue;
+                    }
+                    else if (Current.Type != TokenType.Newline &&
+                             Current.Type != TokenType.Dedent &&
+                             Current.Type != TokenType.EndOfFile)
+                    {
+                        throw new ScriptSyntaxException(
+                            "ATL repeat count must be a positive integer literal.",
+                            Current.Line);
+                    }
+
+                    FinishLine();
+                    SkipNewlines();
+
+                    if (declaration.Timeline.Count == 0)
+                        throw new ScriptSyntaxException(
+                            "ATL repeat requires at least one preceding timed statement.",
+                            statementLine);
+
+                    if (Current.Type != TokenType.Dedent && !AtEnd)
+                        throw new ScriptSyntaxException(
+                            "The ATL repeat statement must be the final statement in a transform declaration.",
+                            statementLine);
+
+                    declaration.HasRepeat = true;
+                    declaration.RepeatCount = repeatCount;
+                    break;
                 }
 
                 if (IsAtlInterpolationName(statementName))

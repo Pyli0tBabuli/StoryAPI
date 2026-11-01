@@ -28,7 +28,7 @@ transform stage84_anchor_toggle:
     zoom 0.72
     rotate 35
     pause 0.4
-    linear 0.5 transform_anchor True
+    linear 0.5 transform_anchor True xanchor 0.5 yanchor 0.5
 
 label storyapi_stage84_atl_transform_anchor_smoke:
     scene stage84_background

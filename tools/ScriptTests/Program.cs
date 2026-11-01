@@ -971,7 +971,7 @@ namespace StoryAPI.Tests
                 "    xpos 0.5\n" +
                 "    ypos 0.5\n" +
                 "    rotate 20\n" +
-                "    linear 0.5 transform_anchor False\n" +
+                "    linear 0.5 transform_anchor False xanchor 0.5\n" +
                 "transform transform_anchor_disabled:\n" +
                 "    transform_anchor False\n" +
                 "    xanchor 0\n" +
@@ -987,11 +987,13 @@ namespace StoryAPI.Tests
                   enabled.Properties[0].BooleanValue,
                 "transform_anchor True should be retained as a boolean property.");
             Check(enabled.Interpolations.Count == 1 &&
-                  enabled.Interpolations[0].Properties.Count == 1 &&
+                  enabled.Interpolations[0].Properties.Count == 2 &&
                   enabled.Interpolations[0].Properties[0].Name == "transform_anchor" &&
                   enabled.Interpolations[0].Properties[0].ValueIsBoolean &&
-                  !enabled.Interpolations[0].Properties[0].BooleanValue,
-                "A timed transform_anchor change should remain a discrete boolean.");
+                  !enabled.Interpolations[0].Properties[0].BooleanValue &&
+                  enabled.Interpolations[0].Properties[1].Name == "xanchor" &&
+                  enabled.Interpolations[0].Properties[1].Value == 0.5f,
+                "A timed transform_anchor change can update the child anchor in the same segment.");
 
             var disabled = Require<TransformDeclarationStatement>(statements[1],
                 "Expected an ATL transform with transform_anchor disabled.");

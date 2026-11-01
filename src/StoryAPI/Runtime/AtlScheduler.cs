@@ -147,6 +147,28 @@ namespace StoryAPI.Runtime
             }
         }
 
+        private float EffectiveWidth(GameBridge.TransformState state)
+        {
+            float scale = state != null && (state.HasZoom || state.HasXZoom)
+                ? Mathf.Abs(state.ZoomX) : 1f;
+            return TextureWidth * scale;
+        }
+
+        private float EffectiveHeight(GameBridge.TransformState state)
+        {
+            float scale = state != null && (state.HasZoom || state.HasYZoom)
+                ? Mathf.Abs(state.ZoomY) : 1f;
+            return TextureHeight * scale;
+        }
+
+        private static float EffectiveZoom(GameBridge.TransformState state, bool horizontal)
+        {
+            if (state == null) return 1f;
+            if (horizontal)
+                return state.HasZoom || state.HasXZoom ? Mathf.Abs(state.ZoomX) : 1f;
+            return state.HasZoom || state.HasYZoom ? Mathf.Abs(state.ZoomY) : 1f;
+        }
+
         private static float ResolveAnchorPixels(GameBridge.TransformState state,
             bool horizontal, float displayableSize)
         {
@@ -214,9 +236,11 @@ namespace StoryAPI.Runtime
             if (aHasAnchorX || bHasAnchorX)
             {
                 result.HasXAnchor = true;
+                var anchorStartX = aHasAnchorX ? a : b;
+                var anchorEndX = bHasAnchorX ? b : a;
                 result.AnchorX = Ease(
-                    ResolveAnchorPixels(aHasAnchorX ? a : b, true, TextureWidth),
-                    ResolveAnchorPixels(bHasAnchorX ? b : a, true, TextureWidth), t);
+                    ResolveAnchorPixels(anchorStartX, true, EffectiveWidth(anchorStartX)),
+                    ResolveAnchorPixels(anchorEndX, true, EffectiveWidth(anchorEndX)), t);
                 result.XAnchorIsRelative = false;
             }
 
@@ -225,9 +249,11 @@ namespace StoryAPI.Runtime
             if (aHasAnchorY || bHasAnchorY)
             {
                 result.HasYAnchor = true;
+                var anchorStartY = aHasAnchorY ? a : b;
+                var anchorEndY = bHasAnchorY ? b : a;
                 result.AnchorY = Ease(
-                    ResolveAnchorPixels(aHasAnchorY ? a : b, false, TextureHeight),
-                    ResolveAnchorPixels(bHasAnchorY ? b : a, false, TextureHeight), t);
+                    ResolveAnchorPixels(anchorStartY, false, EffectiveHeight(anchorStartY)),
+                    ResolveAnchorPixels(anchorEndY, false, EffectiveHeight(anchorEndY)), t);
                 result.YAnchorIsRelative = false;
             }
 
@@ -594,16 +620,16 @@ namespace StoryAPI.Runtime
             {
                 frame.HasXAnchor = true;
                 frame.AnchorX = Mathf.LerpUnclamped(
-                    ResolveAnchorPixels(from, true, displayableWidth),
-                    ResolveAnchorPixels(to, true, displayableWidth), t);
+                    ResolveAnchorPixels(from, true, displayableWidth * EffectiveZoom(from, true)),
+                    ResolveAnchorPixels(to, true, displayableWidth * EffectiveZoom(to, true)), t);
                 frame.XAnchorIsRelative = false;
             }
             if (to.HasYAnchor)
             {
                 frame.HasYAnchor = true;
                 frame.AnchorY = Mathf.LerpUnclamped(
-                    ResolveAnchorPixels(from, false, displayableHeight),
-                    ResolveAnchorPixels(to, false, displayableHeight), t);
+                    ResolveAnchorPixels(from, false, displayableHeight * EffectiveZoom(from, false)),
+                    ResolveAnchorPixels(to, false, displayableHeight * EffectiveZoom(to, false)), t);
                 frame.YAnchorIsRelative = false;
             }
             if (to.HasXPos) { frame.HasXPos = true; frame.PosX = Mathf.LerpUnclamped(from.PosX, to.PosX, t); }

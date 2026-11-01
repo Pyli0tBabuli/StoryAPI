@@ -334,7 +334,7 @@ namespace StoryAPI.Scripting
             HashSet<string> initializedProperties,
             HashSet<string> seenProperties)
         {
-            if (HasTransformPropertyValue(seenProperties, property.Name))
+            if (ConflictsWithTransformProperty(seenProperties, property.Name))
                 throw new ScriptSyntaxException(
                     "An ATL interpolation may set each property only once.", property.Line);
 
@@ -346,6 +346,33 @@ namespace StoryAPI.Scripting
 
             MarkTransformProperty(seenProperties, property.Name);
             MarkTransformProperty(initializedProperties, property.Name);
+        }
+
+        private static bool ConflictsWithTransformProperty(
+            HashSet<string> properties, string name)
+        {
+            if (name == "zoom")
+                return properties.Contains("zoom") ||
+                    properties.Contains("xzoom") || properties.Contains("yzoom");
+            if (name == "xzoom")
+                return properties.Contains("zoom") || properties.Contains("xzoom");
+            if (name == "yzoom")
+                return properties.Contains("zoom") || properties.Contains("yzoom");
+            if (name == "xpos")
+                return properties.Contains("xalign") || properties.Contains("xpos");
+            if (name == "xanchor")
+                return properties.Contains("xalign") || properties.Contains("xanchor");
+            if (name == "xalign")
+                return properties.Contains("xalign") ||
+                    properties.Contains("xpos") || properties.Contains("xanchor");
+            if (name == "ypos")
+                return properties.Contains("yalign") || properties.Contains("ypos");
+            if (name == "yanchor")
+                return properties.Contains("yalign") || properties.Contains("yanchor");
+            if (name == "yalign")
+                return properties.Contains("yalign") ||
+                    properties.Contains("ypos") || properties.Contains("yanchor");
+            return properties.Contains(name);
         }
 
         private static bool HasTransformPropertyValue(

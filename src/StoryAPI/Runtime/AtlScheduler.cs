@@ -779,8 +779,10 @@ namespace StoryAPI.Runtime
                 frame.AnchorX = Mathf.LerpUnclamped(fromAnchorX, toAnchorX, t);
                 if (complete && endTransformAnchor != startTransformAnchor)
                 {
+                    float targetAnchorX, targetAnchorY;
                     ResolveAnchorPixels(to, displayableWidth, displayableHeight,
-                        endTransformAnchor, out frame.AnchorX, out var ignoredY);
+                        endTransformAnchor, out targetAnchorX, out targetAnchorY);
+                    frame.AnchorX = targetAnchorX;
                 }
                 frame.XAnchorIsRelative = false;
             }
@@ -790,8 +792,10 @@ namespace StoryAPI.Runtime
                 frame.AnchorY = Mathf.LerpUnclamped(fromAnchorY, toAnchorY, t);
                 if (complete && endTransformAnchor != startTransformAnchor)
                 {
+                    float targetAnchorX, targetAnchorY;
                     ResolveAnchorPixels(to, displayableWidth, displayableHeight,
-                        endTransformAnchor, out var ignoredX, out frame.AnchorY);
+                        endTransformAnchor, out targetAnchorX, out targetAnchorY);
+                    frame.AnchorY = targetAnchorY;
                 }
                 frame.YAnchorIsRelative = false;
             }

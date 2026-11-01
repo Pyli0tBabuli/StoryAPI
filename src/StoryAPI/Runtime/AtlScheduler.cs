@@ -195,7 +195,7 @@ namespace StoryAPI.Runtime
         /// A property the end does not mention keeps the value it had at the start, which
         /// is how a transform that only moves a picture leaves its size alone.
         /// </summary>
-        public static GameBridge.TransformState Lerp(GameBridge.TransformState from,
+        public GameBridge.TransformState Lerp(GameBridge.TransformState from,
             GameBridge.TransformState to, float t)
         {
             var result = new GameBridge.TransformState();

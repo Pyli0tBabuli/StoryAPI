@@ -386,7 +386,8 @@ namespace StoryAPI.Runtime
 
         private static float Warp(string easeName, float t)
         {
-            switch ((easeName ?? "linear").ToLowerInvariant())
+            string name = (easeName ?? "linear").ToLowerInvariant();
+            switch (name)
             {
                 case "ease":
                     return 0.5f - Mathf.Cos(Mathf.PI * t) * 0.5f;
@@ -395,27 +396,105 @@ namespace StoryAPI.Runtime
                 case "easeout":
                     return 1f - Mathf.Cos(t * Mathf.PI * 0.5f);
                 default:
+                    // Ren'Py intentionally uses the opposite naming convention from
+                    // the familiar Penner "in"/"out" labels: easein_* maps to
+                    // easings.net easeOut_*, while easeout_* maps to easeIn_*.
+                    if (name.StartsWith("easein_", StringComparison.Ordinal))
+                        return 1f - EaseOutPenner(name.Substring(7), 1f - t);
+                    if (name.StartsWith("easeout_", StringComparison.Ordinal))
+                        return EaseOutPenner(name.Substring(8), t);
+                    if (name.StartsWith("ease_", StringComparison.Ordinal))
+                        return EaseInOutPenner(name.Substring(5), t);
                     return t;
             }
+        }
+
+        /// <summary>
+        /// Ren'Py's easeout_* curves correspond to the standard Penner ease-in
+        /// curves. The mirroring for easein_* and the symmetric ease_* forms is
+        /// applied by the callers above and below.
+        /// </summary>
+        private static float EaseOutPenner(string family, float t)
+        {
+            switch (family)
+            {
+                case "quad": return t * t;
+                case "cubic": return t * t * t;
+                case "quart": return t * t * t * t;
+                case "quint": return t * t * t * t * t;
+                case "expo": return Mathf.Pow(2f, 10f * (t - 1f));
+                case "circ": return 1f - Mathf.Sqrt(1f - t * t);
+                case "back":
+                {
+                    const float overshoot = 1.7015f;
+                    return t * t * ((overshoot + 1f) * t - overshoot);
+                }
+                case "elastic":
+                    return 1f - EaseOutElasticPenner(1f - t);
+                case "bounce":
+                    return 1f - EaseOutBouncePenner(1f - t);
+                default:
+                    return t;
+            }
+        }
+
+        private static float EaseInOutPenner(string family, float t)
+        {
+            if (t < 0.5f)
+                return EaseOutPenner(family, t * 2f) * 0.5f;
+
+            return 1f - EaseOutPenner(family, (1f - t) * 2f) * 0.5f;
+        }
+
+        // This is the Penner "ease-out" elastic curve used as Ren'Py easein_elastic.
+        private static float EaseOutElasticPenner(float t)
+        {
+            const float period = 0.3f;
+            return 1f + Mathf.Pow(2f, -10f * t) *
+                Mathf.Sin((t - period * 0.25f) * (2f * Mathf.PI) / period);
+        }
+
+        // This is the Penner "ease-out" bounce curve used as Ren'Py easein_bounce.
+        private static float EaseOutBouncePenner(float t)
+        {
+            const float period = 2.75f;
+            float scale = period * period;
+
+            if (t < 1f / period)
+                return scale * t * t;
+            if (t < 2f / period)
+                return 1f + scale * (
+                    Mathf.Pow(t - 1.5f / period, 2f) -
+                    Mathf.Pow(-0.5f / period, 2f));
+            if (t < 2.5f / period)
+                return 1f + scale * (
+                    Mathf.Pow(t - 2.25f / period, 2f) -
+                    Mathf.Pow(-0.25f / period, 2f));
+
+            return 1f + scale * (
+                Mathf.Pow(t - 2.625f / period, 2f) -
+                Mathf.Pow(-0.125f / period, 2f));
         }
 
         private static void Interpolate(GameBridge.TransformState frame,
             GameBridge.TransformState from, GameBridge.TransformState to, float t)
         {
-            if (to.HasXAlign) { frame.HasXAlign = true; frame.AlignX = Mathf.Lerp(from.AlignX, to.AlignX, t); }
-            if (to.HasYAlign) { frame.HasYAlign = true; frame.AlignY = Mathf.Lerp(from.AlignY, to.AlignY, t); }
-            if (to.HasXPos) { frame.HasXPos = true; frame.PosX = Mathf.Lerp(from.PosX, to.PosX, t); }
-            if (to.HasYPos) { frame.HasYPos = true; frame.PosY = Mathf.Lerp(from.PosY, to.PosY, t); }
-            if (to.HasXOffset) { frame.HasXOffset = true; frame.OffsetX = Mathf.Lerp(from.OffsetX, to.OffsetX, t); }
-            if (to.HasYOffset) { frame.HasYOffset = true; frame.OffsetY = Mathf.Lerp(from.OffsetY, to.OffsetY, t); }
+            // Back, elastic, and bounce warpers intentionally overshoot [0, 1].
+            // Unclamped interpolation preserves those values instead of clipping them.
+            if (to.HasXAlign) { frame.HasXAlign = true; frame.AlignX = Mathf.LerpUnclamped(from.AlignX, to.AlignX, t); }
+            if (to.HasYAlign) { frame.HasYAlign = true; frame.AlignY = Mathf.LerpUnclamped(from.AlignY, to.AlignY, t); }
+            if (to.HasXPos) { frame.HasXPos = true; frame.PosX = Mathf.LerpUnclamped(from.PosX, to.PosX, t); }
+            if (to.HasYPos) { frame.HasYPos = true; frame.PosY = Mathf.LerpUnclamped(from.PosY, to.PosY, t); }
+            if (to.HasXOffset) { frame.HasXOffset = true; frame.OffsetX = Mathf.LerpUnclamped(from.OffsetX, to.OffsetX, t); }
+            if (to.HasYOffset) { frame.HasYOffset = true; frame.OffsetY = Mathf.LerpUnclamped(from.OffsetY, to.OffsetY, t); }
             if (to.HasZoom)
             {
                 frame.HasZoom = true;
-                frame.ZoomX = Mathf.Lerp(from.ZoomX, to.ZoomX, t);
-                frame.ZoomY = Mathf.Lerp(from.ZoomY, to.ZoomY, t);
+                frame.ZoomX = Mathf.LerpUnclamped(from.ZoomX, to.ZoomX, t);
+                frame.ZoomY = Mathf.LerpUnclamped(from.ZoomY, to.ZoomY, t);
             }
-            if (to.HasAlpha) { frame.HasAlpha = true; frame.Alpha = Mathf.Lerp(from.Alpha, to.Alpha, t); }
-            if (to.HasRotate) { frame.HasRotate = true; frame.Rotate = Mathf.Lerp(from.Rotate, to.Rotate, t); }
+            if (to.HasAlpha) { frame.HasAlpha = true; frame.Alpha = Mathf.LerpUnclamped(from.Alpha, to.Alpha, t); }
+            if (to.HasRotate) { frame.HasRotate = true; frame.Rotate = Mathf.LerpUnclamped(from.Rotate, to.Rotate, t); }
         }
 
         private static GameBridge.TransformState Merge(GameBridge.TransformState current,

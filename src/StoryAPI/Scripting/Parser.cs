@@ -378,8 +378,35 @@ namespace StoryAPI.Scripting
 
         private static bool IsAtlInterpolationName(string name)
         {
-            return name == "linear" || name == "ease" ||
-                   name == "easein" || name == "easeout";
+            if (name == "linear" || name == "ease" ||
+                name == "easein" || name == "easeout")
+                return true;
+
+            string family;
+            if (name.StartsWith("easein_", StringComparison.Ordinal))
+                family = name.Substring(7);
+            else if (name.StartsWith("easeout_", StringComparison.Ordinal))
+                family = name.Substring(8);
+            else if (name.StartsWith("ease_", StringComparison.Ordinal))
+                family = name.Substring(5);
+            else
+                return false;
+
+            switch (family)
+            {
+                case "back":
+                case "bounce":
+                case "circ":
+                case "cubic":
+                case "elastic":
+                case "expo":
+                case "quad":
+                case "quart":
+                case "quint":
+                    return true;
+                default:
+                    return false;
+            }
         }
 
         private static bool IsSupportedStaticTransformProperty(string property)

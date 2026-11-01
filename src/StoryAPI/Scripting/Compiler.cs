@@ -663,19 +663,39 @@ namespace StoryAPI.Scripting
                 float value = property.Value;
                 switch (property.Name)
                 {
-                    case "xpos": state.HasXPos = true; state.PosX = value; break;
-                    case "ypos": state.HasYPos = true; state.PosY = value; break;
+                    case "xpos":
+                        state.HasXPos = true; state.PosX = value;
+                        state.XPosIsRelative = property.ValueIsRelative;
+                        state.HasXAlign = false; break;
+                    case "ypos":
+                        state.HasYPos = true; state.PosY = value;
+                        state.YPosIsRelative = property.ValueIsRelative;
+                        state.HasYAlign = false; break;
                     case "xanchor":
                         state.HasXAnchor = true; state.AnchorX = value;
                         state.XAnchorIsRelative = property.ValueIsRelative; break;
                     case "yanchor":
                         state.HasYAnchor = true; state.AnchorY = value;
                         state.YAnchorIsRelative = property.ValueIsRelative; break;
+                    case "xcenter":
+                        state.HasXPos = true; state.PosX = value;
+                        state.XPosIsRelative = property.ValueIsRelative;
+                        state.HasXAlign = false;
+                        state.HasXAnchor = true; state.AnchorX = 0.5f;
+                        state.XAnchorIsRelative = true; break;
+                    case "ycenter":
+                        state.HasYPos = true; state.PosY = value;
+                        state.YPosIsRelative = property.ValueIsRelative;
+                        state.HasYAlign = false;
+                        state.HasYAnchor = true; state.AnchorY = 0.5f;
+                        state.YAnchorIsRelative = true; break;
                     case "xalign":
+                        state.HasXPos = false;
                         state.HasXAlign = true; state.AlignX = value;
                         state.HasXAnchor = true; state.AnchorX = value;
                         state.XAnchorIsRelative = true; break;
                     case "yalign":
+                        state.HasYPos = false;
                         state.HasYAlign = true; state.AlignY = value;
                         state.HasYAnchor = true; state.AnchorY = value;
                         state.YAnchorIsRelative = true; break;

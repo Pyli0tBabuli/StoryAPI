@@ -27,7 +27,7 @@ label storyapi_stage81_atl_subpixel_smoke:
     show stage81_sprite as stage81_toggle at stage81_subpixel_toggle
     _ "STORYAPI_STAGE81_DEFAULT_SUBPIXEL_REACHED"
     _ "STORYAPI_STAGE81_ENABLED_SUBPIXEL_REACHED"
-    pause 1.5
+    pause 1.8
     _ "STORYAPI_STAGE81_INTERPOLATION_TOGGLE_REACHED"
     _ "STORYAPI_RENPY_ATL_SUBPIXEL_PASS"
     return

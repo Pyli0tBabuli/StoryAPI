@@ -209,7 +209,7 @@ namespace StoryAPI.Runtime
         /// is how a transform that only moves a picture leaves its size alone.
         /// </summary>
         public GameBridge.TransformState Lerp(GameBridge.TransformState from,
-            GameBridge.TransformState to, float t)
+            GameBridge.TransformState to, float t, bool complete = false)
         {
             var result = new GameBridge.TransformState();
 

@@ -182,8 +182,8 @@ the similarly named standard Penner directions. Back, elastic, and bounce curves
 overshoot their target; StoryAPI preserves that motion with unclamped interpolation.
 Interpolations run sequentially in seconds and accept inline target properties or an
 indented property block. Every animated property must have an earlier value in the
-same transform, so its starting value is explicit. Boolean `subpixel` targets are
-discrete: a timed change takes effect when that interpolation finishes.
+same transform, so its starting value is explicit. Boolean `subpixel` and `rotate_pad`
+targets are discrete: a timed change takes effect when that interpolation finishes.
 
 `rotate_pad True` (the default) keeps a square layout area whose side is the diagonal
 of the scaled sprite, so its layout size stays constant while it rotates. `rotate_pad False`

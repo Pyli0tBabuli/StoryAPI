@@ -782,6 +782,11 @@ namespace StoryAPI.Runtime
             }
             if (target.HasAlpha) { result.HasAlpha = true; result.Alpha = target.Alpha; }
             if (target.HasRotate) { result.HasRotate = true; result.Rotate = target.Rotate; }
+            if (target.HasSubpixel)
+            {
+                result.HasSubpixel = true;
+                result.Subpixel = target.Subpixel;
+            }
             return result;
         }
 

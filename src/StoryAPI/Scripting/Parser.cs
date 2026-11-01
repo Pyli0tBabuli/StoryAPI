@@ -473,6 +473,12 @@ namespace StoryAPI.Scripting
                 valueIsBoolean = true;
                 value = booleanValue ? 1f : 0f;
             }
+            else if (property == "fps" && Current.Text == "None")
+            {
+                // Ren'Py's None value disables frame-rate quantization.
+                Advance();
+                value = 0f;
+            }
             else
             {
                 value = ReadNumber();

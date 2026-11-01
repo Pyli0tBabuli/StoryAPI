@@ -1106,8 +1106,7 @@ namespace StoryAPI.Runtime
                 }
 
                 if (state.HasYAlign || state.HasYPos || state.HasYOffset || state.HasYAnchor ||
-                    state.HasSubpixel || state.HasRotate || state.HasRotatePad ||
-                    state.HasTransformAnchor)
+                    state.HasSubpixel || state.HasRotate || state.HasRotatePad)
                 {
                     float top = -position.y + ScreenHeight * 0.5f - heightPx * 0.5f;
                     float anchorPixels = anchorPixelsY;

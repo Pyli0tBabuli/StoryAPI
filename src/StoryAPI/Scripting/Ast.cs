@@ -76,6 +76,12 @@ namespace StoryAPI.Scripting
     {
         public string Name { get; set; }
         public float Value { get; set; }
+
+        /// <summary>
+        /// Position-valued anchor properties use floating point literals as fractions
+        /// of the displayable size and integer literals as absolute pixels.
+        /// </summary>
+        public bool ValueIsRelative { get; set; }
     }
 
     /// <summary>A character speaking. Tag empty means narration.</summary>

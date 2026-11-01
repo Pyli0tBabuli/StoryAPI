@@ -420,6 +420,9 @@ namespace StoryAPI.Runtime
         private int _segmentIndex;
         private float _elapsed;
         private bool _waitingForZeroPauseFrame;
+        private readonly float _fps;
+        private float _wallClockElapsed;
+        private float _timebaseElapsed;
 
         public string Container { get; }
         public string Layer { get; }
@@ -436,6 +439,7 @@ namespace StoryAPI.Runtime
             _current = Copy(initial);
             _segments = new List<AtlScriptSegment>(segments);
             _repeatCount = repeatCount;
+            _fps = initial != null && initial.HasFps ? initial.Fps : 0f;
         }
 
         public void Advance(float delta)
@@ -448,6 +452,17 @@ namespace StoryAPI.Runtime
             }
 
             float remaining = Mathf.Max(0f, delta);
+            if (_fps > 0f)
+            {
+                // Ren'Py rounds transform time down to the nearest frame interval.
+                // Accumulating wall-clock time keeps the frame grid continuous across
+                // interpolation, pause, and repeat boundaries.
+                _wallClockElapsed += remaining;
+                float quantizedTime = Mathf.Floor(_wallClockElapsed * _fps + 0.00001f) / _fps;
+                remaining = Mathf.Max(0f, quantizedTime - _timebaseElapsed);
+                _timebaseElapsed = quantizedTime;
+            }
+
             while (true)
             {
                 if (_segmentIndex >= _segments.Count)
@@ -869,6 +884,7 @@ namespace StoryAPI.Runtime
                 HasRotate = source.HasRotate, Rotate = source.Rotate,
                 HasRotatePad = source.HasRotatePad, RotatePad = source.RotatePad,
                 HasSubpixel = source.HasSubpixel, Subpixel = source.Subpixel,
+                HasFps = source.HasFps, Fps = source.Fps,
             };
         }
     }

@@ -93,6 +93,11 @@ namespace StoryAPI.Runtime
             // bounds negative.
             float width = TextureWidth * Mathf.Abs(zoomX);
             float height = TextureHeight * Mathf.Abs(zoomY);
+            float rotationDegrees = state.HasRotate ? state.Rotate : -Renderer.localEulerAngles.z;
+            bool hasRotation = state.HasRotate ||
+                Mathf.Abs(Mathf.DeltaAngle(0f, rotationDegrees)) > 0.001f;
+            ArtInjector.GetDisplayableDimensions(width, height, hasRotation,
+                rotationDegrees, state.RotatePad, out width, out height);
 
             float anchorX = ResolveAnchorPixels(state, true, width);
             float anchorY = ResolveAnchorPixels(state, false, height);
@@ -147,6 +152,8 @@ namespace StoryAPI.Runtime
                 left + width * 0.5f - ArtInjector.ScreenWidth * 0.5f,
                 -(top + height * 0.5f - ArtInjector.ScreenHeight * 0.5f),
                 0f);
+            if (state.HasRotate)
+                Renderer.localRotation = Quaternion.Euler(0f, 0f, -state.Rotate);
 
             if (state.HasAlpha)
             {
@@ -162,16 +169,33 @@ namespace StoryAPI.Runtime
 
         private float EffectiveWidth(GameBridge.TransformState state)
         {
-            float scale = state != null && (state.HasZoom || state.HasXZoom)
-                ? Mathf.Abs(state.ZoomX) : 1f;
-            return TextureWidth * scale;
+            float width, height;
+            EffectiveDimensions(state, out width, out height);
+            return width;
         }
 
         private float EffectiveHeight(GameBridge.TransformState state)
         {
-            float scale = state != null && (state.HasZoom || state.HasYZoom)
+            float width, height;
+            EffectiveDimensions(state, out width, out height);
+            return height;
+        }
+
+        private void EffectiveDimensions(GameBridge.TransformState state,
+            out float width, out float height)
+        {
+            float scaleX = state != null && (state.HasZoom || state.HasXZoom)
+                ? Mathf.Abs(state.ZoomX) : 1f;
+            float scaleY = state != null && (state.HasZoom || state.HasYZoom)
                 ? Mathf.Abs(state.ZoomY) : 1f;
-            return TextureHeight * scale;
+            width = TextureWidth * scaleX;
+            height = TextureHeight * scaleY;
+            float rotationDegrees = state != null && state.HasRotate
+                ? state.Rotate : -Renderer.localEulerAngles.z;
+            bool hasRotation = (state != null && state.HasRotate) ||
+                Mathf.Abs(Mathf.DeltaAngle(0f, rotationDegrees)) > 0.001f;
+            ArtInjector.GetDisplayableDimensions(width, height, hasRotation,
+                rotationDegrees, state == null || state.RotatePad, out width, out height);
         }
 
         private static float EffectiveZoom(GameBridge.TransformState state, bool horizontal)
@@ -306,6 +330,14 @@ namespace StoryAPI.Runtime
                 result.HasRotate = true;
                 result.Rotate = Ease(a.HasRotate ? a.Rotate : b.Rotate,
                                      b.HasRotate ? b.Rotate : a.Rotate, t);
+            }
+
+            if (a.HasRotatePad || b.HasRotatePad)
+            {
+                result.HasRotatePad = true;
+                bool startRotatePad = a.HasRotatePad ? a.RotatePad : true;
+                bool endRotatePad = b.HasRotatePad ? b.RotatePad : startRotatePad;
+                result.RotatePad = complete ? endRotatePad : startRotatePad;
             }
 
             if (a.HasXOffset || b.HasXOffset)
@@ -492,7 +524,8 @@ namespace StoryAPI.Runtime
                     float targetWidth, targetHeight;
                     GetTargetDimensions(out targetWidth, out targetHeight);
                     Interpolate(frame, _current, segment.Target,
-                        Warp(segment.EaseName, t), targetWidth, targetHeight);
+                        Warp(segment.EaseName, t), targetWidth, targetHeight,
+                        _elapsed >= duration);
                     ArtInjector.ApplyStaticTransform(Container, Layer, frame, false);
                 }
 
@@ -676,10 +709,21 @@ namespace StoryAPI.Runtime
 
         private static void Interpolate(GameBridge.TransformState frame,
             GameBridge.TransformState from, GameBridge.TransformState to, float t,
-            float displayableWidth, float displayableHeight)
+            float displayableWidth, float displayableHeight, bool complete)
         {
             // Back, elastic, and bounce warpers intentionally overshoot [0, 1].
             // Unclamped interpolation preserves those values instead of clipping them.
+            float fromWidth, fromHeight, toWidth, toHeight;
+            ArtInjector.GetDisplayableDimensions(
+                displayableWidth * EffectiveZoom(from, true),
+                displayableHeight * EffectiveZoom(from, false),
+                from.HasRotate, from.Rotate, from.RotatePad,
+                out fromWidth, out fromHeight);
+            ArtInjector.GetDisplayableDimensions(
+                displayableWidth * EffectiveZoom(to, true),
+                displayableHeight * EffectiveZoom(to, false),
+                to.HasRotate, to.Rotate, to.RotatePad,
+                out toWidth, out toHeight);
             if (to.HasXAlign || to.HasXPos)
             {
                 frame.HasXAlign = false;
@@ -702,16 +746,16 @@ namespace StoryAPI.Runtime
             {
                 frame.HasXAnchor = true;
                 frame.AnchorX = Mathf.LerpUnclamped(
-                    ResolveAnchorPixels(from, true, displayableWidth * EffectiveZoom(from, true)),
-                    ResolveAnchorPixels(to, true, displayableWidth * EffectiveZoom(to, true)), t);
+                    ResolveAnchorPixels(from, true, fromWidth),
+                    ResolveAnchorPixels(to, true, toWidth), t);
                 frame.XAnchorIsRelative = false;
             }
             if (to.HasYAnchor)
             {
                 frame.HasYAnchor = true;
                 frame.AnchorY = Mathf.LerpUnclamped(
-                    ResolveAnchorPixels(from, false, displayableHeight * EffectiveZoom(from, false)),
-                    ResolveAnchorPixels(to, false, displayableHeight * EffectiveZoom(to, false)), t);
+                    ResolveAnchorPixels(from, false, fromHeight),
+                    ResolveAnchorPixels(to, false, toHeight), t);
                 frame.YAnchorIsRelative = false;
             }
             if (to.HasXOffset) { frame.HasXOffset = true; frame.OffsetX = Mathf.LerpUnclamped(from.OffsetX, to.OffsetX, t); }
@@ -728,6 +772,12 @@ namespace StoryAPI.Runtime
             }
             if (to.HasAlpha) { frame.HasAlpha = true; frame.Alpha = Mathf.LerpUnclamped(from.Alpha, to.Alpha, t); }
             if (to.HasRotate) { frame.HasRotate = true; frame.Rotate = Mathf.LerpUnclamped(from.Rotate, to.Rotate, t); }
+            if (to.HasRotatePad)
+            {
+                frame.HasRotatePad = true;
+                bool startRotatePad = from.HasRotatePad ? from.RotatePad : true;
+                frame.RotatePad = complete ? to.RotatePad : startRotatePad;
+            }
         }
 
         private static GameBridge.TransformState Merge(GameBridge.TransformState current,
@@ -782,6 +832,11 @@ namespace StoryAPI.Runtime
             }
             if (target.HasAlpha) { result.HasAlpha = true; result.Alpha = target.Alpha; }
             if (target.HasRotate) { result.HasRotate = true; result.Rotate = target.Rotate; }
+            if (target.HasRotatePad)
+            {
+                result.HasRotatePad = true;
+                result.RotatePad = target.RotatePad;
+            }
             if (target.HasSubpixel)
             {
                 result.HasSubpixel = true;
@@ -812,6 +867,7 @@ namespace StoryAPI.Runtime
                 ZoomX = source.ZoomX, ZoomY = source.ZoomY,
                 HasAlpha = source.HasAlpha, Alpha = source.Alpha,
                 HasRotate = source.HasRotate, Rotate = source.Rotate,
+                HasRotatePad = source.HasRotatePad, RotatePad = source.RotatePad,
                 HasSubpixel = source.HasSubpixel, Subpixel = source.Subpixel,
             };
         }

@@ -788,7 +788,7 @@ namespace StoryAPI.Tests
                 "Timed anchor targets must preserve their position units.");
 
             var aligned = Require<TransformDeclarationStatement>(statements[1],
-                "Expected xalign/y al ign to initialize anchor values.".Replace(" ", ""));
+                "Expected xalign and yalign to initialize anchor values.");
             Check(aligned.Interpolations.Count == 1 &&
                   aligned.Interpolations[0].Properties[0].Name == "xanchor",
                 "xalign/yalign should initialize the corresponding anchors for later interpolation.");

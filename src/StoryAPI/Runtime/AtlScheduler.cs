@@ -581,6 +581,14 @@ namespace StoryAPI.Runtime
             }
         }
 
+        private static float EffectiveZoom(GameBridge.TransformState state, bool horizontal)
+        {
+            if (state == null) return 1f;
+            if (horizontal)
+                return state.HasZoom || state.HasXZoom ? Mathf.Abs(state.ZoomX) : 1f;
+            return state.HasZoom || state.HasYZoom ? Mathf.Abs(state.ZoomY) : 1f;
+        }
+
         private static float ResolveAnchorPixels(GameBridge.TransformState state,
             bool horizontal, float displayableSize)
         {

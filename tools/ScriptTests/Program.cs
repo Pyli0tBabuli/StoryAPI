@@ -30,6 +30,7 @@ namespace StoryAPI.Tests
             Run("ATL Penner warpers", TestAtlPennerWarperStatements);
             Run("ATL independent axis zoom", TestAtlAxisZoomProperties);
             Run("ATL anchor properties", TestAtlAnchorProperties);
+            Run("ATL center properties", TestAtlCenterProperties);
             Run("sprite alias and position", TestSpriteAliasAndPosition);
             Run("define/default scalar declarations", TestVariableDeclarations);
             Run("runtime scalar initializer expressions", TestRuntimeExpressionDeclarations);
@@ -820,6 +821,78 @@ namespace StoryAPI.Tests
                 "transform anchor_align_conflict:\n" +
                 "    xanchor 0.5\n" +
                 "    linear 0.25 xanchor 0.8 xalign 0.2\n",
+                "only once");
+        }
+
+        private static void TestAtlCenterProperties()
+        {
+            var statements = Parse(
+                "transform center_units:\n" +
+                "    xcenter 0.25\n" +
+                "    ycenter 32\n" +
+                "    linear 0.25 xcenter 0.75\n" +
+                "    ease 0.25 ycenter 240\n" +
+                "transform center_from_components:\n" +
+                "    xpos 0.5\n" +
+                "    xanchor 0.5\n" +
+                "    ypos 360\n" +
+                "    yanchor 0.5\n" +
+                "    linear 0.25 xcenter 0.75\n" +
+                "    linear 0.25 ycenter 0.25\n" +
+                "transform center_from_alignment:\n" +
+                "    xalign 0.5\n" +
+                "    yalign 0.5\n" +
+                "    linear 0.25 xcenter 0.75\n" +
+                "    linear 0.25 ycenter 0.25\n");
+
+            var units = Require<TransformDeclarationStatement>(statements[0],
+                "Expected ATL center properties with pixel and relative position units.");
+            Check(units.Properties.Count == 2 &&
+                  units.Properties[0].Name == "xcenter" &&
+                  units.Properties[0].Value == 0.25f &&
+                  units.Properties[0].ValueIsRelative &&
+                  units.Properties[1].Name == "ycenter" &&
+                  units.Properties[1].Value == 32f &&
+                  !units.Properties[1].ValueIsRelative,
+                "Floating-point center positions must remain relative and integer positions absolute.");
+            Check(units.Interpolations.Count == 2 &&
+                  units.Interpolations[0].Properties[0].Name == "xcenter" &&
+                  units.Interpolations[0].Properties[0].ValueIsRelative &&
+                  units.Interpolations[1].Properties[0].Name == "ycenter" &&
+                  !units.Interpolations[1].Properties[0].ValueIsRelative,
+                "Timed center targets must retain their position units.");
+
+            var components = Require<TransformDeclarationStatement>(statements[1],
+                "Expected xcenter/ycenter to accept equivalent position and anchor initialization.");
+            Check(components.Interpolations.Count == 2 &&
+                  components.Interpolations[0].Properties[0].Name == "xcenter" &&
+                  components.Interpolations[1].Properties[0].Name == "ycenter",
+                "Separate position and anchor values must initialize center interpolation.");
+
+            var aligned = Require<TransformDeclarationStatement>(statements[2],
+                "Expected xalign/yalign to initialize center position and anchor values.");
+            Check(aligned.Interpolations.Count == 2,
+                "Alignment must initialize the corresponding center property.");
+
+            ExpectSyntaxError(
+                "transform center_without_anchor:\n" +
+                "    xpos 0.5\n" +
+                "    linear 0.25 xcenter 0.75\n",
+                "requires an earlier value");
+            ExpectSyntaxError(
+                "transform duplicate_center:\n" +
+                "    xcenter 0.5\n" +
+                "    linear 0.25 xcenter 0.75 xcenter 0.9\n",
+                "only once");
+            ExpectSyntaxError(
+                "transform center_position_conflict:\n" +
+                "    xcenter 0.5\n" +
+                "    linear 0.25 xcenter 0.8 xpos 0.2\n",
+                "only once");
+            ExpectSyntaxError(
+                "transform center_anchor_conflict:\n" +
+                "    ycenter 0.5\n" +
+                "    linear 0.25 ycenter 0.8 yanchor 0.2\n",
                 "only once");
         }
 

@@ -358,6 +358,9 @@ namespace StoryAPI.Scripting
                 return properties.Contains("zoom") || properties.Contains("xzoom");
             if (name == "yzoom")
                 return properties.Contains("zoom") || properties.Contains("yzoom");
+            if (name == "xcenter")
+                return properties.Contains("xalign") ||
+                    properties.Contains("xpos") || properties.Contains("xanchor");
             if (name == "xpos")
                 return properties.Contains("xalign") || properties.Contains("xpos");
             if (name == "xanchor")
@@ -365,6 +368,9 @@ namespace StoryAPI.Scripting
             if (name == "xalign")
                 return properties.Contains("xalign") ||
                     properties.Contains("xpos") || properties.Contains("xanchor");
+            if (name == "ycenter")
+                return properties.Contains("yalign") ||
+                    properties.Contains("ypos") || properties.Contains("yanchor");
             if (name == "ypos")
                 return properties.Contains("yalign") || properties.Contains("ypos");
             if (name == "yanchor")
@@ -385,6 +391,9 @@ namespace StoryAPI.Scripting
                 return properties.Contains("zoom") || properties.Contains("xzoom");
             if (name == "yzoom")
                 return properties.Contains("zoom") || properties.Contains("yzoom");
+            if (name == "xcenter")
+                return properties.Contains("xcenter") ||
+                    (properties.Contains("xpos") && properties.Contains("xanchor"));
             if (name == "xpos")
                 return properties.Contains("xalign") || properties.Contains("xpos");
             if (name == "xanchor")
@@ -392,6 +401,9 @@ namespace StoryAPI.Scripting
             if (name == "xalign")
                 return properties.Contains("xalign") ||
                     (properties.Contains("xpos") && properties.Contains("xanchor"));
+            if (name == "ycenter")
+                return properties.Contains("ycenter") ||
+                    (properties.Contains("ypos") && properties.Contains("yanchor"));
             if (name == "ypos")
                 return properties.Contains("yalign") || properties.Contains("ypos");
             if (name == "yanchor")
@@ -410,12 +422,12 @@ namespace StoryAPI.Scripting
                 properties.Add("xzoom");
                 properties.Add("yzoom");
             }
-            else if (name == "xalign")
+            else if (name == "xalign" || name == "xcenter")
             {
                 properties.Add("xpos");
                 properties.Add("xanchor");
             }
-            else if (name == "yalign")
+            else if (name == "yalign" || name == "ycenter")
             {
                 properties.Add("ypos");
                 properties.Add("yanchor");
@@ -510,6 +522,8 @@ namespace StoryAPI.Scripting
                 case "yzoom":
                 case "xanchor":
                 case "yanchor":
+                case "xcenter":
+                case "ycenter":
                 case "rotate":
                     return true;
                 default:

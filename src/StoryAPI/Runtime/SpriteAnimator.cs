@@ -1001,7 +1001,12 @@ namespace StoryAPI.Runtime
                         : (state.HasXAlign ? state.AlignX * widthPx : 0f);
 
                     if (state.HasXAlign) left = state.AlignX * ScreenWidth - anchorPixels;
-                    else if (state.HasXPos) left = state.PosX - anchorPixels;
+                    else if (state.HasXPos)
+                    {
+                        float positionX = state.XPosIsRelative
+                            ? state.PosX * ScreenWidth : state.PosX;
+                        left = positionX - anchorPixels;
+                    }
                     else if (state.HasXAnchor) left -= anchorPixels;
 
                     if (state.HasXOffset) left += state.OffsetX;
@@ -1016,7 +1021,12 @@ namespace StoryAPI.Runtime
                         : (state.HasYAlign ? state.AlignY * heightPx : 0f);
 
                     if (state.HasYAlign) top = state.AlignY * ScreenHeight - anchorPixels;
-                    else if (state.HasYPos) top = state.PosY - anchorPixels;
+                    else if (state.HasYPos)
+                    {
+                        float positionY = state.YPosIsRelative
+                            ? state.PosY * ScreenHeight : state.PosY;
+                        top = positionY - anchorPixels;
+                    }
                     else if (state.HasYAnchor) top -= anchorPixels;
 
                     if (state.HasYOffset) top += state.OffsetY;

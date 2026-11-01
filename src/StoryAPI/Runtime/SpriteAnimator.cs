@@ -993,7 +993,8 @@ namespace StoryAPI.Runtime
                 }
                 Vector3 position = basePosition;
 
-                if (state.HasXAlign || state.HasXPos || state.HasXOffset || state.HasXAnchor)
+                if (state.HasXAlign || state.HasXPos || state.HasXOffset || state.HasXAnchor ||
+                    state.HasSubpixel)
                 {
                     float left = position.x + ScreenWidth * 0.5f - widthPx * 0.5f;
                     float anchorPixels = state.HasXAnchor

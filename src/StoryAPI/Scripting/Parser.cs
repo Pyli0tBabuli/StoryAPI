@@ -358,6 +358,20 @@ namespace StoryAPI.Scripting
                 return properties.Contains("zoom") || properties.Contains("xzoom");
             if (name == "yzoom")
                 return properties.Contains("zoom") || properties.Contains("yzoom");
+            if (name == "xpos")
+                return properties.Contains("xalign") || properties.Contains("xpos");
+            if (name == "xanchor")
+                return properties.Contains("xalign") || properties.Contains("xanchor");
+            if (name == "xalign")
+                return properties.Contains("xalign") ||
+                    (properties.Contains("xpos") && properties.Contains("xanchor"));
+            if (name == "ypos")
+                return properties.Contains("yalign") || properties.Contains("ypos");
+            if (name == "yanchor")
+                return properties.Contains("yalign") || properties.Contains("yanchor");
+            if (name == "yalign")
+                return properties.Contains("yalign") ||
+                    (properties.Contains("ypos") && properties.Contains("yanchor"));
             return properties.Contains(name);
         }
 
@@ -368,6 +382,16 @@ namespace StoryAPI.Scripting
             {
                 properties.Add("xzoom");
                 properties.Add("yzoom");
+            }
+            else if (name == "xalign")
+            {
+                properties.Add("xpos");
+                properties.Add("xanchor");
+            }
+            else if (name == "yalign")
+            {
+                properties.Add("ypos");
+                properties.Add("yanchor");
             }
         }
 
@@ -394,10 +418,18 @@ namespace StoryAPI.Scripting
             if (property == "zoom" && value <= 0f)
                 throw new ScriptSyntaxException("'zoom' must be greater than zero.", line);
 
+            // Ren'Py position values use integers as pixels and floats as fractions
+            // of the containing area (for xpos) or displayable (for anchors).
+            Token valueToken = _tokens[_index - 1];
+            bool valueIsRelative = valueToken.Text.IndexOf('.') >= 0 ||
+                valueToken.Text.IndexOf('e') >= 0 ||
+                valueToken.Text.IndexOf('E') >= 0;
+
             return new TransformPropertyStatement
             {
                 Name = property,
                 Value = value,
+                ValueIsRelative = valueIsRelative,
                 Line = line,
             };
         }
@@ -449,6 +481,8 @@ namespace StoryAPI.Scripting
                 case "zoom":
                 case "xzoom":
                 case "yzoom":
+                case "xanchor":
+                case "yanchor":
                 case "rotate":
                     return true;
                 default:

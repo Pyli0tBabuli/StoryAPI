@@ -974,6 +974,60 @@ namespace StoryAPI.Runtime
         }
 
         /// <summary>
+        /// Resolves the anchor in the rotated displayable's layout coordinates. With
+        /// transform_anchor enabled, the anchor is measured on the source child and scaled
+        /// and rotated along with it. Otherwise it remains on the outer displayable bounds.
+        /// </summary>
+        internal static void GetTransformAnchorPixels(
+            StoryAPI.Game.GameBridge.TransformState state,
+            float sourceWidth, float sourceHeight,
+            float zoomX, float zoomY, float rotationDegrees, bool hasRotation,
+            out float anchorX, out float anchorY)
+        {
+            sourceWidth = Mathf.Max(1f, sourceWidth);
+            sourceHeight = Mathf.Max(1f, sourceHeight);
+
+            float displayWidth, displayHeight;
+            GetDisplayableDimensions(
+                sourceWidth * Mathf.Abs(zoomX),
+                sourceHeight * Mathf.Abs(zoomY),
+                hasRotation, rotationDegrees,
+                state != null && state.RotatePad,
+                out displayWidth, out displayHeight);
+
+            if (state != null && state.HasTransformAnchor && state.TransformAnchor)
+            {
+                float childAnchorX = state.HasXAnchor
+                    ? (state.XAnchorIsRelative ? state.AnchorX * sourceWidth : state.AnchorX)
+                    : (state.HasXAlign ? state.AlignX * sourceWidth : 0f);
+                float childAnchorY = state.HasYAnchor
+                    ? (state.YAnchorIsRelative ? state.AnchorY * sourceHeight : state.AnchorY)
+                    : (state.HasYAlign ? state.AlignY * sourceHeight : 0f);
+
+                float dx = (childAnchorX - sourceWidth * 0.5f) * zoomX;
+                float dy = (childAnchorY - sourceHeight * 0.5f) * zoomY;
+                float radians = rotationDegrees * Mathf.Deg2Rad;
+                float cosine = Mathf.Cos(radians);
+                float sine = Mathf.Sin(radians);
+
+                // Screen coordinates use a downward-positive Y axis. Positive Ren'Py
+                // rotation is clockwise, matching the renderer's negative Z rotation.
+                float transformedX = dx * cosine - dy * sine;
+                float transformedY = dx * sine + dy * cosine;
+                anchorX = displayWidth * 0.5f + transformedX;
+                anchorY = displayHeight * 0.5f + transformedY;
+                return;
+            }
+
+            anchorX = state != null && state.HasXAnchor
+                ? (state.XAnchorIsRelative ? state.AnchorX * displayWidth : state.AnchorX)
+                : (state != null && state.HasXAlign ? state.AlignX * displayWidth : 0f);
+            anchorY = state != null && state.HasYAnchor
+                ? (state.YAnchorIsRelative ? state.AnchorY * displayHeight : state.AnchorY)
+                : (state != null && state.HasYAlign ? state.AlignY * displayHeight : 0f);
+        }
+
+        /// <summary>
         /// Applies the supported immediate properties from a user-defined ATL transform.
         /// Properties not present in the definition leave the current renderer state alone.
         /// </summary>
@@ -1026,13 +1080,17 @@ namespace StoryAPI.Runtime
                 }
                 Vector3 position = basePosition;
 
+                float anchorPixelsX, anchorPixelsY;
+                GetTransformAnchorPixels(state, textureWidth, textureHeight,
+                    zoomX, zoomY, rotationDegrees, hasRotation,
+                    out anchorPixelsX, out anchorPixelsY);
+
                 if (state.HasXAlign || state.HasXPos || state.HasXOffset || state.HasXAnchor ||
-                    state.HasSubpixel || state.HasRotate || state.HasRotatePad)
+                    state.HasSubpixel || state.HasRotate || state.HasRotatePad ||
+                    state.HasTransformAnchor)
                 {
                     float left = position.x + ScreenWidth * 0.5f - widthPx * 0.5f;
-                    float anchorPixels = state.HasXAnchor
-                        ? (state.XAnchorIsRelative ? state.AnchorX * widthPx : state.AnchorX)
-                        : (state.HasXAlign ? state.AlignX * widthPx : 0f);
+                    float anchorPixels = anchorPixelsX;
 
                     if (state.HasXAlign) left = state.AlignX * ScreenWidth - anchorPixels;
                     else if (state.HasXPos)
@@ -1049,12 +1107,11 @@ namespace StoryAPI.Runtime
                 }
 
                 if (state.HasYAlign || state.HasYPos || state.HasYOffset || state.HasYAnchor ||
-                    state.HasSubpixel || state.HasRotate || state.HasRotatePad)
+                    state.HasSubpixel || state.HasRotate || state.HasRotatePad ||
+                    state.HasTransformAnchor)
                 {
                     float top = -position.y + ScreenHeight * 0.5f - heightPx * 0.5f;
-                    float anchorPixels = state.HasYAnchor
-                        ? (state.YAnchorIsRelative ? state.AnchorY * heightPx : state.AnchorY)
-                        : (state.HasYAlign ? state.AlignY * heightPx : 0f);
+                    float anchorPixels = anchorPixelsY;
 
                     if (state.HasYAlign) top = state.AlignY * ScreenHeight - anchorPixels;
                     else if (state.HasYPos)

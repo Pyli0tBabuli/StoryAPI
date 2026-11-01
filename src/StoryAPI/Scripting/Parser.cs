@@ -334,6 +334,11 @@ namespace StoryAPI.Scripting
             HashSet<string> initializedProperties,
             HashSet<string> seenProperties)
         {
+            if (property.Name == "fps")
+                throw new ScriptSyntaxException(
+                    "ATL 'fps' must be set as an initial transform property and cannot be animated.",
+                    property.Line);
+
             if (ConflictsWithTransformProperty(seenProperties, property.Name))
                 throw new ScriptSyntaxException(
                     "An ATL interpolation may set each property only once.", property.Line);
@@ -468,6 +473,12 @@ namespace StoryAPI.Scripting
                 valueIsBoolean = true;
                 value = booleanValue ? 1f : 0f;
             }
+            else if (property == "fps" && Current.Text == "None")
+            {
+                // Ren'Py's None value disables frame-rate quantization.
+                Advance();
+                value = 0f;
+            }
             else
             {
                 value = ReadNumber();
@@ -482,6 +493,9 @@ namespace StoryAPI.Scripting
 
                 if (property == "zoom" && value <= 0f)
                     throw new ScriptSyntaxException("'zoom' must be greater than zero.", line);
+
+                if (property == "fps" && value <= 0f)
+                    throw new ScriptSyntaxException("'fps' must be greater than zero.", line);
 
                 // Ren'Py position values use integers as pixels and floats as fractions
                 // of the containing area (for xpos) or displayable (for anchors).
@@ -554,6 +568,7 @@ namespace StoryAPI.Scripting
                 case "xcenter":
                 case "ycenter":
                 case "rotate":
+                case "fps":
                 case "subpixel":
                 case "rotate_pad":
                     return true;

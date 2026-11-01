@@ -28,6 +28,7 @@ namespace StoryAPI.Tests
             Run("ATL pause statements", TestAtlPauseStatements);
             Run("ATL repeat statements", TestAtlRepeatStatements);
             Run("ATL Penner warpers", TestAtlPennerWarperStatements);
+            Run("ATL independent axis zoom", TestAtlAxisZoomProperties);
             Run("sprite alias and position", TestSpriteAliasAndPosition);
             Run("define/default scalar declarations", TestVariableDeclarations);
             Run("runtime scalar initializer expressions", TestRuntimeExpressionDeclarations);
@@ -691,6 +692,62 @@ namespace StoryAPI.Tests
                 "    alpha 1.0\n" +
                 "    easein_sine 0.1 alpha 0.5\n",
                 "Unsupported static ATL property");
+        }
+
+        private static void TestAtlAxisZoomProperties()
+        {
+            var statements = Parse(
+                "transform axis_zoom:\n" +
+                "    xzoom -1.0\n" +
+                "    yzoom 0.0\n" +
+                "    linear 0.25 xzoom 1.0\n" +
+                "    ease 0.25 yzoom 1.5\n" +
+                "transform uniform_start:\n" +
+                "    zoom 0.75\n" +
+                "    linear 0.25 xzoom -1.0\n" +
+                "transform combined_axes:\n" +
+                "    xzoom -0.5\n" +
+                "    yzoom 1.25\n" +
+                "    linear 0.25 zoom 0.8\n");
+
+            var axisZoom = Require<TransformDeclarationStatement>(statements[0],
+                "Expected an ATL transform with independent axis zoom.");
+            Check(axisZoom.Properties.Count == 2 &&
+                  axisZoom.Properties[0].Name == "xzoom" &&
+                  axisZoom.Properties[0].Value == -1f &&
+                  axisZoom.Properties[1].Name == "yzoom" &&
+                  axisZoom.Properties[1].Value == 0f,
+                "xzoom/yzoom should retain negative and zero values for flipping and flattening.");
+            Check(axisZoom.Interpolations.Count == 2 &&
+                  axisZoom.Interpolations[0].Properties[0].Name == "xzoom" &&
+                  axisZoom.Interpolations[1].Properties[0].Name == "yzoom",
+                "Timed xzoom and yzoom interpolation targets should remain independent.");
+
+            var uniformStart = Require<TransformDeclarationStatement>(statements[1],
+                "Expected a uniform zoom transform.");
+            Check(uniformStart.Interpolations.Count == 1 &&
+                  uniformStart.Interpolations[0].Properties[0].Name == "xzoom",
+                "A uniform zoom should initialize both axes for later axis-specific interpolation.");
+
+            var combinedAxes = Require<TransformDeclarationStatement>(statements[2],
+                "Expected xzoom and yzoom to initialize a later uniform zoom.");
+            Check(combinedAxes.Interpolations.Count == 1 &&
+                  combinedAxes.Interpolations[0].Properties[0].Name == "zoom",
+                "A uniform zoom interpolation should be valid after both axes are initialized.");
+
+            ExpectSyntaxError(
+                "transform xzoom_without_initial:\n" +
+                "    linear 0.25 xzoom 1.0\n",
+                "requires an earlier value");
+            ExpectSyntaxError(
+                "transform zoom_conflicts_with_xzoom:\n" +
+                "    zoom 1.0\n" +
+                "    linear 0.25 zoom 0.8 xzoom 0.5\n",
+                "only once");
+            ExpectSyntaxError(
+                "transform invalid_uniform_zoom:\n" +
+                "    zoom 0.0\n",
+                "greater than zero");
         }
 
         private static void TestSpriteAliasAndPosition()

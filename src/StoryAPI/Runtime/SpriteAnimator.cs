@@ -1038,7 +1038,8 @@ namespace StoryAPI.Runtime
                 }
 
                 if (state.HasXAlign || state.HasXPos || state.HasXOffset || state.HasXAnchor ||
-                    state.HasYAlign || state.HasYPos || state.HasYOffset || state.HasYAnchor)
+                    state.HasYAlign || state.HasYPos || state.HasYOffset || state.HasYAnchor ||
+                    state.HasSubpixel)
                     renderer.localPosition = position;
 
                 if (hasZoomX || hasZoomY)

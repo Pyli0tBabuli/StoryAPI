@@ -993,26 +993,38 @@ namespace StoryAPI.Runtime
                 }
                 Vector3 position = basePosition;
 
-                if (state.HasXAlign || state.HasXPos || state.HasXOffset)
+                if (state.HasXAlign || state.HasXPos || state.HasXOffset || state.HasXAnchor)
                 {
                     float left = position.x + ScreenWidth * 0.5f - widthPx * 0.5f;
-                    if (state.HasXAlign) left = state.AlignX * (ScreenWidth - widthPx);
-                    else if (state.HasXPos) left = state.PosX;
+                    float anchorPixels = state.HasXAnchor
+                        ? (state.XAnchorIsRelative ? state.AnchorX * widthPx : state.AnchorX)
+                        : (state.HasXAlign ? state.AlignX * widthPx : 0f);
+
+                    if (state.HasXAlign) left = state.AlignX * ScreenWidth - anchorPixels;
+                    else if (state.HasXPos) left = state.PosX - anchorPixels;
+                    else if (state.HasXAnchor) left -= anchorPixels;
+
                     if (state.HasXOffset) left += state.OffsetX;
                     position.x = left + widthPx * 0.5f - ScreenWidth * 0.5f;
                 }
 
-                if (state.HasYAlign || state.HasYPos || state.HasYOffset)
+                if (state.HasYAlign || state.HasYPos || state.HasYOffset || state.HasYAnchor)
                 {
                     float top = -position.y + ScreenHeight * 0.5f - heightPx * 0.5f;
-                    if (state.HasYAlign) top = state.AlignY * (ScreenHeight - heightPx);
-                    else if (state.HasYPos) top = state.PosY;
+                    float anchorPixels = state.HasYAnchor
+                        ? (state.YAnchorIsRelative ? state.AnchorY * heightPx : state.AnchorY)
+                        : (state.HasYAlign ? state.AlignY * heightPx : 0f);
+
+                    if (state.HasYAlign) top = state.AlignY * ScreenHeight - anchorPixels;
+                    else if (state.HasYPos) top = state.PosY - anchorPixels;
+                    else if (state.HasYAnchor) top -= anchorPixels;
+
                     if (state.HasYOffset) top += state.OffsetY;
                     position.y = -(top + heightPx * 0.5f - ScreenHeight * 0.5f);
                 }
 
-                if (state.HasXAlign || state.HasXPos || state.HasXOffset ||
-                    state.HasYAlign || state.HasYPos || state.HasYOffset)
+                if (state.HasXAlign || state.HasXPos || state.HasXOffset || state.HasXAnchor ||
+                    state.HasYAlign || state.HasYPos || state.HasYOffset || state.HasYAnchor)
                     renderer.localPosition = position;
 
                 if (hasZoomX || hasZoomY)

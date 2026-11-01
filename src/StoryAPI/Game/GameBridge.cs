@@ -2657,9 +2657,13 @@ namespace StoryAPI.Game
                 switch (word)
                 {
                     case "xalign":
-                        state.HasXAlign = true; state.AlignX = number; any = true; break;
+                        state.HasXAlign = true; state.AlignX = number;
+                        state.HasXAnchor = true; state.AnchorX = number;
+                        state.XAnchorIsRelative = true; any = true; break;
                     case "yalign":
-                        state.HasYAlign = true; state.AlignY = number; any = true; break;
+                        state.HasYAlign = true; state.AlignY = number;
+                        state.HasYAnchor = true; state.AnchorY = number;
+                        state.YAnchorIsRelative = true; any = true; break;
                     case "xpos":
                         state.HasXPos = true; state.PosX = number; any = true; break;
                     case "ypos":

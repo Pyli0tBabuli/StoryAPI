@@ -166,13 +166,30 @@ label example:
 Supported warpers are `linear`, `ease`, `easein`, and `easeout`. Interpolations
 run sequentially in seconds and accept inline target properties or an indented property
 block. Every animated property must have an earlier numeric value in the same transform,
-so its starting value is explicit. Animation runs alongside the label rather than pausing
-it; use `pause` when the scene should wait for motion to finish.
+so its starting value is explicit.
+
+ATL timelines also support pauses between interpolations. Both `pause 0.5` and the
+Ren'Py number-statement form `0.5` hold the current transform state for half a second.
+A zero-duration ATL pause still lasts at least one frame. For example:
+
+```renpy
+transform wait_then_return:
+    xalign 0.0
+    linear 0.6 xalign 1.0
+    pause 0.5
+    linear 0.6 xalign 0.0
+    0.5
+    linear 0.6 xalign 1.0
+```
+
+Animation runs alongside the label rather than pausing it; use a normal script-level
+`pause` when the dialogue flow should wait for the entire ATL timeline to finish.
 
 Custom transforms are applied to StoryAPI-managed custom sprites, native game sprites,
 and DDLC+ character poses. Properties not specified by a transform leave the current
-state unchanged. Dynamic expressions, `pause` inside ATL, `repeat`, `parallel`,
-parameterized transforms, custom warpers, and other ATL statements are not yet supported.
+state unchanged. Dynamic expressions (including duration expressions), `repeat`,
+`block`, `parallel`, parameterized transforms, custom warpers, and other ATL
+statements are not yet supported.
 
 ### Variable declarations and loop control
 

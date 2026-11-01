@@ -250,6 +250,7 @@ namespace StoryAPI.Runtime
         public GameBridge.TransformState Target { get; set; }
         public float Duration { get; set; }
         public string EaseName { get; set; }
+        public bool IsPause { get; set; }
     }
 
     /// <summary>Runs sequential ATL stages over a StoryAPI-owned image.</summary>
@@ -259,6 +260,7 @@ namespace StoryAPI.Runtime
         private GameBridge.TransformState _current;
         private int _segmentIndex;
         private float _elapsed;
+        private bool _waitingForZeroPauseFrame;
 
         public string Container { get; }
         public string Layer { get; }
@@ -296,6 +298,24 @@ namespace StoryAPI.Runtime
                 }
 
                 float duration = Mathf.Max(0f, segment.Duration);
+                if (segment.IsPause && duration <= 0f)
+                {
+                    // Ren'Py's pause 0 is special: it guarantees at least one frame.
+                    // StartScript calls Advance(0) immediately after show, so defer
+                    // completion until the next scheduler tick.
+                    if (!_waitingForZeroPauseFrame)
+                    {
+                        _waitingForZeroPauseFrame = true;
+                        ArtInjector.ApplyStaticTransform(Container, Layer, _current, false);
+                        return;
+                    }
+
+                    _waitingForZeroPauseFrame = false;
+                    _segmentIndex++;
+                    _elapsed = 0f;
+                    continue;
+                }
+
                 if (duration <= 0f)
                 {
                     _current = Merge(_current, segment.Target);
@@ -309,14 +329,23 @@ namespace StoryAPI.Runtime
                 _elapsed += step;
                 remaining -= step;
 
-                float t = Mathf.Clamp01(_elapsed / duration);
-                var frame = Copy(_current);
-                Interpolate(frame, _current, segment.Target, Warp(segment.EaseName, t));
-                ArtInjector.ApplyStaticTransform(Container, Layer, frame, false);
+                if (segment.IsPause)
+                {
+                    // Holding a pause segment means leaving the current transform intact.
+                    ArtInjector.ApplyStaticTransform(Container, Layer, _current, false);
+                }
+                else
+                {
+                    float t = Mathf.Clamp01(_elapsed / duration);
+                    var frame = Copy(_current);
+                    Interpolate(frame, _current, segment.Target, Warp(segment.EaseName, t));
+                    ArtInjector.ApplyStaticTransform(Container, Layer, frame, false);
+                }
 
                 if (_elapsed < duration) return;
 
-                _current = Merge(_current, segment.Target);
+                if (!segment.IsPause)
+                    _current = Merge(_current, segment.Target);
                 _segmentIndex++;
                 _elapsed = 0f;
 

@@ -454,7 +454,8 @@ namespace StoryAPI.Scripting
             bool booleanValue = false;
             bool valueIsRelative = false;
 
-            if (property == "subpixel" || property == "rotate_pad")
+            if (property == "subpixel" || property == "rotate_pad" ||
+                property == "transform_anchor")
             {
                 if (Current.Type != TokenType.Identifier &&
                     Current.Type != TokenType.Keyword)
@@ -571,6 +572,7 @@ namespace StoryAPI.Scripting
                 case "fps":
                 case "subpixel":
                 case "rotate_pad":
+                case "transform_anchor":
                     return true;
                 default:
                     return false;

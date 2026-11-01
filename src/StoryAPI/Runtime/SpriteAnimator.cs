@@ -1033,6 +1033,7 @@ namespace StoryAPI.Runtime
                     else if (state.HasYAnchor) top -= anchorPixels;
 
                     if (state.HasYOffset) top += state.OffsetY;
+                    if (!state.Subpixel) top = Mathf.Round(top);
                     position.y = -(top + heightPx * 0.5f - ScreenHeight * 0.5f);
                 }
 

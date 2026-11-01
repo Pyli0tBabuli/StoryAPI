@@ -2528,6 +2528,10 @@ namespace StoryAPI.Game
             public bool HasRotate { get; set; }
             public float Rotate { get; set; }
 
+            /// <summary>Whether a rotated displayable reserves its diagonal square bounds.</summary>
+            public bool HasRotatePad { get; set; }
+            public bool RotatePad { get; set; } = true;
+
             /// <summary>Whether fractional screen-pixel placement is enabled.</summary>
             public bool HasSubpixel { get; set; }
             public bool Subpixel { get; set; }
@@ -2657,13 +2661,21 @@ namespace StoryAPI.Game
                 string word = words[i];
                 string value = words[i + 1];
 
-                if (word == "subpixel")
+                if (word == "subpixel" || word == "rotate_pad")
                 {
-                    bool subpixel;
-                    if (bool.TryParse(value, out subpixel))
+                    bool enabled;
+                    if (bool.TryParse(value, out enabled))
                     {
-                        state.HasSubpixel = true;
-                        state.Subpixel = subpixel;
+                        if (word == "subpixel")
+                        {
+                            state.HasSubpixel = true;
+                            state.Subpixel = enabled;
+                        }
+                        else
+                        {
+                            state.HasRotatePad = true;
+                            state.RotatePad = enabled;
+                        }
                         any = true;
                     }
                     continue;

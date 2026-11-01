@@ -132,6 +132,15 @@ namespace StoryAPI.Runtime
             if (state.HasXOffset) left += state.OffsetX;
             if (state.HasYOffset) top += state.OffsetY;
 
+            // Ren'Py defaults to pixel-aligned placement. Subpixel mode keeps the
+            // fractional top-left position, allowing the renderer to blend edge pixels
+            // during movement.
+            if (!state.Subpixel)
+            {
+                left = Mathf.Round(left);
+                top = Mathf.Round(top);
+            }
+
             if (hasZoomX || hasZoomY)
                 Renderer.localScale = new Vector3(zoomX, zoomY, 1f);
             Renderer.localPosition = new Vector3(

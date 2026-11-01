@@ -293,6 +293,14 @@ namespace StoryAPI.Runtime
                                     b.HasAlpha ? b.Alpha : a.Alpha, t);
             }
 
+            if (a.HasSubpixel || b.HasSubpixel)
+            {
+                result.HasSubpixel = true;
+                bool startSubpixel = a.HasSubpixel && a.Subpixel;
+                bool endSubpixel = b.HasSubpixel ? b.Subpixel : startSubpixel;
+                result.Subpixel = t >= 1f ? endSubpixel : startSubpixel;
+            }
+
             if (a.HasRotate || b.HasRotate)
             {
                 result.HasRotate = true;

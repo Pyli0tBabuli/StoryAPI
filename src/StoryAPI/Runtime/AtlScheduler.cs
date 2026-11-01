@@ -812,6 +812,7 @@ namespace StoryAPI.Runtime
                 ZoomX = source.ZoomX, ZoomY = source.ZoomY,
                 HasAlpha = source.HasAlpha, Alpha = source.Alpha,
                 HasRotate = source.HasRotate, Rotate = source.Rotate,
+                HasSubpixel = source.HasSubpixel, Subpixel = source.Subpixel,
             };
         }
     }

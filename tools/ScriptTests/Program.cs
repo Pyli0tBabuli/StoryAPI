@@ -29,6 +29,7 @@ namespace StoryAPI.Tests
             Run("ATL repeat statements", TestAtlRepeatStatements);
             Run("ATL Penner warpers", TestAtlPennerWarperStatements);
             Run("ATL independent axis zoom", TestAtlAxisZoomProperties);
+            Run("ATL anchor properties", TestAtlAnchorProperties);
             Run("sprite alias and position", TestSpriteAliasAndPosition);
             Run("define/default scalar declarations", TestVariableDeclarations);
             Run("runtime scalar initializer expressions", TestRuntimeExpressionDeclarations);
@@ -748,6 +749,73 @@ namespace StoryAPI.Tests
                 "transform invalid_uniform_zoom:\n" +
                 "    zoom 0.0\n",
                 "greater than zero");
+        }
+
+        private static void TestAtlAnchorProperties()
+        {
+            var statements = Parse(
+                "transform anchor_units:\n" +
+                "    xanchor 32\n" +
+                "    yanchor 0.5\n" +
+                "    linear 0.25 xanchor 96\n" +
+                "    ease 0.25 yanchor 1.0\n" +
+                "transform align_initializes_anchor:\n" +
+                "    xalign 0.5\n" +
+                "    yalign 0.5\n" +
+                "    linear 0.25 xanchor 1.0\n" +
+                "transform separate_position_and_anchor:\n" +
+                "    xpos 640\n" +
+                "    xanchor 32\n" +
+                "    ypos 360\n" +
+                "    yanchor 0.5\n");
+
+            var units = Require<TransformDeclarationStatement>(statements[0],
+                "Expected an ATL transform with absolute and relative anchors.");
+            Check(units.Properties.Count == 2 &&
+                  units.Properties[0].Name == "xanchor" &&
+                  units.Properties[0].Value == 32f &&
+                  !units.Properties[0].ValueIsRelative &&
+                  units.Properties[1].Name == "yanchor" &&
+                  units.Properties[1].Value == 0.5f &&
+                  units.Properties[1].ValueIsRelative,
+                "Integer anchors must remain pixel values and floating-point anchors relative fractions.");
+            Check(units.Interpolations.Count == 2 &&
+                  units.Interpolations[0].Properties[0].Name == "xanchor" &&
+                  units.Interpolations[0].Properties[0].Value == 96f &&
+                  !units.Interpolations[0].Properties[0].ValueIsRelative &&
+                  units.Interpolations[1].Properties[0].Name == "yanchor" &&
+                  units.Interpolations[1].Properties[0].ValueIsRelative,
+                "Timed anchor targets must preserve their position units.");
+
+            var aligned = Require<TransformDeclarationStatement>(statements[1],
+                "Expected xalign/y al ign to initialize anchor values.".Replace(" ", ""));
+            Check(aligned.Interpolations.Count == 1 &&
+                  aligned.Interpolations[0].Properties[0].Name == "xanchor",
+                "xalign/yalign should initialize the corresponding anchors for later interpolation.");
+
+            var separate = Require<TransformDeclarationStatement>(statements[2],
+                "Expected explicit positions and anchors.");
+            Check(separate.Properties.Count == 4 &&
+                  separate.Properties[0].Name == "xpos" &&
+                  separate.Properties[1].Name == "xanchor" &&
+                  separate.Properties[2].Name == "ypos" &&
+                  separate.Properties[3].Name == "yanchor",
+                "Position and anchor values should remain separate properties.");
+
+            ExpectSyntaxError(
+                "transform anchor_without_initial:\n" +
+                "    linear 0.25 xanchor 0.5\n",
+                "requires an earlier value");
+            ExpectSyntaxError(
+                "transform duplicate_anchor:\n" +
+                "    xanchor 0.0\n" +
+                "    linear 0.25 xanchor 0.5 xanchor 1.0\n",
+                "only once");
+            ExpectSyntaxError(
+                "transform align_anchor_conflict:\n" +
+                "    xalign 0.5\n" +
+                "    linear 0.25 xalign 0.8 xanchor 0.2\n",
+                "only once");
         }
 
         private static void TestSpriteAliasAndPosition()

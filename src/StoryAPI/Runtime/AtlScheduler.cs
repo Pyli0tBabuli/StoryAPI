@@ -257,6 +257,9 @@ namespace StoryAPI.Runtime
     internal sealed class AtlScriptAnimation
     {
         private readonly List<AtlScriptSegment> _segments;
+        private readonly GameBridge.TransformState _initial;
+        private readonly int _repeatCount;
+        private int _completedCycles = 1;
         private GameBridge.TransformState _current;
         private int _segmentIndex;
         private float _elapsed;
@@ -268,13 +271,15 @@ namespace StoryAPI.Runtime
         public bool Finished { get; private set; }
 
         public AtlScriptAnimation(string container, string layer, ActiveImage target,
-            GameBridge.TransformState initial, IList<AtlScriptSegment> segments)
+            GameBridge.TransformState initial, IList<AtlScriptSegment> segments, int repeatCount)
         {
             Container = container;
             Layer = string.IsNullOrEmpty(layer) ? "master" : layer;
             Target = target;
+            _initial = Copy(initial);
             _current = Copy(initial);
             _segments = new List<AtlScriptSegment>(segments);
+            _repeatCount = repeatCount;
         }
 
         public void Advance(float delta)
@@ -287,8 +292,30 @@ namespace StoryAPI.Runtime
             }
 
             float remaining = Mathf.Max(0f, delta);
-            while (_segmentIndex < _segments.Count)
+            while (true)
             {
+                if (_segmentIndex >= _segments.Count)
+                {
+                    bool shouldRepeat = _repeatCount < 0 ||
+                        (_repeatCount > 0 && _completedCycles < _repeatCount);
+                    if (!shouldRepeat)
+                    {
+                        Finished = true;
+                        return;
+                    }
+
+                    // Repeat restarts the complete transform timeline from its
+                    // original properties. Defer the next cycle to the next frame,
+                    // which also prevents an all-zero-duration loop from spinning.
+                    _completedCycles++;
+                    _segmentIndex = 0;
+                    _elapsed = 0f;
+                    _waitingForZeroPauseFrame = false;
+                    _current = Copy(_initial);
+                    ArtInjector.ApplyStaticTransform(Container, Layer, _current, false);
+                    return;
+                }
+
                 AtlScriptSegment segment = _segments[_segmentIndex];
                 if (segment == null || segment.Target == null)
                 {
@@ -355,8 +382,6 @@ namespace StoryAPI.Runtime
                     if (next != null && next.Duration > 0f) return;
                 }
             }
-
-            Finished = true;
         }
 
         private static float Warp(string easeName, float t)
@@ -481,7 +506,7 @@ namespace StoryAPI.Runtime
 
         /// <summary>Start a user-authored ATL transform after its image has been shown.</summary>
         internal static bool StartScript(string container, string layer,
-            GameBridge.TransformState initial, IList<AtlScriptSegment> segments)
+            GameBridge.TransformState initial, IList<AtlScriptSegment> segments, int repeatCount)
         {
             if (string.IsNullOrEmpty(container) || initial == null || segments == null)
                 return false;
@@ -501,7 +526,7 @@ namespace StoryAPI.Runtime
 
             if (segments.Count == 0) return true;
 
-            var animation = new AtlScriptAnimation(container, layer, target, initial, segments);
+            var animation = new AtlScriptAnimation(container, layer, target, initial, segments, repeatCount);
             animation.Advance(0f);
             if (!animation.Finished) s_scriptRunning.Add(animation);
             return true;

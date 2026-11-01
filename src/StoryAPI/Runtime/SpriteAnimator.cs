@@ -1015,7 +1015,8 @@ namespace StoryAPI.Runtime
                     position.x = left + widthPx * 0.5f - ScreenWidth * 0.5f;
                 }
 
-                if (state.HasYAlign || state.HasYPos || state.HasYOffset || state.HasYAnchor)
+                if (state.HasYAlign || state.HasYPos || state.HasYOffset || state.HasYAnchor ||
+                    state.HasSubpixel)
                 {
                     float top = -position.y + ScreenHeight * 0.5f - heightPx * 0.5f;
                     float anchorPixels = state.HasYAnchor

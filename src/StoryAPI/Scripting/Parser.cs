@@ -554,6 +554,7 @@ namespace StoryAPI.Scripting
                 case "xcenter":
                 case "ycenter":
                 case "rotate":
+                case "subpixel":
                     return true;
                 default:
                     return false;

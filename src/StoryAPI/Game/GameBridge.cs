@@ -2528,6 +2528,10 @@ namespace StoryAPI.Game
             public bool HasRotate { get; set; }
             public float Rotate { get; set; }
 
+            /// <summary>Whether fractional screen-pixel placement is enabled.</summary>
+            public bool HasSubpixel { get; set; }
+            public bool Subpixel { get; set; }
+
             /// <summary>A nudge in pixels, along or across.</summary>
             public bool HasXOffset { get; set; }
             public float OffsetX { get; set; }

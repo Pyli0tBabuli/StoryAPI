@@ -2536,6 +2536,10 @@ namespace StoryAPI.Game
             public bool HasSubpixel { get; set; }
             public bool Subpixel { get; set; }
 
+            /// <summary>Frames per second used to quantize this transform's timebase.</summary>
+            public bool HasFps { get; set; }
+            public float Fps { get; set; }
+
             /// <summary>A nudge in pixels, along or across.</summary>
             public bool HasXOffset { get; set; }
             public float OffsetX { get; set; }

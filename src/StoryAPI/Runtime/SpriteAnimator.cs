@@ -1011,6 +1011,7 @@ namespace StoryAPI.Runtime
                     else if (state.HasXAnchor) left -= anchorPixels;
 
                     if (state.HasXOffset) left += state.OffsetX;
+                    if (!state.Subpixel) left = Mathf.Round(left);
                     position.x = left + widthPx * 0.5f - ScreenWidth * 0.5f;
                 }
 

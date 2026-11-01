@@ -2500,8 +2500,10 @@ namespace StoryAPI.Game
             /// <summary>Where the picture's corner sits, in pixels.</summary>
             public bool HasXPos { get; set; }
             public float PosX { get; set; }
+            public bool XPosIsRelative { get; set; }
             public bool HasYPos { get; set; }
             public float PosY { get; set; }
+            public bool YPosIsRelative { get; set; }
 
             /// <summary>Anchor point inside the displayable, in pixels or relative fractions.</summary>
             public bool HasXAnchor { get; set; }
@@ -2657,17 +2659,41 @@ namespace StoryAPI.Game
                 switch (word)
                 {
                     case "xalign":
+                        state.HasXPos = false;
                         state.HasXAlign = true; state.AlignX = number;
                         state.HasXAnchor = true; state.AnchorX = number;
                         state.XAnchorIsRelative = true; any = true; break;
                     case "yalign":
+                        state.HasYPos = false;
                         state.HasYAlign = true; state.AlignY = number;
                         state.HasYAnchor = true; state.AnchorY = number;
                         state.YAnchorIsRelative = true; any = true; break;
                     case "xpos":
-                        state.HasXPos = true; state.PosX = number; any = true; break;
+                        state.HasXAlign = false;
+                        state.HasXPos = true; state.PosX = number;
+                        state.XPosIsRelative = value.IndexOf('.') >= 0 ||
+                            value.IndexOf('e') >= 0 || value.IndexOf('E') >= 0;
+                        any = true; break;
                     case "ypos":
-                        state.HasYPos = true; state.PosY = number; any = true; break;
+                        state.HasYAlign = false;
+                        state.HasYPos = true; state.PosY = number;
+                        state.YPosIsRelative = value.IndexOf('.') >= 0 ||
+                            value.IndexOf('e') >= 0 || value.IndexOf('E') >= 0;
+                        any = true; break;
+                    case "xcenter":
+                        state.HasXAlign = false;
+                        state.HasXPos = true; state.PosX = number;
+                        state.XPosIsRelative = value.IndexOf('.') >= 0 ||
+                            value.IndexOf('e') >= 0 || value.IndexOf('E') >= 0;
+                        state.HasXAnchor = true; state.AnchorX = 0.5f;
+                        state.XAnchorIsRelative = true; any = true; break;
+                    case "ycenter":
+                        state.HasYAlign = false;
+                        state.HasYPos = true; state.PosY = number;
+                        state.YPosIsRelative = value.IndexOf('.') >= 0 ||
+                            value.IndexOf('e') >= 0 || value.IndexOf('E') >= 0;
+                        state.HasYAnchor = true; state.AnchorY = 0.5f;
+                        state.YAnchorIsRelative = true; any = true; break;
                     case "xanchor":
                         state.HasXAnchor = true; state.AnchorX = number;
                         state.XAnchorIsRelative = value.IndexOf('.') >= 0 ||

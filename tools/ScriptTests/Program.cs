@@ -32,6 +32,7 @@ namespace StoryAPI.Tests
             Run("ATL anchor properties", TestAtlAnchorProperties);
             Run("ATL center properties", TestAtlCenterProperties);
             Run("ATL subpixel positioning", TestAtlSubpixelProperties);
+            Run("ATL rotate padding", TestAtlRotatePadProperties);
             Run("sprite alias and position", TestSpriteAliasAndPosition);
             Run("define/default scalar declarations", TestVariableDeclarations);
             Run("runtime scalar initializer expressions", TestRuntimeExpressionDeclarations);
@@ -894,6 +895,67 @@ namespace StoryAPI.Tests
                 "transform center_anchor_conflict:\n" +
                 "    ycenter 0.5\n" +
                 "    linear 0.25 ycenter 0.8 yanchor 0.2\n",
+                "only once");
+        }
+
+        private static void TestAtlRotatePadProperties()
+        {
+            var statements = Parse(
+                "transform rotate_pad_enabled:\n" +
+                "    rotate_pad True\n" +
+                "    rotate 35\n" +
+                "    xpos 0.25\n" +
+                "    linear 0.5 rotate_pad False\n" +
+                "transform rotate_pad_disabled:\n" +
+                "    rotate_pad False\n" +
+                "    rotate 35\n" +
+                "transform rotate_pad_implicit_default:\n" +
+                "    rotate 0\n");
+
+            var enabled = Require<TransformDeclarationStatement>(statements[0],
+                "Expected an ATL transform with rotate padding enabled.");
+            Check(enabled.Properties.Count == 3 &&
+                  enabled.Properties[0].Name == "rotate_pad" &&
+                  enabled.Properties[0].ValueIsBoolean &&
+                  enabled.Properties[0].BooleanValue,
+                "rotate_pad True should be retained as a boolean transform property.");
+            Check(enabled.Interpolations.Count == 1 &&
+                  enabled.Interpolations[0].Properties.Count == 1 &&
+                  enabled.Interpolations[0].Properties[0].Name == "rotate_pad" &&
+                  enabled.Interpolations[0].Properties[0].ValueIsBoolean &&
+                  !enabled.Interpolations[0].Properties[0].BooleanValue,
+                "A timed rotate_pad False target should remain a discrete boolean.");
+
+            var disabled = Require<TransformDeclarationStatement>(statements[1],
+                "Expected an ATL transform with rotate padding disabled.");
+            Check(disabled.Properties[0].Name == "rotate_pad" &&
+                  disabled.Properties[0].ValueIsBoolean &&
+                  !disabled.Properties[0].BooleanValue,
+                "rotate_pad False should be retained as a boolean transform property.");
+
+            var implicitDefault = Require<TransformDeclarationStatement>(statements[2],
+                "Expected transforms without rotate_pad to remain valid.");
+            Check(implicitDefault.Properties.Count == 1 &&
+                  implicitDefault.Properties[0].Name == "rotate" &&
+                  implicitDefault.Interpolations.Count == 0,
+                "Omitting rotate_pad should preserve the Ren'Py default.");
+
+            ExpectSyntaxError(
+                "transform invalid_rotate_pad_number:\n" +
+                "    rotate_pad 1\n",
+                "True or False");
+            ExpectSyntaxError(
+                "transform invalid_rotate_pad_lowercase:\n" +
+                "    rotate_pad true\n",
+                "True or False");
+            ExpectSyntaxError(
+                "transform rotate_pad_without_initial:\n" +
+                "    linear 0.5 rotate_pad False\n",
+                "requires an earlier value");
+            ExpectSyntaxError(
+                "transform duplicate_rotate_pad_target:\n" +
+                "    rotate_pad True\n" +
+                "    linear 0.5 rotate_pad False rotate_pad True\n",
                 "only once");
         }
 

@@ -27,6 +27,7 @@ namespace StoryAPI.Tests
             Run("ATL interpolation declarations", TestAtlInterpolationTransforms);
             Run("ATL pause statements", TestAtlPauseStatements);
             Run("ATL repeat statements", TestAtlRepeatStatements);
+            Run("ATL Penner warpers", TestAtlPennerWarperStatements);
             Run("sprite alias and position", TestSpriteAliasAndPosition);
             Run("define/default scalar declarations", TestVariableDeclarations);
             Run("runtime scalar initializer expressions", TestRuntimeExpressionDeclarations);
@@ -648,6 +649,48 @@ namespace StoryAPI.Tests
                 "    repeat 2\n" +
                 "    linear 0.1 alpha 0.5\n",
                 "final statement");
+        }
+
+        private static void TestAtlPennerWarperStatements()
+        {
+            string[] families =
+            {
+                "back", "bounce", "circ", "cubic", "elastic",
+                "expo", "quad", "quart", "quint",
+            };
+            string[] prefixes = { "ease_", "easein_", "easeout_" };
+            string source = "transform penner_warpers:\\n" +
+                            "    alpha 1.0\\n";
+            var expected = new List<string>();
+
+            foreach (string prefix in prefixes)
+            {
+                foreach (string family in families)
+                {
+                    string name = prefix + family;
+                    expected.Add(name);
+                    source += "    " + name + " 0.1 alpha 0.5\\n";
+                }
+            }
+
+            var statements = Parse(source);
+            var transform = Require<TransformDeclarationStatement>(statements[0],
+                "Expected a transform with all built-in Penner warpers.");
+            Check(transform.Interpolations.Count == 27 &&
+                  transform.Timeline.Count == 27,
+                "All 27 documented Penner warpers should be retained in source order.");
+
+            for (int i = 0; i < expected.Count; i++)
+            {
+                Check(transform.Interpolations[i].EaseName == expected[i],
+                    "Penner warper name/order mismatch at index " + i + ".");
+            }
+
+            ExpectSyntaxError(
+                "transform unsupported_warper:\\n" +
+                "    alpha 1.0\\n" +
+                "    easein_sine 0.1 alpha 0.5\\n",
+                "Unsupported static ATL property");
         }
 
         private static void TestSpriteAliasAndPosition()

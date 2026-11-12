@@ -2532,6 +2532,10 @@ namespace StoryAPI.Game
             public bool HasRotatePad { get; set; }
             public bool RotatePad { get; set; } = true;
 
+            /// <summary>Whether the anchor is transformed with the cropped child.</summary>
+            public bool HasTransformAnchor { get; set; }
+            public bool TransformAnchor { get; set; }
+
             /// <summary>Whether fractional screen-pixel placement is enabled.</summary>
             public bool HasSubpixel { get; set; }
             public bool Subpixel { get; set; }

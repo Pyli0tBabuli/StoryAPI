@@ -33,6 +33,7 @@ namespace StoryAPI.Tests
             Run("ATL center properties", TestAtlCenterProperties);
             Run("ATL subpixel positioning", TestAtlSubpixelProperties);
             Run("ATL rotate padding", TestAtlRotatePadProperties);
+            Run("ATL transform anchor", TestAtlTransformAnchorProperties);
             Run("ATL fps timing", TestAtlFpsProperty);
             Run("sprite alias and position", TestSpriteAliasAndPosition);
             Run("define/default scalar declarations", TestVariableDeclarations);
@@ -957,6 +958,73 @@ namespace StoryAPI.Tests
                 "transform duplicate_rotate_pad_target:\n" +
                 "    rotate_pad True\n" +
                 "    linear 0.5 rotate_pad False rotate_pad True\n",
+                "only once");
+        }
+
+        private static void TestAtlTransformAnchorProperties()
+        {
+            var statements = Parse(
+                "transform transform_anchor_enabled:\n" +
+                "    transform_anchor True\n" +
+                "    xanchor 0.25\n" +
+                "    yanchor 0.75\n" +
+                "    xpos 0.5\n" +
+                "    ypos 0.5\n" +
+                "    rotate 20\n" +
+                "    linear 0.5 transform_anchor False xanchor 0.5\n" +
+                "transform transform_anchor_disabled:\n" +
+                "    transform_anchor False\n" +
+                "    xanchor 0\n" +
+                "    yanchor 0\n" +
+                "transform transform_anchor_default:\n" +
+                "    rotate 0\n");
+
+            var enabled = Require<TransformDeclarationStatement>(statements[0],
+                "Expected an ATL transform with transform_anchor enabled.");
+            Check(enabled.Properties.Count == 6 &&
+                  enabled.Properties[0].Name == "transform_anchor" &&
+                  enabled.Properties[0].ValueIsBoolean &&
+                  enabled.Properties[0].BooleanValue,
+                "transform_anchor True should be retained as a boolean property.");
+            Check(enabled.Interpolations.Count == 1 &&
+                  enabled.Interpolations[0].Properties.Count == 2 &&
+                  enabled.Interpolations[0].Properties[0].Name == "transform_anchor" &&
+                  enabled.Interpolations[0].Properties[0].ValueIsBoolean &&
+                  !enabled.Interpolations[0].Properties[0].BooleanValue &&
+                  enabled.Interpolations[0].Properties[1].Name == "xanchor" &&
+                  enabled.Interpolations[0].Properties[1].Value == 0.5f,
+                "A timed transform_anchor change can update the child anchor in the same segment.");
+
+            var disabled = Require<TransformDeclarationStatement>(statements[1],
+                "Expected an ATL transform with transform_anchor disabled.");
+            Check(disabled.Properties[0].Name == "transform_anchor" &&
+                  disabled.Properties[0].ValueIsBoolean &&
+                  !disabled.Properties[0].BooleanValue,
+                "transform_anchor False should be retained as a boolean property.");
+
+            var defaultValue = Require<TransformDeclarationStatement>(statements[2],
+                "Expected transforms without transform_anchor to remain valid.");
+            Check(defaultValue.Properties.Count == 1 &&
+                  defaultValue.Properties[0].Name == "rotate" &&
+                  defaultValue.Interpolations.Count == 0,
+                "Omitting transform_anchor should preserve the Ren'Py default of False.");
+
+            ExpectSyntaxError(
+                "transform invalid_transform_anchor_number:\n" +
+                "    transform_anchor 1\n",
+                "True or False");
+            ExpectSyntaxError(
+                "transform invalid_transform_anchor_lowercase:\n" +
+                "    transform_anchor true\n",
+                "True or False");
+            ExpectSyntaxError(
+                "transform transform_anchor_without_initial:\n" +
+                "    linear 0.5 transform_anchor True\n",
+                "requires an earlier value");
+            ExpectSyntaxError(
+                "transform duplicate_transform_anchor_target:\n" +
+                "    transform_anchor False\n" +
+                "    linear 0.5 transform_anchor True transform_anchor False\n",
                 "only once");
         }
 

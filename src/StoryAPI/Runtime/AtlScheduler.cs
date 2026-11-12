@@ -823,8 +823,8 @@ namespace StoryAPI.Runtime
             if (to.HasTransformAnchor)
             {
                 frame.HasTransformAnchor = true;
-                bool startTransformAnchor = from.HasTransformAnchor && from.TransformAnchor;
-                frame.TransformAnchor = complete ? to.TransformAnchor : startTransformAnchor;
+                bool initialTransformAnchor = from.HasTransformAnchor && from.TransformAnchor;
+                frame.TransformAnchor = complete ? to.TransformAnchor : initialTransformAnchor;
             }
         }
 
